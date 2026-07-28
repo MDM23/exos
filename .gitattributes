@@ -1,0 +1,10 @@
+# Normalize line endings: LF in the repository and on checkout, never CRLF
+* text=auto eol=lf
+
+# Language-aware diff hunk headers (built-in git userdiff drivers)
+*.css diff=css
+*.md diff=markdown
+*.rs diff=rust
+
+# Lock files are generated: collapse them in merge request diffs
+Cargo.lock gitlab-generated=true linguist-generated=true
