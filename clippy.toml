@@ -1,0 +1,6 @@
+# Thresholds and MSRV only. Lint levels live in [workspace.lints].
+msrv = "1.85"
+
+# A view function assembling markup legitimately reaches this; the default of
+# 7 flags them without anything being wrong.
+too-many-arguments-threshold = 10

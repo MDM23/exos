@@ -1,0 +1,73 @@
+[workspace]
+members = ["crates/exos", "crates/exos-build", "crates/exos-macro"]
+resolver = "3"
+
+[workspace.package]
+categories = ["asynchronous", "web-programming::http-server"]
+edition = "2024"
+homepage = "https://github.com/MDM23/exos"
+keywords = ["html", "hypermedia", "server-rendered", "web"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/MDM23/exos"
+rust-version = "1.85"
+version = "0.1.0"
+
+[workspace.dependencies]
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+exos = { path = "crates/exos", version = "0.1.0" }
+exos-build = { path = "crates/exos-build", version = "0.1.0" }
+exos-macro = { path = "crates/exos-macro", version = "0.1.0" }
+futures-core = { version = "0.3", default-features = false }
+inventory = { version = "0.3", default-features = false }
+lightningcss = { version = "1.0.0-alpha.69", default-features = false, features = ["bundler"] }
+minifier = { version = "0.4", default-features = false }
+proc-macro2 = { version = "1", default-features = false }
+quote = { version = "1", default-features = false }
+rstml = { version = "0.13", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive", "std"] }
+serde_json = { version = "1", default-features = false, features = ["std"] }
+sha2 = { version = "0.10", default-features = false }
+syn = { version = "3", default-features = false, features = ["clone-impls", "full", "parsing", "printing", "proc-macro"] }
+thiserror = { version = "2", default-features = false, features = ["std"] }
+tokio = { version = "1", default-features = false, features = ["sync", "time"] }
+tokio-stream = { version = "0.1", default-features = false, features = ["sync"] }
+
+[workspace.lints.rust]
+missing_debug_implementations = "warn"
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+unreachable_pub = "warn"
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+await_holding_lock = "warn"
+dbg_macro = "warn"
+doc_markdown = "warn"
+enum_glob_use = "warn"
+exit = "warn"
+filter_map_next = "warn"
+fn_params_excessive_bools = "warn"
+implicit_clone = "warn"
+inefficient_to_string = "warn"
+macro_use_imports = "warn"
+manual_let_else = "warn"
+match_same_arms = "warn"
+match_wildcard_for_single_variants = "warn"
+mem_forget = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+must_use_candidate = "warn"
+needless_continue = "warn"
+needless_pass_by_value = "warn"
+option_option = "warn"
+redundant_clone = "warn"
+return_self_not_must_use = "warn"
+semicolon_if_nothing_returned = "warn"
+str_to_string = "warn"
+todo = "warn"
+trivially_copy_pass_by_ref = "warn"
+unnested_or_patterns = "warn"
+unused_self = "warn"
+unwrap_used = "warn"
+use_self = "warn"

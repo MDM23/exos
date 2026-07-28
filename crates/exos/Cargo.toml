@@ -1,0 +1,29 @@
+[package]
+description = "Server-rendered HTML with a delegated client runtime"
+documentation = "https://docs.rs/exos"
+name = "exos"
+categories.workspace = true
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+[dependencies]
+axum.workspace = true
+exos-macro.workspace = true
+futures-core.workspace = true
+inventory.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+
+[build-dependencies]
+exos-build.workspace = true
+
+[lints]
+workspace = true
