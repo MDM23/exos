@@ -21,3 +21,6 @@
 mod render;
 
 pub use crate::render::{AttributeValue, Flag, Markup, Render, escape_into};
+
+#[doc(inline)]
+pub use exos_macro::view;
