@@ -18,9 +18,22 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+mod asset;
 mod render;
 
-pub use crate::render::{AttributeValue, Flag, Markup, Render, escape_into};
+pub use crate::{
+    asset::{Asset, AssetSet, routes as asset_routes},
+    render::{AttributeValue, Flag, Markup, Render, escape_into},
+};
 
 #[doc(inline)]
 pub use exos_macro::view;
+
+/// The client runtime, bundled by this crate's build script.
+pub const RUNTIME: Asset = runtime::ASSETS[0];
+
+mod runtime {
+    use crate::Asset;
+
+    include!(concat!(env!("OUT_DIR"), "/exos_assets.rs"));
+}
