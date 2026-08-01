@@ -19,10 +19,12 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod asset;
+mod context;
 mod render;
 
 pub use crate::{
     asset::{Asset, AssetSet, routes as asset_routes},
+    context::{data, provide, try_data},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
 };
 
