@@ -339,6 +339,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
+ "tower",
 ]
 
 [[package]]

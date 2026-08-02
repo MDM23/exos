@@ -5,6 +5,7 @@
 
 use proc_macro::TokenStream;
 
+mod route;
 mod view;
 
 /// Compiles real HTML into a sequence of string pushes.
@@ -35,3 +36,36 @@ mod view;
 pub fn view(input: TokenStream) -> TokenStream {
     view::expand(input.into()).into()
 }
+
+/// Generates one method attribute.
+macro_rules! method_attribute {
+    ($name:ident, $http:literal) => {
+        #[doc = concat!("Registers a handler for `", $http, "`.")]
+        ///
+        /// ```ignore
+        /// #[exos::post("/files/{id}/favorite")]
+        /// async fn favorite(Path(id): Path<u32>, Json(body): Json<Controls>) -> Effect {
+        ///     /* ... */
+        /// }
+        /// ```
+        ///
+        /// The attribute is the whole registration: there is no second list,
+        /// and no way to add a handler and forget to mount it.
+        ///
+        /// It also generates a module of the same name holding a typed caller,
+        /// so a template writes `favorite::post(entry.id, &controls)` and has
+        /// the URL, the path parameter's type and the payload type all
+        /// checked. A module and a function may share a name, so the module
+        /// sits beside the handler rather than shadowing it.
+        #[proc_macro_attribute]
+        pub fn $name(attribute: TokenStream, item: TokenStream) -> TokenStream {
+            route::expand(attribute.into(), item.into(), stringify!($name)).into()
+        }
+    };
+}
+
+method_attribute!(delete, "DELETE");
+method_attribute!(get, "GET");
+method_attribute!(patch, "PATCH");
+method_attribute!(post, "POST");
+method_attribute!(put, "PUT");

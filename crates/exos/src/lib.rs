@@ -20,12 +20,16 @@
 
 mod asset;
 mod context;
+mod discover;
 mod render;
+mod response;
 
 pub use crate::{
     asset::{Asset, AssetSet, routes as asset_routes},
     context::{data, provide, try_data},
+    discover::{AssetSetEntry, RouteEntry, app, asset},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
+    response::Page,
 };
 
 #[doc(inline)]
@@ -39,3 +43,11 @@ mod runtime {
 
     include!(concat!(env!("OUT_DIR"), "/exos_assets.rs"));
 }
+
+#[doc(inline)]
+pub use exos_macro::{delete, get, patch, post, put};
+
+// Re-exported so the macros can name them without the user taking a direct
+// dependency, and so nobody has to keep versions in step with ours.
+#[doc(hidden)]
+pub use {axum, inventory, serde_json};
