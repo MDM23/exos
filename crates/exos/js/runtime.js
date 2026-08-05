@@ -535,11 +535,100 @@
             }
 
             const type = response.headers.get("content-type") ?? "";
-            if (type.includes("text/html")) applyPatch(await response.text());
+            if (type.includes("text/event-stream")) await consume(response);
+            else if (type.includes("text/html")) applyPatch(await response.text());
 
             return response;
         } finally {
             el?.removeAttribute("aria-busy");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Effects
+    //
+    // An action answers with server-sent-event frames, the same format the
+    // live stream uses, so this is the only place that interprets either.
+    // ------------------------------------------------------------------
+
+    async function consume(response) {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            let boundary = buffer.indexOf("\n\n");
+            while (boundary !== -1) {
+                dispatch(buffer.slice(0, boundary));
+                buffer = buffer.slice(boundary + 2);
+                boundary = buffer.indexOf("\n\n");
+            }
+        }
+    }
+
+    function dispatch(frame) {
+        let event = "message";
+        const data = [];
+
+        for (const line of frame.split("\n")) {
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+        }
+
+        apply(event, data.join("\n"));
+    }
+
+    function apply(step, payload) {
+        switch (step) {
+            case "focus":
+                document.querySelector(payload)?.focus();
+                break;
+
+            case "navigate":
+                navigate(payload, true);
+                break;
+
+            case "page": {
+                const next = new DOMParser().parseFromString(payload, "text/html");
+                morph(document.body, next.body);
+                if (next.title) document.title = next.title;
+                break;
+            }
+
+            case "patch":
+                applyPatch(payload);
+                break;
+
+            case "reload":
+                location.reload();
+                break;
+
+            case "remove":
+                for (const node of document.querySelectorAll(payload)) {
+                    unbindTree(node);
+                    node.remove();
+                }
+                break;
+
+            case "scroll":
+                document.querySelector(payload)?.scrollIntoView({ behavior: "smooth" });
+                break;
+
+            case "signals":
+                try {
+                    Object.assign($, JSON.parse(payload));
+                } catch (error) {
+                    console.error("[exos] bad signals payload:", payload, error);
+                }
+                break;
+
+            default:
+                console.warn("[exos] unknown effect step:", step);
         }
     }
 

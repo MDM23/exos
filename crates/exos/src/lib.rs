@@ -21,6 +21,7 @@
 mod asset;
 mod context;
 mod discover;
+mod effect;
 mod render;
 mod response;
 
@@ -28,6 +29,7 @@ pub use crate::{
     asset::{Asset, AssetSet, routes as asset_routes},
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry, app, asset},
+    effect::{Effect, Step},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
 };
