@@ -10,6 +10,7 @@ use rstml::{
 };
 
 mod escape;
+mod signals;
 
 use self::escape::{collapse_whitespace, escape_attribute, escape_text};
 
@@ -111,15 +112,30 @@ fn emit_node<C: rstml::node::CustomNode>(node: &Node<C>, out: &mut TokenStream, 
 
 fn emit_element<C: rstml::node::CustomNode>(element: &NodeElement<C>, out: &mut TokenStream) {
     let name = element.open_tag.name.to_string();
+    let inferred = signals::inferred(element);
 
     push_literal(&format!("<{name}"), out);
 
+    let mut declared = false;
+
     for attribute in element.attributes() {
         if let NodeAttribute::Attribute(attribute) = attribute {
-            emit_attribute(&attribute.key, attribute.value(), out);
+            if attribute.key.to_string() == signals::DECLARATION {
+                declared = true;
+                signals::emit_declaration(attribute.value(), &inferred, out);
+            } else {
+                emit_attribute(&attribute.key, attribute.value(), out);
+            }
         }
     }
 
+    // Nothing was declared by hand but the subtree uses signals, so the whole
+    // declaration is static and goes straight into the markup.
+    if !declared && !inferred.is_empty() {
+        push_literal(&signals::static_declaration(&inferred), out);
+    }
+
+    emit_attribute_blocks(element, out);
     push_literal(">", out);
 
     if VOID.contains(&name.as_str()) {
@@ -132,6 +148,46 @@ fn emit_element<C: rstml::node::CustomNode>(element: &NodeElement<C>, out: &mut 
     }
 
     push_literal(&format!("</{name}>"), out);
+}
+
+/// `<li {gone} {show(..)} {class("busy", ..)}>`.
+///
+/// Blocks are collected and merged rather than pushed one at a time: the style
+/// this encourages is to repeat them, so two `class` blocks must produce one
+/// `class` attribute. Emitting duplicates would be silently wrong, because
+/// browsers keep the first and drop the rest.
+fn emit_attribute_blocks<C: rstml::node::CustomNode>(
+    element: &NodeElement<C>,
+    out: &mut TokenStream,
+) {
+    let blocks: Vec<TokenStream> = element
+        .attributes()
+        .iter()
+        .filter_map(|attribute| match attribute {
+            // Unwrapping the single expression out of the block keeps
+            // `unused_braces` quiet in the calling crate.
+            NodeAttribute::Block(block) => Some(match block.try_block() {
+                Some(inner) => match inner.stmts.as_slice() {
+                    [syn::Stmt::Expr(expression, None)] => quote! { #expression },
+                    _ => quote! { #inner },
+                },
+                None => quote! { #block },
+            }),
+            NodeAttribute::Attribute(_) => None,
+        })
+        .collect();
+
+    if blocks.is_empty() {
+        return;
+    }
+
+    out.extend(quote! {
+        {
+            let mut __attributes = ::exos::Attributes::new();
+            #(::exos::IntoAttributes::write(#blocks, &mut __attributes);)*
+            __out.push_str(&__attributes.render());
+        }
+    });
 }
 
 fn emit_attribute(key: &NodeName, value: Option<&syn::Expr>, out: &mut TokenStream) {

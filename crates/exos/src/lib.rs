@@ -19,6 +19,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod asset;
+mod attributes;
 mod context;
 mod discover;
 mod effect;
@@ -29,6 +30,10 @@ mod signal;
 
 pub use crate::{
     asset::{Asset, AssetSet, routes as asset_routes},
+    attributes::{
+        Attr, Attributes, Bind, BindKind, Class, Event, IntoAttributes, SignalScope, Target, attr,
+        bind, class, on, on_change, on_click, on_input, on_submit, preserve, prop, show, text,
+    },
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry, app, asset},
     effect::{Effect, Step},
