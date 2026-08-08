@@ -25,15 +25,17 @@ mod effect;
 mod js;
 mod render;
 mod response;
+mod signal;
 
 pub use crate::{
     asset::{Asset, AssetSet, routes as asset_routes},
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry, app, asset},
     effect::{Effect, Step},
-    js::{IntoJs, IntoPayload, Js, append, attr_now, call, emit, record, when},
+    js::{IntoJs, IntoPayload, Js, append, attr_now, call, emit, quote_js, record, when},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
+    signal::{Field, Signal},
 };
 
 #[doc(inline)]
@@ -49,9 +51,9 @@ mod runtime {
 }
 
 #[doc(inline)]
-pub use exos_macro::{delete, get, patch, post, put};
+pub use exos_macro::{delete, get, model, patch, post, put};
 
 // Re-exported so the macros can name them without the user taking a direct
 // dependency, and so nobody has to keep versions in step with ours.
 #[doc(hidden)]
-pub use {axum, inventory, serde_json};
+pub use {axum, inventory, serde, serde_json};

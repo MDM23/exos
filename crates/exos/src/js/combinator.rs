@@ -29,7 +29,7 @@ literal!(bool, f32, f64, i8, i16, i32, i64, String, u8, u16, u32, u64);
 
 impl IntoJs<String> for &str {
     fn into_js(self) -> Js<String> {
-        Js::raw(crate::js::quote(self))
+        Js::raw(crate::js::quote_js(self))
     }
 }
 

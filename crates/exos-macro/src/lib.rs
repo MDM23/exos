@@ -5,6 +5,7 @@
 
 use proc_macro::TokenStream;
 
+mod model;
 mod route;
 mod view;
 
@@ -69,3 +70,26 @@ method_attribute!(get, "GET");
 method_attribute!(patch, "PATCH");
 method_attribute!(post, "POST");
 method_attribute!(put, "PUT");
+
+/// Marks a type that is both client state and a request body.
+///
+/// ```ignore
+/// #[exos::model]
+/// #[derive(Default, Deserialize, Serialize)]
+/// struct Selection {
+///     picked: Vec<u32>,
+/// }
+///
+/// let selection = Selection::signals();   // selection.picked: Signal<Vec<u32>>
+/// ```
+///
+/// Declaring the fields once is the point: the handler takes
+/// `Json<Selection>`, the template binds `selection.picked`, and renaming the
+/// field breaks both. Alongside the struct it generates a handle whose fields
+/// are signals, a typed token per field for error reporting, and the
+/// implementations that let the handle declare itself on an element and be
+/// sent as a payload.
+#[proc_macro_attribute]
+pub fn model(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+    model::expand(item.into()).into()
+}

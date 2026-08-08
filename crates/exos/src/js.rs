@@ -207,7 +207,7 @@ pub fn when(condition: impl IntoJs<bool>, body: impl FnOnce(())) {
 pub fn attr_now(name: &str, value: impl IntoJs<bool>) {
     emit(format!(
         "attr({}, {})",
-        quote(name),
+        quote_js(name),
         value.into_js().source()
     ));
 }
@@ -221,7 +221,11 @@ pub fn attr_now(name: &str, value: impl IntoJs<bool>) {
 ///
 /// If called outside a handler; see [`emit`].
 pub fn append(template: &str, into: &str) {
-    emit(format!("append({}, {})", quote(template), quote(into)));
+    emit(format!(
+        "append({}, {})",
+        quote_js(template),
+        quote_js(into)
+    ));
 }
 
 /// Records a call to a route.
@@ -235,7 +239,7 @@ pub fn call(method: &str, url: &str, payload: Option<String>) {
     // `delete` is a reserved word in some positions, so the runtime exposes it
     // as `del`.
     let function = if method == "delete" { "del" } else { method };
-    let url = quote(url);
+    let url = quote_js(url);
 
     match payload {
         Some(body) => emit(format!("{function}({url}, {body})")),
@@ -247,7 +251,8 @@ pub fn call(method: &str, url: &str, payload: Option<String>) {
 ///
 /// Everything crossing into JavaScript goes through this rather than being
 /// pasted, so a quote in a value cannot break out of the expression.
-pub(crate) fn quote(value: &str) -> String {
+#[must_use]
+pub fn quote_js(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| String::from("\"\""))
 }
 
