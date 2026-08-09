@@ -23,7 +23,7 @@
 use axum::{
     body::Body,
     http::{HeaderValue, header},
-    response::{IntoResponse, Response},
+    response::{IntoResponse, Response, sse},
 };
 use serde_json::Value;
 
@@ -204,6 +204,15 @@ impl Effect {
     fn push(mut self, step: Step) -> Self {
         self.steps.push(step);
         self
+    }
+}
+
+/// One step is one server-sent event, which is what lets a live stream and an
+/// action response share a wire format and a parser.
+impl From<Step> for sse::Event {
+    fn from(step: Step) -> Self {
+        let (event, data) = step.frame();
+        Self::default().event(event).data(data)
     }
 }
 

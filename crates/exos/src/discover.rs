@@ -142,6 +142,7 @@ pub fn app() -> Router {
             router.route(path, methods)
         })
         .merge(crate::asset_routes(asset_sets()))
+        .merge(crate::live::routes())
 }
 
 /// Includes and registers this crate's build-time assets.

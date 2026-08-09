@@ -5,6 +5,7 @@
 
 use proc_macro::TokenStream;
 
+mod live;
 mod model;
 mod route;
 mod view;
@@ -92,4 +93,26 @@ method_attribute!(put, "PUT");
 #[proc_macro_attribute]
 pub fn model(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     model::expand(item.into()).into()
+}
+
+/// Marks a fragment that keeps itself up to date.
+///
+/// ```ignore
+/// #[exos::live]
+/// fn presence(user: u32) -> Markup {
+///     view! { <span class="dot" data-online={ online(user) }></span> }
+/// }
+/// ```
+///
+/// The function keeps its signature; only its return type changes, from
+/// `Markup` to [`Fragment`](exos::Fragment). That one value does both jobs:
+/// put it in a template to render it, or hand it to
+/// [`publish`](exos::publish) to broadcast it.
+///
+/// The topic is derived from the function name and the argument values, so the
+/// server owns it end to end and there is no name to invent, keep in step, or
+/// collide with. Every argument must be `Hash`.
+#[proc_macro_attribute]
+pub fn live(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+    live::expand(item.into()).into()
 }
