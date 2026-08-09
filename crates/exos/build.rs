@@ -5,6 +5,6 @@
 
 fn main() -> Result<(), exos_build::Error> {
     exos_build::Assets::new()
-        .js_bundle("exos.js", &["js/runtime.js"])?
+        .js_bundle("exos.js", &["js/runtime.js", "js/sortable.js"])?
         .emit()
 }
