@@ -22,19 +22,42 @@ pub(crate) const PREFIX: &str = "/_exos";
 /// Values are built by the generated table rather than by hand, which is why
 /// the fields are public.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-#[non_exhaustive]
 pub struct Asset {
-    /// The logical name, such as `app.css`.
-    pub name: &'static str,
-    /// The hashed file name, such as `app-9f2c1b4e.css`.
-    pub file: &'static str,
-    /// What to serve it as.
-    pub content_type: &'static str,
-    /// The bytes, embedded in the binary.
-    pub bytes: &'static [u8],
+    name: &'static str,
+    file: &'static str,
+    content_type: &'static str,
+    bytes: &'static [u8],
 }
 
 impl Asset {
+    /// Describes one built asset. Called by the generated table.
+    #[must_use]
+    pub const fn new(
+        name: &'static str,
+        file: &'static str,
+        content_type: &'static str,
+        bytes: &'static [u8],
+    ) -> Self {
+        Self {
+            name,
+            file,
+            content_type,
+            bytes,
+        }
+    }
+
+    /// The logical name, such as `app.css`.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        self.name
+    }
+
+    /// The hashed file name, such as `app-9f2c1b4e.css`.
+    #[must_use]
+    pub const fn file(&self) -> &'static str {
+        self.file
+    }
+
     /// The URL this asset is served from.
     #[must_use]
     pub fn url(&self) -> String {

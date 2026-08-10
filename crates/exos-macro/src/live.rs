@@ -42,6 +42,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         .to_compile_error();
     }
 
+    let attributes = &function.attrs;
     let visibility = &function.vis;
     let body = &function.block;
     let label = function.sig.ident.to_string();
@@ -50,6 +51,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     signature.output = syn::parse_quote!(-> ::exos::Fragment);
 
     quote! {
+        #(#attributes)*
         #visibility #signature {
             // Borrowed, so the arguments stay usable in the body below.
             let __topic = ::exos::Topic::new(#label, &(#(&#arguments,)*));

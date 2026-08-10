@@ -152,9 +152,12 @@ fn scan(source: &str, found: &mut Vec<String>) {
             continue;
         }
 
-        // `a.$.b` is not a signal read: `$` has to start the path.
+        // `a.$.b` reads a property named `$` off something else, so `$` has to
+        // start the path for this to be a signal read. A preceding dot matters
+        // as much as a preceding word character.
         let preceded = index.checked_sub(1).is_some_and(|before| {
-            characters[before].is_alphanumeric() || characters[before] == '_'
+            let character = characters[before];
+            character.is_alphanumeric() || character == '_' || character == '.'
         });
 
         if preceded {

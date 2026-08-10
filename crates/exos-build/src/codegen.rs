@@ -50,8 +50,8 @@ impl<'assets> Generated<'assets> {
             // Writing into a String is infallible.
             let _ = writeln!(
                 code,
-                "    Asset {{ name: {:?}, file: {:?}, content_type: {:?}, \
-                 bytes: include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{}\")) }},",
+                "    Asset::new({:?}, {:?}, {:?}, \
+                 include_bytes!(concat!(env!(\"OUT_DIR\"), \"/{}\"))),",
                 asset.name, asset.file, asset.content_type, blob
             );
         }

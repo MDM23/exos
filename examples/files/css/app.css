@@ -1,0 +1,173 @@
+/* The example's styles. @import is resolved at build time, so this file and
+   everything it pulls in ship as one hashed stylesheet. */
+
+@import url("tokens.css");
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.5;
+}
+
+.shell {
+  max-inline-size: 46rem;
+  margin-inline: auto;
+  padding: var(--space-l) var(--space-m);
+}
+
+.site-nav {
+  border-block-end: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.site-nav .shell {
+  display: flex;
+  gap: var(--space-l);
+  padding-block: var(--space-s);
+}
+
+.site-nav a {
+  color: var(--text-subtle);
+  text-decoration: none;
+}
+
+.site-nav a[aria-current="page"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+h1 {
+  font-size: 1.5rem;
+  margin-block: 0 var(--space-m);
+}
+
+.lede {
+  color: var(--text-subtle);
+}
+
+.controls,
+.bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  color: var(--text-subtle);
+  font-size: 0.9rem;
+}
+
+.bar {
+  margin-block: var(--space-m);
+}
+
+/* The file list */
+
+.file-list {
+  list-style: none;
+  padding: 0;
+  margin-block: var(--space-m);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.file-entry {
+  display: flex;
+  align-items: center;
+  gap: var(--space-s);
+  padding: var(--space-s) var(--space-m);
+  border-block-end: 1px solid var(--border);
+  background: var(--surface);
+  /* The drag transform is applied inline; this keeps the other rows gliding
+     out of the way rather than teleporting. */
+  transition: transform 120ms ease;
+}
+
+.file-entry:last-child {
+  border-block-end: 0;
+}
+
+.file-entry[data-favorite="true"] {
+  background: var(--accent-subtle);
+}
+
+.file-entry.is-dragging {
+  position: relative;
+  z-index: 2;
+  box-shadow: var(--shadow);
+  transition: none;
+  cursor: grabbing;
+}
+
+.file-name {
+  flex: 1;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+.handle {
+  cursor: grab;
+  color: var(--text-faint);
+  padding-inline: var(--space-xs);
+  /* Let the pointer handler own the gesture. */
+  touch-action: none;
+  user-select: none;
+}
+
+.star {
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: var(--space-xs);
+  color: var(--text-faint);
+}
+
+.file-entry[data-favorite="true"] .star {
+  color: var(--accent);
+}
+
+.danger {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--danger);
+  border-radius: var(--radius-s);
+  padding: var(--space-xs) var(--space-s);
+  cursor: pointer;
+}
+
+.danger:hover {
+  background: var(--danger-subtle);
+}
+
+/* An action in flight. The runtime sets aria-busy for the duration, so this
+   needs no class bookkeeping and is announced as well as shown. */
+[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+/* Live presence */
+
+.dot {
+  inline-size: 0.55rem;
+  block-size: 0.55rem;
+  border-radius: 50%;
+  background: var(--text-faint);
+  transition: background-color 200ms ease;
+  flex: none;
+}
+
+/* Matching the value, not merely the attribute: [data-online] alone would
+   also match data-online="false". */
+.dot[data-online="true"] {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px light-dark(rgb(47 158 68 / 15%), rgb(81 207 102 / 20%));
+}

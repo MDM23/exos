@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use axum::{Router, routing::MethodRouter};
 
-use crate::AssetSet;
+use crate::{Asset, AssetSet};
 
 /// One discovered route, submitted by the method attributes.
 ///
@@ -107,7 +107,7 @@ pub fn asset(name: &str) -> String {
 
     let known: Vec<&str> = asset_sets()
         .iter()
-        .flat_map(|set| set.0.iter().map(|asset| asset.name))
+        .flat_map(|set| set.0.iter().map(Asset::name))
         .collect();
 
     panic!("no asset named {name:?}; the built assets are {known:?}")
