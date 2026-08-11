@@ -1,0 +1,465 @@
+# The exos guide
+
+Server-rendered HTML with a small client runtime. One binary, `cargo run`, no
+bundler and no build step. Everything is ordinary Rust: the only JavaScript you
+write is the escape hatch, and you rarely reach for it.
+
+Two rules explain most of the design.
+
+1. **The runtime never assumes the DOM stopped changing.** Events are
+   delegated, bindings are applied by a `MutationObserver`. Markup that arrives
+   ten minutes after page load is already wired.
+2. **Anything crossing to the browser is a typed Rust value**, never a string
+   you have to keep in agreement with something elsewhere.
+
+## Hello, exos
+
+```rust
+use exos::{Page, view};
+
+exos::assets!();
+
+#[exos::get("/")]
+async fn home() -> Page {
+    Page(view! {
+        <!DOCTYPE html>
+        <html lang="en">
+            <head>
+                <link rel="stylesheet" href={ exos::asset("app.css") }>
+                <script defer src={ exos::asset("exos.js") }></script>
+            </head>
+            <body><h1>"Hello"</h1></body>
+        </html>
+    })
+}
+
+#[tokio::main]
+async fn main() -> Result<(), std::io::Error> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
+    axum::serve(listener, exos::app()).await
+}
+```
+
+`exos::app()` finds every route in the binary and returns an `axum::Router`, so
+exos composes into an axum application rather than replacing one.
+
+## Templates are HTML
+
+`view!` takes real HTML: the tags and attributes you would write in a `.html`
+file. Void elements are void (`<br>`, not `<br/>`). A braced block is Rust.
+
+```rust
+view! {
+    <ul class="files">
+        { entries.iter().map(row).collect::<Vec<_>>() }
+    </ul>
+}
+```
+
+It compiles to `String` pushes, so the static parts are string literals in the
+binary and nothing is parsed at runtime.
+
+Everything interpolated is escaped. [`Markup`] is the only type that is not,
+and it is the only way to emit raw HTML, so "unescaped" is greppable.
+
+### Attributes
+
+`Option<T>` drops the attribute entirely when `None`, because `aria-current=""`
+is not the same as no `aria-current`:
+
+```rust
+fn current(path: &str, href: &str) -> Option<&'static str> {
+    (path == href).then_some("page")
+}
+
+view! {
+    <a href="/" aria-current={ current(path, "/") }>"Files"</a>
+}
+```
+
+A bare `bool` renders the *text* `"true"` or `"false"`, which is what you want
+for `data-favorite="false"`, so CSS can match both states. For genuine HTML
+boolean attributes, `Flag` gives present-or-absent:
+
+```rust
+view! {
+    <input disabled={ Flag(is_locked) }>
+}
+```
+
+That distinction is not cosmetic. Writing `.dot[data-online]` in CSS matches
+`data-online="false"` too, which is a bug this project shipped once and had to
+fix.
+
+## Assets
+
+A build script declares the entry points. It resolves `@import` into one sheet,
+minifies in release, content-hashes, and embeds the processed bytes in the
+binary:
+
+```rust
+fn main() -> Result<(), exos_build::Error> {
+    exos_build::Assets::new().css("css/app.css")?.emit()
+}
+```
+
+`exos::assets!()` includes the generated table, and `exos::asset("app.css")`
+returns the hashed URL. Files are served from memory as `immutable` for a year,
+which is safe unconditionally because a changed file is a different URL.
+
+The client runtime ships the same way. It is an asset of the `exos` crate
+itself, built by that crate's own build script, so nothing is copied into your
+project and there is no version to keep in step.
+
+Debug builds skip minification. The only thing it buys during development is a
+slower edit cycle and unreadable stack traces.
+
+## Application state
+
+Provided once, reachable by type. No `State<T>` threaded through signatures:
+
+```rust
+exos::provide(Files::seed());
+
+let files = exos::data::<Files>();          // panics if missing
+let maybe = exos::try_data::<Files>();      // Option<Arc<Files>>
+```
+
+A missing value is a wiring mistake made once at startup, not a per-request
+condition, so `data` panicking and naming the type is the right default.
+
+The type is the key, so wrap distinct things in distinct newtypes.
+
+## Routes
+
+```rust
+#[exos::get("/files")]
+async fn index() -> Page { /* ... */ }
+
+#[exos::post("/files/{id}/favorite")]
+async fn favorite(Path(id): Path<u32>, Json(body): Json<Selection>) -> Effect {
+    /* ... */
+}
+```
+
+The attribute is the registration. There is no second list, and no way to add a
+handler and forget to mount it.
+
+Registration is collected at link time, so routes in a crate that nothing links
+do not exist. That is irrelevant in a binary and worth knowing if you split
+routes into a library.
+
+## Client state: signals
+
+A signal is a named piece of state in the browser, defined once in Rust:
+
+```rust
+let gone = signal!(_gone = false);   // Signal<bool>
+```
+
+Put the handle in an attribute block to declare it. That element becomes its
+scope:
+
+```rust
+view! {
+    <li id={ row_id } {&gone}>/* ... */</li>
+}
+```
+
+Scoping is lexical with the DOM as the tree: the nearest ancestor that declares
+a name wins. A row already needs an `id` for morphing, so a hundred rows can
+each declare `_gone` without colliding and you never invent `gone_3`.
+
+A signal that starts as `null` does not even need declaring. The macro reads
+the names out of the expressions in a subtree and declares what it finds, so
+`{show(!gone.get())}` is enough. A signal carrying a value from the server
+still says so, because that value has to come from somewhere.
+
+### Models: state that is also a request body
+
+When the same fields are both client state and what an action sends, declare
+them once:
+
+```rust
+#[exos::model]
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct Selection {
+    picked: Vec<u32>,
+}
+
+let selection = Selection::signals();   // selection.picked: Signal<Vec<u32>>
+```
+
+The handler takes `Json<Selection>`. Rename `picked` and both sides stop
+compiling. `selection.` autocompletes.
+
+Anything `Serialize + Deserialize` can be a signal: `bool`, numbers, `String`,
+`Vec<T>`, and nested models.
+
+## Handlers
+
+A handler is a Rust closure. It runs at render time, on the server, and what it
+records becomes JavaScript:
+
+```rust
+view! {
+    <button {on_click(move |_| {
+        gone.set(true);
+        delete_file::post(entry_id, selection);
+    })}>"Delete"</button>
+}
+```
+
+That renders as:
+
+```html
+<button data-on-click="$._gone = true; post('/files/3/delete', {...})">
+```
+
+### How that works
+
+The closure body is ordinary Rust. `gone.set(true)` does not set anything, it
+appends a statement to the script being built. `entry_id` is a plain `u32` at
+render time and is baked into the JavaScript as a literal.
+
+You get the whole Rust language at render time: `match`, `?`, `data::<T>()`,
+string building, all of it runs on the server while rendering. Only values that
+must survive to the browser are `Js<T>`.
+
+Native control flow deliberately does not record. `gone.get()` is `Js<bool>`,
+not `bool`, so this does not compile:
+
+```rust
+if gone.get() { /* ... */ }   // error: expected bool, found Js<bool>
+```
+
+That is the intended failure: loud, at compile time, at the exact spot. For
+branching in the browser, use `when`:
+
+```rust
+when(selection.picked.get().any(), |()| archive::post(selection));
+```
+
+Sequencing is free, since consecutive statements record in order, which covers
+the large majority of handlers.
+
+### The event
+
+```rust
+on_change(|event| selection.fail.set(event.target().checked()))
+```
+
+`event.target().value()` is `Js<String>` and `.checked()` is `Js<bool>`.
+Nothing is read at render time; these build expressions.
+
+## Expressions
+
+`Js<T>` is a client-side expression of type `T`.
+
+| on | methods |
+| --- | --- |
+| `Js<bool>` | `and`, `not`, `or` |
+| numbers | `eq`, `ge`, `gt`, `le`, `lt`, `minus`, `ne`, `plus` |
+| `Js<String>` | `contains`, `eq`, `is_empty`, `len`, `ne`, `trim` |
+| `Js<Vec<T>>` | `any`, `contains`, `is_empty`, `len` |
+
+`!` is overloadable, so `!gone.get()` works. `==` and `&&` are not, because
+`PartialEq::eq` must return `bool`, hence `.eq()` and `.and()`. That is the one
+place this API is uglier than the language it mimics, and there is no way
+around it.
+
+### The escape hatch
+
+```rust
+let coarse = Js::<bool>::raw("matchMedia('(hover: none)').matches");
+
+view! {
+    <div {show(coarse)}>"Tap to reveal"</div>
+}
+```
+
+The type parameter is an assertion the compiler cannot check: you are promising
+the expression yields a `bool`. That is the entire cost of the escape hatch,
+and it is the only unchecked thing in the API.
+
+## Binding to the DOM
+
+Attribute blocks produce attributes, one value at a time, repeated as needed.
+
+| block | emits |
+| --- | --- |
+| `{&handle}` | declares signals on this element's scope |
+| `{on_click(...)}`, `{on(Event::Input, ...)}` | a delegated handler |
+| `{text(expression)}` | text content |
+| `{show(expression)}` | toggles `hidden` |
+| `{class(name, expression)}` | one class toggle |
+| `{attr(name, expression)}` | one attribute |
+| `{prop(name, expression)}` | one property (`value`, `checked`, ...) |
+| `{bind(&signal)}` | two-way binding for a form control |
+| `{preserve()}` | never morph this element |
+
+Raw `data-*` attributes still work, so none of this is a wall. The sortable
+plugin is reached that way, since it is opt-in JavaScript rather than API
+surface:
+
+```rust
+view! {
+    <ul id="file-list" data-sortable="post('/files/reorder', { order: $._order })">
+        <li data-sort-item={ entry.id }>
+            <span data-drag-handle>"::"</span>
+        </li>
+    </ul>
+}
+```
+
+## Calling the server
+
+A route attribute generates a typed caller from the handler's own signature:
+
+```rust
+#[exos::post("/files/{id}/favorite")]
+async fn favorite(Path(id): Path<u32>, Json(body): Json<Selection>) -> Effect
+```
+
+gives you `favorite::post(id, selection)`. The URL, the path parameter type and
+the payload type are all checked, so changing the route breaks every call site.
+
+### Optimistic updates
+
+Paint first and let the server correct it:
+
+```rust
+on_click(move |_| {
+    attr_now("data-favorite", !favourited);
+    favorite::post(entry_id, selection);
+})
+```
+
+Do not mirror server state into a signal. One attribute with two sources of
+truth drifts the moment a patch lands: the morph writes the server's value
+while the signal still holds the client's. A speculative write has no second
+copy, so the next patch corrects it either way.
+
+Signals are for state the server does not own: a row pending deletion, a modal,
+a draft input, a selection.
+
+## Effects
+
+One type describes what the client should do, so adding a variant later changes
+no signature:
+
+```rust
+#[exos::post("/files/archive")]
+async fn archive(Json(selection): Json<Selection>) -> Effect {
+    data::<Files>().update(|entries| store::archive(entries, &selection.picked));
+
+    publish(&file_list());
+    Effect::signals(json!({ "picked": [] })).scroll("#file-list")
+}
+```
+
+| effect | does |
+| --- | --- |
+| `patch(markup)` | morph HTML into place, keyed by `id` |
+| `signals(value)` | merge into the client's signal store |
+| `remove(selector)` | delete matching elements |
+| `navigate(url)` | client-side navigation |
+| `page(markup)` | replace the active page without a second fetch |
+| `focus(selector)`, `scroll(selector)` | move the user |
+| `reload()`, `none()` | the extremes |
+
+Several steps compose with the `and_` methods. The wire format is the same
+server-sent event format the live channel uses, so there is one parser rather
+than two, the action path and the live path are the same code, and a slow
+handler can stream effects as it computes them.
+
+### Why `Page` is still its own type
+
+`Effect::page` exists, but a `Page` returned from a `GET` is a real HTTP
+document. It has to be, because a cold browser, a bookmark or a crawler gets no
+JavaScript and nothing else works.
+
+If pages were only effects, every page URL would serve two representations
+depending on who asked, which means `Vary` on a custom header and two cache
+entries forever. Navigation does not need the effect anyway: the runtime
+fetches the document and morphs `<body>`. `Effect::page` is for the narrower
+case where an action wants to hand over a new page and save a round-trip.
+
+## Live fragments
+
+Markup that keeps itself up to date. The server owns the topic, so you never
+name one:
+
+```rust
+#[exos::live]
+fn presence(user: u32) -> Markup {
+    let online = data::<Presence>().online(user);
+    view! { <span class="dot" data-online={ online }></span> }
+}
+```
+
+One definition, two uses:
+
+```rust
+{ presence(user.id) }         // in a template: renders it
+publish(&presence(user.id));  // anywhere: re-renders and pushes to watchers
+```
+
+The topic derives from the function name and the argument values, so
+`presence(2)` always names the same fragment. One event stream per tab carries
+everything, and the client re-derives its visible set from the DOM after every
+mutation, so a fragment that scrolls in subscribes and one a patch removed
+unsubscribes.
+
+### The invariant
+
+A topic must completely determine its content: the same topic means the same
+HTML, for everybody.
+
+Presence satisfies this. Anything depending on the viewer, such as their
+session, their permissions or their draft input, does not, and must not be a
+live fragment, because two users would share a topic and receive each other's
+content.
+
+If content depends on the viewer, either make the viewer part of the topic
+(`inbox_count(user_id)`), or answer with an `Effect`, which reaches only the
+requester.
+
+### Authorization is structural
+
+The rendered wrapper carries a token only the server can produce:
+
+```html
+<exos-live style="display:contents" id="live-presence-cab0087c" data-token="e80842d2">
+```
+
+Since the server only renders fragments it decided you may see, being able to
+subscribe is the authorization. There is no second permission check to write
+and none to forget, and a subscription with a forged token receives nothing.
+
+The current token uses `DefaultHasher`, which is not a MAC. Before this guards
+anything real it needs HMAC-SHA256 with a configured key, bound to a session so
+it proves *this* viewer was served the fragment.
+
+## What exos does not do
+
+Knowing the edges is more useful than a feature list.
+
+- **No client-side loop.** Server-rendered lists plus morphing cover it. If you
+  need a list bound to reactive client data, exos is the wrong tool.
+- **No client-side validation rules.** They round-trip, debounced.
+- **No client-side routing beyond fetch-and-morph.**
+- **No arbitrary Rust in the browser.** Handlers record expressions, and
+  anything the combinators cannot say needs `Js::raw`.
+- **Expressions are compiled with `new Function`**, so a strict CSP without
+  `unsafe-eval` blocks them. A precompiled mode is the answer and does not
+  exist yet.
+
+## Reading the example
+
+[`examples/files`](../examples/files) exercises all of it in one page:
+selection with a batch action, optimistic favourite and delete, drag to
+reorder, and live presence dots. Run it with `cargo run -p files` and open two
+tabs.
+
+[`Markup`]: https://docs.rs/exos/latest/exos/struct.Markup.html
