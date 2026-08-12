@@ -17,16 +17,14 @@ Two rules explain most of the design.
 ```rust
 use exos::{Page, view};
 
-exos::assets!();
-
 #[exos::get("/")]
 async fn home() -> Page {
     Page(view! {
         <!DOCTYPE html>
         <html lang="en">
             <head>
-                <link rel="stylesheet" href={ exos::asset("app.css") }>
-                <script defer src={ exos::asset("exos.js") }></script>
+                <link rel="stylesheet" href={ exos::asset!("css/app.css") }>
+                <script defer src={ exos::runtime() }></script>
             </head>
             <body><h1>"Hello"</h1></body>
         </html>
@@ -93,26 +91,63 @@ fix.
 
 ## Assets
 
-A build script declares the entry points. It resolves `@import` into one sheet,
-minifies in release, content-hashes, and embeds the processed bytes in the
-binary:
+One macro, written where the asset is referenced:
 
 ```rust
-fn main() -> Result<(), exos_build::Error> {
-    exos_build::Assets::new().css("css/app.css")?.emit()
+view! {
+    <link rel="stylesheet" href={ exos::asset!("css/app.css") }>
 }
 ```
 
-`exos::assets!()` includes the generated table, and `exos::asset("app.css")`
-returns the hashed URL. Files are served from memory as `immutable` for a year,
-which is safe unconditionally because a changed file is a different URL.
+There is no build script and nothing to register. The file is processed while
+your crate compiles, its bytes go into the binary, and the macro returns a
+`&'static str` with the content hash already in it. Files are served from
+memory as `immutable` for a year, which is safe unconditionally because a
+changed file is a different URL.
 
-The client runtime ships the same way. It is an asset of the `exos` crate
-itself, built by that crate's own build script, so nothing is copied into your
-project and there is no version to keep in step.
+The path is relative to your crate root, and its extension decides everything
+else. A `.css` file is bundled through its `@import`s, a `.js` file through its
+`import`s, and anything else is embedded byte for byte. The extension also
+picks the `Content-Type`; for one the web has no name for, say so:
 
-Debug builds skip minification. The only thing it buys during development is a
+```rust
+exos::asset!("data/blob.xyz", "application/octet-stream")
+```
+
+Referencing the same file from several places is free. It is embedded and
+registered once, and every call site gets the same URL back.
+
+Release builds minify and debug builds do not, which the macro works out from
+the profile it is being compiled under. Minifying during development buys a
 slower edit cycle and unreadable stack traces.
+
+Because there is no build script, nothing declares which files to watch. The
+macro does it instead: it lists every file the bundler actually opened, so
+editing an `@import`ed stylesheet rebuilds and editing an unrelated one does
+not. A file that does not exist is a compile error at the call site rather than
+a 404 at request time.
+
+### Scripts
+
+Scripts bundle the same way stylesheets do, by following imports:
+
+```js
+// js/app.js
+import "./charts.js";
+import "./tooltips.js";
+```
+
+`exos::asset!("js/app.js")` concatenates them in the order the imports give,
+which is also the order they depend on each other in, and minifies the result
+as one file. A file imported twice is included once, and a cycle is an error.
+
+Only the side-effect form is supported. `import { thing } from "./other.js"`
+needs a real bundler with scope hoisting, so it is refused by name at compile
+time rather than misread.
+
+The client runtime ships this way too. `exos::runtime()` is the same macro
+applied to the runtime and its plugins inside the `exos` crate, so nothing is
+copied into your project and there is no version to keep in step.
 
 ## Application state
 

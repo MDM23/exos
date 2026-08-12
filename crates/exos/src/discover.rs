@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use axum::{Router, routing::MethodRouter};
 
-use crate::{Asset, AssetSet};
+use crate::AssetSet;
 
 /// One discovered route, submitted by the method attributes.
 ///
@@ -61,7 +61,7 @@ impl core::fmt::Debug for RouteEntry {
 
 inventory::collect!(RouteEntry);
 
-/// One discovered asset set, submitted by [`assets!`](crate::assets).
+/// One discovered asset set, submitted by [`asset!`](crate::asset).
 #[derive(Clone, Copy, Debug)]
 pub struct AssetSetEntry(AssetSet);
 
@@ -75,42 +75,15 @@ impl AssetSetEntry {
 
 inventory::collect!(AssetSetEntry);
 
-/// Every asset set in the binary, including the client runtime.
+/// Every asset the binary embedded, the client runtime included.
+///
+/// The runtime is not a special case: [`runtime`](crate::runtime) expands the
+/// same macro every application does, and registers the same way.
 fn asset_sets() -> Vec<AssetSet> {
-    core::iter::once(AssetSet(core::slice::from_ref(&crate::RUNTIME)))
-        .chain(
-            inventory::iter::<AssetSetEntry>
-                .into_iter()
-                .map(|set| set.0),
-        )
+    inventory::iter::<AssetSetEntry>
+        .into_iter()
+        .map(|set| set.0)
         .collect()
-}
-
-/// The URL of a built asset, searched across every registered set.
-///
-/// ```ignore
-/// view! { <link rel="stylesheet" href={ exos::asset("app.css") }> }
-/// ```
-///
-/// # Panics
-///
-/// If no asset by that name was built. That is a typo or a build script which
-/// does not mention the file, and failing at startup beats rendering a link
-/// that answers 404.
-#[must_use]
-pub fn asset(name: &str) -> String {
-    for set in asset_sets() {
-        if let Some(found) = set.get(name) {
-            return found.url();
-        }
-    }
-
-    let known: Vec<&str> = asset_sets()
-        .iter()
-        .flat_map(|set| set.0.iter().map(Asset::name))
-        .collect();
-
-    panic!("no asset named {name:?}; the built assets are {known:?}")
 }
 
 /// Builds the application: every discovered route, every asset, the runtime.
@@ -143,29 +116,4 @@ pub fn app() -> Router {
         })
         .merge(crate::asset_routes(asset_sets()))
         .merge(crate::live::routes())
-}
-
-/// Includes and registers this crate's build-time assets.
-///
-/// Call it once, at the top of the crate. It pairs with a build script ending
-/// in [`Assets::emit`](https://docs.rs/exos-build), after which files are
-/// reached by name with [`asset`].
-///
-/// ```ignore
-/// exos::assets!();
-/// ```
-#[macro_export]
-macro_rules! assets {
-    () => {
-        #[doc(hidden)]
-        mod __exos_assets {
-            use $crate::Asset;
-
-            include!(concat!(env!("OUT_DIR"), "/exos_assets.rs"));
-        }
-
-        $crate::inventory::submit! {
-            $crate::AssetSetEntry::new($crate::AssetSet(__exos_assets::ASSETS))
-        }
-    };
 }

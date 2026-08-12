@@ -18,6 +18,10 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
+// The macros name everything through `::exos`, so that path has to mean this
+// crate here too.
+extern crate self as exos;
+
 mod asset;
 mod attributes;
 mod context;
@@ -30,13 +34,13 @@ mod response;
 mod signal;
 
 pub use crate::{
-    asset::{Asset, AssetSet, routes as asset_routes},
+    asset::{Asset, AssetSet, routes as asset_routes, runtime},
     attributes::{
         Attr, Attributes, Bind, BindKind, Class, Event, IntoAttributes, SignalScope, Target, attr,
         bind, class, on, on_change, on_click, on_input, on_submit, preserve, prop, show, text,
     },
     context::{data, provide, try_data},
-    discover::{AssetSetEntry, RouteEntry, app, asset},
+    discover::{AssetSetEntry, RouteEntry, app},
     effect::{Effect, Step},
     js::{IntoJs, IntoPayload, Js, append, attr_now, call, emit, quote_js, record, when},
     live::{Fragment, Topic, connection_count, publish},
@@ -46,19 +50,7 @@ pub use crate::{
 };
 
 #[doc(inline)]
-pub use exos_macro::view;
-
-/// The client runtime, bundled by this crate's build script.
-pub const RUNTIME: Asset = runtime::ASSETS[0];
-
-mod runtime {
-    use crate::Asset;
-
-    include!(concat!(env!("OUT_DIR"), "/exos_assets.rs"));
-}
-
-#[doc(inline)]
-pub use exos_macro::{delete, get, live, model, patch, post, put};
+pub use exos_macro::{asset, delete, get, live, model, patch, post, put, view};
 
 // Re-exported so the macros can name them without the user taking a direct
 // dependency, and so nobody has to keep versions in step with ours.

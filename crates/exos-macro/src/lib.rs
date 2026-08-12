@@ -5,10 +5,48 @@
 
 use proc_macro::TokenStream;
 
+mod asset;
 mod live;
 mod model;
+mod profile;
 mod route;
 mod view;
+
+/// Builds an asset and returns the URL it is served from.
+///
+/// Write it where the asset is referenced. There is no build script and no
+/// registration step: the file is processed while this crate compiles, its
+/// bytes go into the binary, and the URL comes back as a `&'static str` with
+/// the content hash already in it.
+///
+/// ```ignore
+/// view! {
+///     <link rel="stylesheet" href={ exos::asset!("css/app.css") }>
+///     <script defer src={ exos::runtime() }></script>
+/// }
+/// ```
+///
+/// The path is relative to the crate root, next to `Cargo.toml`, and the
+/// extension picks the pipeline. A `.css` file is bundled through its
+/// `@import`s; a `.js` or `.mjs` file is bundled through its `import`s;
+/// anything else is embedded byte for byte. Release builds minify and debug
+/// builds do not.
+///
+/// The extension also picks the `Content-Type`. For one the web has no name
+/// for, say so:
+///
+/// ```ignore
+/// exos::asset!("data/blob.xyz", "application/octet-stream")
+/// ```
+///
+/// Referencing the same file from several places is free: it is embedded and
+/// registered once, and every call site gets the same URL. A file that does
+/// not exist, or one whose extension implies nothing and was not given a
+/// content type, is a compile error here rather than a 404 later.
+#[proc_macro]
+pub fn asset(input: TokenStream) -> TokenStream {
+    asset::expand(input.into()).into()
+}
 
 /// Compiles real HTML into a sequence of string pushes.
 ///

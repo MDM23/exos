@@ -80,10 +80,12 @@ instead of excluding one another.
 - [`exos`](crates/exos) is the runtime library, and returns a plain
   `axum::Router` so it composes into an axum application rather than replacing
   one.
-- [`exos-macro`](crates/exos-macro) holds `view!`, the route attributes,
-  `#[model]` and `#[live]`. Depend on `exos`, which re-exports them.
-- [`exos-build`](crates/exos-build) is the build-time asset pipeline: bundle
-  CSS, minify JS, content-hash, embed.
+- [`exos-macro`](crates/exos-macro) holds `view!`, `asset!`, the route
+  attributes, `#[model]` and `#[live]`. Depend on `exos`, which re-exports
+  them.
+- [`exos-build`](crates/exos-build) is the asset pipeline `asset!` calls while
+  your crate compiles: bundle CSS, bundle and minify JS, content-hash, embed.
+  There is no build script.
 
 The [guide](docs/guide.md) walks through the whole surface, and
 [`examples/files`](examples/files) exercises it in one page.

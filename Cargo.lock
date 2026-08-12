@@ -330,7 +330,6 @@ name = "exos"
 version = "0.1.0"
 dependencies = [
  "axum",
- "exos-build",
  "exos-macro",
  "futures-core",
  "inventory",
@@ -356,6 +355,7 @@ dependencies = [
 name = "exos-macro"
 version = "0.1.0"
 dependencies = [
+ "exos-build",
  "proc-macro2",
  "quote",
  "rstml",
@@ -374,7 +374,6 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "exos",
- "exos-build",
  "serde",
  "serde_json",
  "tokio",

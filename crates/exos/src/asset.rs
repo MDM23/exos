@@ -15,12 +15,29 @@ use axum::{
 };
 
 /// Where assets are mounted. Hashed names make the prefix arbitrary.
+///
+/// [`asset!`](crate::asset) bakes this into the URLs it returns, so the two
+/// have to agree. [`the_router_serves_what_the_macro_points_at`] checks that
+/// they do.
 pub(crate) const PREFIX: &str = "/_exos";
 
-/// One asset produced by [`exos_build`](https://docs.rs/exos-build).
+/// The URL of the client runtime, which every page has to load.
 ///
-/// Values are built by the generated table rather than by hand, which is why
-/// the fields are public.
+/// ```ignore
+/// view! { <script defer src={ exos::runtime() }></script> }
+/// ```
+///
+/// It ships inside this crate, so there is nothing to copy into a project and
+/// no version to keep in step.
+#[must_use]
+pub fn runtime() -> &'static str {
+    crate::asset!("js/exos.js")
+}
+
+/// One asset built by [`asset!`](crate::asset).
+///
+/// Values come from that macro rather than being written by hand, which is
+/// why the constructor takes everything at once.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Asset {
     name: &'static str,
@@ -30,7 +47,7 @@ pub struct Asset {
 }
 
 impl Asset {
-    /// Describes one built asset. Called by the generated table.
+    /// Describes one built asset. Called by [`asset!`](crate::asset).
     #[must_use]
     pub const fn new(
         name: &'static str,
@@ -65,7 +82,7 @@ impl Asset {
     }
 }
 
-/// A crate's assets, as registered by [`assets!`](crate::assets).
+/// The assets one [`asset!`](crate::asset) call site registered.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AssetSet(pub &'static [Asset]);
 
@@ -142,5 +159,17 @@ mod tests {
     #[test]
     fn the_url_carries_the_hash_so_it_can_be_cached_forever() {
         assert_eq!(STYLESHEET.url(), "/_exos/app-0123456789ab.css");
+    }
+
+    /// The macro bakes its own copy of the prefix into every URL it returns,
+    /// because it has to produce a literal. This is what stops the two copies
+    /// from drifting apart into a runtime 404.
+    #[test]
+    fn the_router_serves_what_the_macro_points_at() {
+        assert!(
+            runtime().starts_with(&format!("{PREFIX}/")),
+            "the macro returned {}, which this crate does not route",
+            runtime()
+        );
     }
 }

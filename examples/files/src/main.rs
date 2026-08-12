@@ -19,8 +19,6 @@ use crate::{
     view_model::{layout, row, selection_bar},
 };
 
-exos::assets!();
-
 /// The port the example listens on.
 const ADDRESS: &str = "127.0.0.1:3000";
 

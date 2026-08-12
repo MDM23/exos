@@ -13,8 +13,8 @@ pub(crate) fn layout(title: &str, path: &str, body: Markup) -> Page {
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>{ title }</title>
-                <link rel="stylesheet" href={ exos::asset("app.css") }>
-                <script defer src={ exos::asset("exos.js") }></script>
+                <link rel="stylesheet" href={ exos::asset!("css/app.css") }>
+                <script defer src={ exos::runtime() }></script>
             </head>
             <body>
                 <nav class="site-nav">

@@ -58,7 +58,7 @@ async fn the_runtime_is_served_and_cached_forever() {
     let response = exos::app()
         .oneshot(
             Request::builder()
-                .uri(exos::RUNTIME.url())
+                .uri(exos::runtime())
                 .body(Body::empty())
                 .expect("a valid request"),
         )
@@ -75,7 +75,24 @@ async fn the_runtime_is_served_and_cached_forever() {
     );
 }
 
+/// The URL is derived from the content, so two call sites cannot disagree
+/// about it, and the second one embeds nothing.
 #[tokio::test]
-async fn the_runtime_is_reachable_by_name() {
-    assert_eq!(exos::asset("exos.js"), exos::RUNTIME.url());
+async fn one_file_referenced_twice_gives_one_url() {
+    let once = exos::asset!("js/exos.js");
+    let twice = exos::asset!("js/exos.js");
+
+    assert_eq!(once, twice);
+    assert_eq!(status(once, "GET").await, StatusCode::OK);
+}
+
+/// Editing a plugin has to change the runtime's URL, or a browser holding a
+/// year-long cache entry would never see the change.
+#[tokio::test]
+async fn the_runtime_url_carries_a_content_hash() {
+    let url = exos::runtime();
+
+    assert!(url.starts_with("/_exos/exos-"), "{url}");
+    assert!(url.ends_with(".js"), "{url}");
+    assert_ne!(url, "/_exos/exos.js");
 }
