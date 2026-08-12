@@ -160,6 +160,13 @@ h1 {
   opacity: 0.6;
 }
 
+/* A round trip slow enough to notice. The runtime draws the bar and reads
+   these, so a theme sets values rather than rules. */
+:root {
+  --exos-progress-color: var(--accent);
+  --exos-progress-height: 3px;
+}
+
 /* -------------------------------------------------------------------------- */
 /*                               LIVE PRESENCE                                */
 /* -------------------------------------------------------------------------- */

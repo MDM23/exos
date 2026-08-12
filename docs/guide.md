@@ -378,6 +378,55 @@ copy, so the next patch corrects it either way.
 Signals are for state the server does not own: a row pending deletion, a modal,
 a draft input, a selection.
 
+### While the server is working
+
+A navigation still outstanding after 150ms draws a bar across the top of the
+window, and one that answers sooner draws nothing at all: a bar that flashes at
+every trip reads as a rendering fault rather than as progress.
+
+Actions do not draw it. The element a click came from carries `aria-busy` for
+the duration, and a disabled button, a spinner or a skeleton says where the
+work is happening better than a bar at the top of the window can.
+
+What the bar looks like is CSS. The runtime writes how far along it is and the
+rest is custom properties, so a theme sets values rather than rules:
+
+| property | default |
+| --- | --- |
+| `--exos-progress-color` | `currentColor` |
+| `--exos-progress-height` | `2px` |
+| `--exos-progress-shadow` | `none` |
+| `--exos-progress-z-index` | `9999` |
+| `--exos-progress-duration` | `200ms`, how fast it advances |
+| `--exos-progress-fade` | `200ms`, how long it takes to go |
+
+The defaults are one rule prepended to `<head>`, so a page rule of the same
+specificity wins by coming later and nothing has to reach for `!important`.
+The bar itself carries `--exos-progress-value`, a number between 0 and 1, so a
+theme that wants something other than a bar still has the figure to hand.
+
+The threshold, and whether there is a bar at all, is markup on the document
+root:
+
+```html
+<html data-exos-progress="off" data-exos-progress-delay="300">
+```
+
+Every round trip is announced on `document` as `exos:busy` and `exos:idle`,
+actions included, with `detail.kind` saying which it was. The bar reads that
+pair and ignores everything that is not a navigation, and an indicator of your
+own reads the same one:
+
+```js
+document.addEventListener("exos:busy", (event) => {
+    if (event.detail.kind === "request") showSkeleton();
+});
+```
+
+For work the runtime does not make, a fetch of your own or a long computation,
+`window.exos.progress.start()` and `.done()` drive the bar directly, so a
+`done()` in a `finally` keeps them balanced.
+
 ## Effects
 
 One type describes what the client should do, so adding a variant later changes

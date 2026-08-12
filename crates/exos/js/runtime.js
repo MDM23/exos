@@ -488,6 +488,14 @@
     // named payload puts the dependency in the call and in the handler's
     // signature, where it can be typed.
 
+    // Every round trip is announced, so an indicator can show one that outlives
+    // what a user waits for without noticing. Always balanced: `idle` is
+    // dispatched from a `finally`, or a request that failed would leave the
+    // page looking busy forever.
+    function announce(step, detail) {
+        document.dispatchEvent(new CustomEvent(`exos:${step}`, { detail }));
+    }
+
     async function request(method, url, el, data) {
         const init = { method, headers: { "X-Exos": "true" } };
         let target = url;
@@ -511,6 +519,7 @@
         }
 
         el?.setAttribute("aria-busy", "true");
+        announce("busy", { kind: "request", method, url });
 
         try {
             const response = await fetch(target, init);
@@ -541,6 +550,7 @@
             return response;
         } finally {
             el?.removeAttribute("aria-busy");
+            announce("idle", { kind: "request", method, url });
         }
     }
 
@@ -793,6 +803,8 @@
     window.addEventListener("popstate", () => navigate(location.href, false));
 
     async function navigate(url, push) {
+        announce("busy", { kind: "navigate", url });
+
         try {
             const response = await fetch(url, { headers: { "X-Exos-Navigate": "true" } });
             const next = new DOMParser().parseFromString(await response.text(), "text/html");
@@ -804,6 +816,8 @@
         } catch (error) {
             console.error("[exos] navigation failed, falling back to a load:", error);
             location.assign(url);
+        } finally {
+            announce("idle", { kind: "navigate", url });
         }
     }
 
