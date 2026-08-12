@@ -876,11 +876,19 @@
 
         openStream();
 
-        const topics = live.map((el) => [el.id, el.dataset.token]);
-        const encoded = JSON.stringify(topics);
+        // A set, not a list. The server keeps these in a hash set, so neither
+        // the order the fragments sit in the document nor the same fragment
+        // appearing twice on the page changes what this connection watches, and
+        // the comparison below has to agree. Canonicalising is what makes a
+        // drag silent: reordering a row is a real DOM move, so the pairs come
+        // back in a new order, and comparing them in document order posted an
+        // identical subscription on every pointer move.
+        const tokens = new Map(live.map((el) => [el.id, el.dataset.token]));
+        const topics = [...tokens.keys()].sort().map((id) => [id, tokens.get(id)]);
 
         // The visible set usually survives a patch unchanged, and re-sending
         // it would be pure chatter.
+        const encoded = JSON.stringify(topics);
         if (encoded === subscribed) return;
         subscribed = encoded;
 
