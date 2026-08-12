@@ -114,4 +114,4 @@ carried a real application yet. Known gaps, roughly in priority order:
 
 ## License
 
-MIT or Apache-2.0, at your option.
+[MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.

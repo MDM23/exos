@@ -66,12 +66,11 @@ pub fn asset(input: TokenStream) -> TokenStream {
 /// ```
 ///
 /// Static parts become string literals in the binary, so nothing is parsed at
-/// runtime. Interpolated values go through [`Render`](exos::Render) and are
-/// escaped; `Markup` is the only exception.
+/// runtime. Interpolated values go through `exos::Render` and are escaped;
+/// `Markup` is the only exception.
 ///
-/// An attribute written as a braced block contributes
-/// [`Attributes`](exos::Attributes), which is how handlers and signal handles
-/// attach to an element.
+/// An attribute written as a braced block contributes `exos::Attributes`,
+/// which is how handlers and signal handles attach to an element.
 #[proc_macro]
 pub fn view(input: TokenStream) -> TokenStream {
     view::expand(input.into()).into()
@@ -143,9 +142,8 @@ pub fn model(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// ```
 ///
 /// The function keeps its signature; only its return type changes, from
-/// `Markup` to [`Fragment`](exos::Fragment). That one value does both jobs:
-/// put it in a template to render it, or hand it to
-/// [`publish`](exos::publish) to broadcast it.
+/// `Markup` to `exos::Fragment`. That one value does both jobs: put it in a
+/// template to render it, or hand it to `exos::publish` to broadcast it.
 ///
 /// The topic is derived from the function name and the argument values, so the
 /// server owns it end to end and there is no name to invent, keep in step, or
