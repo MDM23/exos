@@ -544,16 +544,31 @@ requester.
 The rendered wrapper carries a token only the server can produce:
 
 ```html
-<exos-live style="display:contents" id="live-presence-cab0087c" data-token="e80842d2">
+<exos-live style="display:contents" id="live-presence-cab0087c" data-token="e80842d24f1b7a95c3e0d6118f27ba43">
 ```
 
 Since the server only renders fragments it decided you may see, being able to
 subscribe is the authorization. There is no second permission check to write
 and none to forget, and a subscription with a forged token receives nothing.
 
-The current token uses `DefaultHasher`, which is not a MAC. Before this guards
-anything real it needs HMAC-SHA256 with a configured key, bound to a session so
-it proves *this* viewer was served the fragment.
+The token is HMAC-SHA256 truncated to 128 bits, under one configured key:
+
+```rust
+exos::keys(exos::Keys::from_secret(std::env::var("EXOS_SECRET")?));
+```
+
+Everything signed derives its own subkey from that secret by label, so the live
+token and whatever is signed later are independent, and none of them is the
+secret. Unconfigured, exos mints a random key per process and says so on
+stderr: right for `cargo run`, where a restart drops every stream anyway, and
+wrong for a deploy, where two instances would never agree and a restart would
+invalidate every token in flight.
+
+What the token proves is that this server rendered this topic, which is not yet
+that *this viewer* was served it. Anywhere an id and token escape a page
+together, by a screenshot or a shared browser profile, the holder can
+subscribe. Binding the tag to a session id is what closes that, and needs a
+session to bind to.
 
 ## What exos does not do
 

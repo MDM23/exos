@@ -95,10 +95,10 @@ The [guide](docs/guide.md) walks through the whole surface, and
 Early. The shape is settled and the pieces work together, but this has not
 carried a real application yet. Known gaps, roughly in priority order:
 
-- **Live tokens are not a MAC.** `Topic::token` uses `DefaultHasher`, which is
-  not a cryptographic primitive. Before it guards anything real it wants
-  HMAC-SHA256 with a configured key, bound to a session so it proves *this*
-  viewer was served the fragment.
+- **Live tokens are not bound to a viewer.** `Topic::token` is HMAC-SHA256 under
+  the key `exos::keys` configures, so it proves this server rendered the
+  fragment. It does not prove *this* viewer was served it, which needs a session
+  to bind the tag to.
 - **No form validation API.** The `Effect` shape is right for it, errors as
   signals reaching only the requester, but the way rules are expressed is not
   designed.

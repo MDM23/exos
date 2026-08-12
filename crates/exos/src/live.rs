@@ -39,17 +39,10 @@
 //! inside one whether or not a request is being served: a fragment's arguments
 //! are its whole input.
 
-use core::{
-    hash::{Hash, Hasher},
-    time::Duration,
-};
-use std::{
-    collections::hash_map::DefaultHasher,
-    sync::OnceLock,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use core::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
 
-use crate::{Markup, Render, escape_into};
+use crate::{Markup, Render, escape_into, keys};
 
 mod stream;
 
@@ -102,51 +95,27 @@ impl Topic {
     /// are both guessable, so the id alone would let anyone subscribe to
     /// anyone's fragment. The token is what makes a subscription unforgeable:
     /// it can only be obtained by being served the fragment.
+    ///
+    /// HMAC-SHA256 under the key [`keys`](crate::keys) configures, truncated
+    /// to 128 bits. It proves the server rendered this topic, which is not yet
+    /// the same as proving it rendered it *for this viewer*: anywhere an id and
+    /// token escape a page together, by a screenshot or a shared profile, the
+    /// holder can subscribe. Binding the tag to a session id is what closes
+    /// that, and needs a session to bind to.
     #[must_use]
     pub fn token(&self) -> String {
-        let mut hasher = DefaultHasher::new();
-        secret().hash(&mut hasher);
-        self.0.hash(&mut hasher);
-
-        format!("{:016x}", hasher.finish())
+        keys::tag(LIVE_TOKEN, self.0.as_bytes())
     }
 
     /// Whether `token` was produced for this topic by this server.
     #[must_use]
     pub fn verify(&self, token: &str) -> bool {
-        // Not constant-time. A timing oracle here leaks a token for a topic
-        // the attacker already knows the id of, and the real fix is a proper
-        // MAC; see the note on `secret`.
-        self.token() == token
+        keys::verify(LIVE_TOKEN, self.0.as_bytes(), token)
     }
 }
 
-/// The process-wide signing secret.
-///
-/// Regenerated on every start, which is the right default: a restart drops
-/// every stream anyway, so no token outlives the process that minted it.
-///
-/// This is a stand-in for a MAC. [`DefaultHasher`] is not a cryptographic
-/// primitive and is not keyed the way HMAC is. Before this guards anything
-/// real it wants HMAC-SHA256 with a configured key, and the token bound to a
-/// session so it proves *this* viewer was served the fragment rather than
-/// merely that somebody was.
-fn secret() -> u64 {
-    static SECRET: OnceLock<u64> = OnceLock::new();
-
-    *SECRET.get_or_init(|| {
-        let mut hasher = DefaultHasher::new();
-
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or(Duration::ZERO)
-            .as_nanos()
-            .hash(&mut hasher);
-
-        std::process::id().hash(&mut hasher);
-        hasher.finish()
-    })
-}
+/// The label the live token derives its subkey under.
+const LIVE_TOKEN: &str = "live-token";
 
 // -----------------------------------------------------------------------------
 //                                  FRAGMENTS

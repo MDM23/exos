@@ -28,6 +28,7 @@ mod context;
 mod discover;
 mod effect;
 mod js;
+mod keys;
 mod live;
 mod render;
 mod response;
@@ -44,6 +45,7 @@ pub use crate::{
     discover::{AssetSetEntry, RouteEntry, app},
     effect::{Effect, Step},
     js::{IntoJs, IntoPayload, Js, append, attr_now, call, emit, quote_js, record, when},
+    keys::{Keys, keys},
     live::{Fragment, Topic, connection_count, publish},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
