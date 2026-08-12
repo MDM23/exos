@@ -19,8 +19,47 @@ use crate::{
     view_model::{layout, row, selection_bar},
 };
 
+// -----------------------------------------------------------------------------
+//                                  ENTRY POINT
+// -----------------------------------------------------------------------------
+
 /// The port the example listens on.
 const ADDRESS: &str = "127.0.0.1:3000";
+
+#[tokio::main]
+async fn main() -> Result<(), std::io::Error> {
+    boot();
+    simulate_presence();
+
+    let listener = tokio::net::TcpListener::bind(ADDRESS).await?;
+    println!("listening on http://{ADDRESS}");
+
+    axum::serve(listener, exos::app()).await
+}
+
+/// Seeds the application data. Separate from `main` so tests can call it.
+fn boot() {
+    exos::provide(Files::seed());
+    exos::provide(Presence::seed());
+}
+
+/// Flips presence on a timer, so the example has something to watch.
+fn simulate_presence() {
+    tokio::spawn(async {
+        let mut user = 1_u32;
+
+        loop {
+            tokio::time::sleep(core::time::Duration::from_secs(3)).await;
+            data::<Presence>().toggle(user);
+            publish(&presence(user));
+            user = user % 3 + 1;
+        }
+    });
+}
+
+// -----------------------------------------------------------------------------
+//                                    MODELS
+// -----------------------------------------------------------------------------
 
 /// What the selection bar holds and what a batch action sends.
 ///
@@ -43,6 +82,10 @@ pub(crate) struct Reorder {
     /// The row ids, in the order the viewer dragged them into.
     pub(crate) order: Vec<String>,
 }
+
+// -----------------------------------------------------------------------------
+//                                LIVE FRAGMENTS
+// -----------------------------------------------------------------------------
 
 /// One user's presence dot, which follows the server on its own.
 #[exos::live]
@@ -75,6 +118,10 @@ pub(crate) fn file_list() -> exos::Markup {
         </ul>
     }
 }
+
+// -----------------------------------------------------------------------------
+//                                     PAGES
+// -----------------------------------------------------------------------------
 
 #[exos::get("/")]
 async fn index() -> Page {
@@ -123,6 +170,10 @@ async fn about() -> Page {
         },
     )
 }
+
+// -----------------------------------------------------------------------------
+//                                   ACTIONS
+// -----------------------------------------------------------------------------
 
 #[exos::post("/files/{id}/favorite")]
 async fn favorite(Path(id): Path<u32>, Json(selection): Json<Selection>) -> Effect {
@@ -179,36 +230,9 @@ async fn toggle_presence(Path(id): Path<u32>) -> Effect {
     Effect::none()
 }
 
-/// Seeds the application data. Separate from `main` so tests can call it.
-fn boot() {
-    exos::provide(Files::seed());
-    exos::provide(Presence::seed());
-}
-
-/// Flips presence on a timer, so the example has something to watch.
-fn simulate_presence() {
-    tokio::spawn(async {
-        let mut user = 1_u32;
-
-        loop {
-            tokio::time::sleep(core::time::Duration::from_secs(3)).await;
-            data::<Presence>().toggle(user);
-            publish(&presence(user));
-            user = user % 3 + 1;
-        }
-    });
-}
-
-#[tokio::main]
-async fn main() -> Result<(), std::io::Error> {
-    boot();
-    simulate_presence();
-
-    let listener = tokio::net::TcpListener::bind(ADDRESS).await?;
-    println!("listening on http://{ADDRESS}");
-
-    axum::serve(listener, exos::app()).await
-}
+// -----------------------------------------------------------------------------
+//                                     TESTS
+// -----------------------------------------------------------------------------
 
 #[cfg(test)]
 #[expect(

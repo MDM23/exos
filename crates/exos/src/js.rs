@@ -30,6 +30,10 @@ use core::{cell::RefCell, fmt, marker::PhantomData};
 
 mod combinator;
 
+// -----------------------------------------------------------------------------
+//                                  EXPRESSIONS
+// -----------------------------------------------------------------------------
+
 /// A JavaScript expression yielding a `T` in the browser.
 ///
 /// `T` is a claim about what the expression evaluates to. For everything this
@@ -106,6 +110,10 @@ impl<T: ?Sized> fmt::Display for Js<T> {
     }
 }
 
+// -----------------------------------------------------------------------------
+//                                  CONVERSIONS
+// -----------------------------------------------------------------------------
+
 /// Anything that can stand in for a client-side `T`.
 ///
 /// This is what lets `gone.set(true)` and `gone.set(other.get())` both work: a
@@ -132,6 +140,10 @@ pub trait IntoPayload<T> {
     /// A JavaScript object expression.
     fn payload(&self) -> String;
 }
+
+// -----------------------------------------------------------------------------
+//                                 THE RECORDER
+// -----------------------------------------------------------------------------
 
 thread_local! {
     /// A stack, so a handler nested inside a [`when`] branch records into its
@@ -195,6 +207,10 @@ pub fn when(condition: impl IntoJs<bool>, body: impl FnOnce(())) {
     ));
 }
 
+// -----------------------------------------------------------------------------
+//                                  STATEMENTS
+// -----------------------------------------------------------------------------
+
 /// A speculative DOM write, for optimistic updates over server-owned state.
 ///
 /// Deliberately not a signal. Mirroring server state into a signal gives one
@@ -255,6 +271,10 @@ pub fn call(method: &str, url: &str, payload: Option<String>) {
 pub fn quote_js(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| String::from("\"\""))
 }
+
+// -----------------------------------------------------------------------------
+//                                     TESTS
+// -----------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

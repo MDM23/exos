@@ -20,13 +20,13 @@
 (() => {
     "use strict";
 
-    // ------------------------------------------------------------------
-    // Reactivity
-    //
+    // -------------------------------------------------------------------------
+    //                                REACTIVITY
+    // -------------------------------------------------------------------------
+
     // Push-based: reading a signal inside an effect subscribes that effect,
     // and writing re-runs subscribers on a microtask so a handler that writes
     // several signals causes one DOM pass rather than several.
-    // ------------------------------------------------------------------
 
     const store = new Map(); // name -> { value, subscribers: Set<Effect> }
     const queue = new Set();
@@ -109,9 +109,10 @@
         effect.sources.clear();
     }
 
-    // ------------------------------------------------------------------
-    // Scopes
-    //
+    // -------------------------------------------------------------------------
+    //                                  SCOPES
+    // -------------------------------------------------------------------------
+
     // An element that declares signals opens a scope, and its id names it. A
     // row already needs an id for morphing to key on, so a hundred rows each
     // holding a `fav` signal need no unique names invented for them: inside
@@ -120,7 +121,6 @@
     // Resolution walks up and takes the nearest scope that actually declares
     // the name, so an inner scope shadows an outer one and anything undeclared
     // is global. That is lexical scoping with the DOM as the tree.
-    // ------------------------------------------------------------------
 
     const scopes = new WeakMap(); // element -> scope id
     const initialized = new WeakSet();
@@ -162,12 +162,12 @@
     // The global namespace, for plugins and for the console.
     const $ = namespace(document.documentElement);
 
-    // ------------------------------------------------------------------
-    // Expressions
-    //
+    // -------------------------------------------------------------------------
+    //                                EXPRESSIONS
+    // -------------------------------------------------------------------------
+
     // Compiled once per source string and cached, so the same handler on a
     // thousand rows costs one Function.
-    // ------------------------------------------------------------------
 
     const compiled = new Map();
 
@@ -254,12 +254,12 @@
         );
     }
 
-    // ------------------------------------------------------------------
-    // Bindings
-    //
+    // -------------------------------------------------------------------------
+    //                                 BINDINGS
+    // -------------------------------------------------------------------------
+
     // Each is an effect, and the element owns its effects so they can be
     // disposed when it leaves the DOM.
-    // ------------------------------------------------------------------
 
     const bound = new WeakMap(); // element -> Effect[]
     const CHECKABLE = new Set(["checkbox", "radio"]);
@@ -410,12 +410,12 @@
 
     observer.observe(document.documentElement, { childList: true, subtree: true });
 
-    // ------------------------------------------------------------------
-    // Events
-    //
+    // -------------------------------------------------------------------------
+    //                                  EVENTS
+    // -------------------------------------------------------------------------
+
     // Pure delegation, and the reason a row the server renders five seconds
     // from now needs no initialization.
-    // ------------------------------------------------------------------
 
     const DELEGATED = [
         "change", "click", "dblclick", "focusin", "focusout",
@@ -475,9 +475,10 @@
         });
     }
 
-    // ------------------------------------------------------------------
-    // Requests
-    //
+    // -------------------------------------------------------------------------
+    //                                 REQUESTS
+    // -------------------------------------------------------------------------
+
     // An action sends what it is handed and nothing else:
     //
     //     post('/files/reorder', { order: $._order })
@@ -486,7 +487,6 @@
     // inputs invisible and let a renamed signal break a handler silently; a
     // named payload puts the dependency in the call and in the handler's
     // signature, where it can be typed.
-    // ------------------------------------------------------------------
 
     async function request(method, url, el, data) {
         const init = { method, headers: { "X-Exos": "true" } };
@@ -544,12 +544,12 @@
         }
     }
 
-    // ------------------------------------------------------------------
-    // Effects
-    //
+    // -------------------------------------------------------------------------
+    //                                  EFFECTS
+    // -------------------------------------------------------------------------
+
     // An action answers with server-sent-event frames, the same format the
     // live stream uses, so this is the only place that interprets either.
-    // ------------------------------------------------------------------
 
     async function consume(response) {
         const reader = response.body.getReader();
@@ -632,14 +632,15 @@
         }
     }
 
-    // ------------------------------------------------------------------
-    // Patching
-    // ------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    //                                 PATCHING
+    // -------------------------------------------------------------------------
 
     // A patch is plain HTML. Every top-level element with an id is morphed
     // over the element that already has that id. No swap strategies and no
     // target selectors on the client: the server names what it is replacing by
     // giving it an id, which it had to do anyway.
+
     function applyPatch(html) {
         const template = document.createElement("template");
         template.innerHTML = html;
@@ -768,12 +769,12 @@
         }
     }
 
-    // ------------------------------------------------------------------
-    // Navigation
-    //
+    // -------------------------------------------------------------------------
+    //                                NAVIGATION
+    // -------------------------------------------------------------------------
+
     // The same fetch-and-morph machinery applied to whole documents, so the
     // shell keeps its identity and anything live inside it survives.
-    // ------------------------------------------------------------------
 
     document.addEventListener("click", (ev) => {
         if (ev.defaultPrevented || ev.button !== 0) return;
@@ -806,9 +807,10 @@
         }
     }
 
-    // ------------------------------------------------------------------
-    // Live fragments
-    //
+    // -------------------------------------------------------------------------
+    //                              LIVE FRAGMENTS
+    // -------------------------------------------------------------------------
+
     // One stream per tab, opened the first time an <exos-live> appears and
     // kept for the life of the page. The tab tells the server which fragments
     // it currently has on screen, and gets back patches for those and nothing
@@ -818,7 +820,6 @@
     // on the element and hands them straight back, which is also why there is
     // no authorization to do here: the token is the proof, and it could only
     // have come from being served the fragment.
-    // ------------------------------------------------------------------
 
     const CONNECTION = crypto.randomUUID();
     let source = null;
@@ -892,9 +893,9 @@
 
     document.addEventListener("exos:mutated", scheduleSync);
 
-    // ------------------------------------------------------------------
-    // Public surface, for plugins and for the console
-    // ------------------------------------------------------------------
+    // -------------------------------------------------------------------------
+    //                              PUBLIC SURFACE
+    // -------------------------------------------------------------------------
 
     window.exos = {
         // The global signal namespace. Reads and writes here resolve from the

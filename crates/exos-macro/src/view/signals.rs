@@ -17,6 +17,10 @@ use proc_macro2::{TokenStream, TokenTree};
 use quote::quote;
 use rstml::node::{Node, NodeAttribute, NodeElement};
 
+// -----------------------------------------------------------------------------
+//                                  COLLECTION
+// -----------------------------------------------------------------------------
+
 /// The attribute an element declares its signals with.
 pub(super) const DECLARATION: &str = "data-signals";
 
@@ -184,6 +188,10 @@ fn scan(source: &str, found: &mut Vec<String>) {
     }
 }
 
+// -----------------------------------------------------------------------------
+//                                DECLARED NAMES
+// -----------------------------------------------------------------------------
+
 /// Names the element declares itself, which are never inferred over.
 fn declared<C: rstml::node::CustomNode>(element: &NodeElement<C>) -> Vec<String> {
     for attribute in element.attributes() {
@@ -230,6 +238,10 @@ fn keys(tokens: &TokenStream) -> Vec<String> {
     names
 }
 
+// -----------------------------------------------------------------------------
+//                                   EMISSION
+// -----------------------------------------------------------------------------
+
 /// `{"a":null,"b":null}`, escaped for an attribute.
 pub(super) fn static_declaration(names: &[String]) -> String {
     let body = names
@@ -269,6 +281,10 @@ pub(super) fn emit_declaration(
         }
     });
 }
+
+// -----------------------------------------------------------------------------
+//                                     TESTS
+// -----------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

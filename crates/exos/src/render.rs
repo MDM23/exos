@@ -7,6 +7,10 @@
 
 use core::fmt::{self, Display, Write as _};
 
+// -----------------------------------------------------------------------------
+//                                    MARKUP
+// -----------------------------------------------------------------------------
+
 /// A rendered fragment of HTML.
 ///
 /// This is what `view!` produces, and the only type that renders without
@@ -52,6 +56,10 @@ impl From<String> for Markup {
     }
 }
 
+// -----------------------------------------------------------------------------
+//                                    TRAITS
+// -----------------------------------------------------------------------------
+
 /// A value that can be written into markup.
 ///
 /// Implementations other than [`Markup`] escape, so interpolating a value into
@@ -90,6 +98,10 @@ pub trait AttributeValue {
     /// The value to render, or [`None`] to omit the attribute entirely.
     fn attribute_value(&self) -> Option<Self::Output<'_>>;
 }
+
+// -----------------------------------------------------------------------------
+//                                IMPLEMENTATIONS
+// -----------------------------------------------------------------------------
 
 /// Escapes into an HTML text or double-quoted attribute context.
 ///
@@ -220,6 +232,10 @@ always_present!(
     Markup, String, bool, char, f32, f64, i8, i16, i32, i64, isize, str, u8, u16, u32, u64, usize
 );
 
+// -----------------------------------------------------------------------------
+//                                     FLAG
+// -----------------------------------------------------------------------------
+
 /// An HTML boolean attribute: present when true, absent when false.
 ///
 /// A bare [`bool`] renders the text `"true"` or `"false"`, which is what a
@@ -250,6 +266,10 @@ impl AttributeValue for Flag {
         self.0.then_some(self)
     }
 }
+
+// -----------------------------------------------------------------------------
+//                                     TESTS
+// -----------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

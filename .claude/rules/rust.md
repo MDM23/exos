@@ -88,8 +88,13 @@ tests` item itself.
 - Internals are `pub(crate)`. `unreachable_pub` keeps that honest.
 - Public paths are part of the API: moving a type between private modules must
   not change how callers name it.
-- Order inside a file: crate docs, attributes, imports, public types, public
-  impls, private helpers, `mod tests`.
+- Order inside a file: crate docs, attributes, imports, `main` in a binary
+  crate, public types, public impls, private helpers, `mod tests`. Whoever
+  opens a binary lands on the entry point instead of scrolling for it.
+- Constants and statics sit directly above the item that uses them, or in the
+  preamble right after the imports when the whole file uses them.
+- Files long enough to navigate rather than read get section comments; see
+  [section-comments.md](section-comments.md).
 - Cargo features are additive and never remove items. Name them for what they
   add (`json`, not `with-json` or `use-json`), and annotate gated items with
   `#[cfg_attr(docsrs, doc(cfg(...)))]`.

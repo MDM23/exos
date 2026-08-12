@@ -18,6 +18,10 @@ pub use crate::attributes::{
     helper::{Attr, Bind, BindKind, Class, attr, bind, class, preserve, prop, show, text},
 };
 
+// -----------------------------------------------------------------------------
+//                                  ATTRIBUTES
+// -----------------------------------------------------------------------------
+
 /// The attributes an element has collected from its blocks.
 #[derive(Debug, Default)]
 pub struct Attributes {
@@ -118,6 +122,10 @@ impl Attributes {
     }
 }
 
+// -----------------------------------------------------------------------------
+//                                INTO ATTRIBUTES
+// -----------------------------------------------------------------------------
+
 /// Something that can be written into an element's attributes.
 ///
 /// Implemented by every helper here, and by signal handles, which is what
@@ -158,6 +166,10 @@ tuple_attributes!(A, B, C);
 tuple_attributes!(A, B, C, D);
 tuple_attributes!(A, B, C, D, E);
 tuple_attributes!(A, B, C, D, E, F);
+
+// -----------------------------------------------------------------------------
+//                                 SIGNAL SCOPES
+// -----------------------------------------------------------------------------
 
 /// A set of signals declared on an element, rendered as `data-signals`.
 ///
@@ -227,6 +239,13 @@ macro_rules! signals {
     };
 }
 
+// -----------------------------------------------------------------------------
+//                               INTERNAL HELPERS
+// -----------------------------------------------------------------------------
+
+// Shared by the helper and handler modules, which is the only reason these are
+// not private to one of them.
+
 /// Records a script and returns it, for helpers that build one.
 pub(crate) fn recorded(body: impl FnOnce()) -> String {
     record(body)
@@ -236,6 +255,10 @@ pub(crate) fn recorded(body: impl FnOnce()) -> String {
 pub(crate) fn source<T>(expression: Js<T>) -> String {
     expression.into_source()
 }
+
+// -----------------------------------------------------------------------------
+//                                     TESTS
+// -----------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

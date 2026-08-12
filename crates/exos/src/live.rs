@@ -52,6 +52,10 @@ pub use crate::live::stream::{connection_count, publish};
 
 pub(crate) use crate::live::stream::routes;
 
+// -----------------------------------------------------------------------------
+//                                    TOPICS
+// -----------------------------------------------------------------------------
+
 /// The identity of a live fragment: a function and the arguments it was called
 /// with, reduced to something a DOM id can be.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -139,6 +143,10 @@ fn secret() -> u64 {
     })
 }
 
+// -----------------------------------------------------------------------------
+//                                  FRAGMENTS
+// -----------------------------------------------------------------------------
+
 /// A rendered live fragment: its markup, plus the topic that keeps it fresh.
 ///
 /// The same value is used two ways, which is the point. Put it in a template
@@ -187,6 +195,10 @@ impl Render for Fragment {
         out.push_str(self.to_markup().as_str());
     }
 }
+
+// -----------------------------------------------------------------------------
+//                                     TESTS
+// -----------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
