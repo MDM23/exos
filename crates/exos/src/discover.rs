@@ -116,4 +116,7 @@ pub fn app() -> Router {
         })
         .merge(crate::asset_routes(asset_sets()))
         .merge(crate::live::routes())
+        // Last, so that it wraps the merges above rather than only the routes
+        // discovered before it: the stream and the assets are requests too.
+        .layer(axum::middleware::from_fn(crate::scope::layer))
 }

@@ -33,6 +33,11 @@
 //! When content depends on the viewer, either make the viewer part of the
 //! topic, as in `inbox_count(user_id)`, or answer with an
 //! [`Effect`](crate::Effect), which reaches only the requester.
+//!
+//! The invariant is enforced rather than asked for. A fragment body renders
+//! through [`detached`](crate::detached), so [`scope`](crate::scope) panics
+//! inside one whether or not a request is being served: a fragment's arguments
+//! are its whole input.
 
 use core::{
     hash::{Hash, Hasher},

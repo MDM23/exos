@@ -31,6 +31,7 @@ mod js;
 mod live;
 mod render;
 mod response;
+mod scope;
 mod signal;
 
 pub use crate::{
@@ -46,6 +47,7 @@ pub use crate::{
     live::{Fragment, Topic, connection_count, publish},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
+    scope::{Scope, detached, scope, with_scope},
     signal::{Field, Signal},
 };
 

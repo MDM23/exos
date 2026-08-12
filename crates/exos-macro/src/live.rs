@@ -55,7 +55,12 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         #visibility #signature {
             // Borrowed, so the arguments stay usable in the body below.
             let __topic = ::exos::Topic::new(#label, &(#(&#arguments,)*));
-            let __markup: ::exos::Markup = (move || #body)();
+
+            // Detached, so the body cannot read the request scope. A fragment
+            // renders again from whatever publishes it, where there is no
+            // request, and content that differed between the two would break
+            // the topic invariant.
+            let __markup: ::exos::Markup = ::exos::detached(move || #body);
 
             ::exos::Fragment::new(__topic, __markup)
         }
@@ -80,6 +85,14 @@ mod tests {
 
         assert!(expanded.contains(":: exos :: Fragment"));
         assert!(expanded.contains("Topic :: new"));
+    }
+
+    /// The topic invariant depends on a fragment rendering the same way inline
+    /// and on publish, so the body is denied the one thing that differs.
+    #[test]
+    fn the_body_renders_detached_from_the_request_scope() {
+        let expanded = expand_ok("fn presence(user: u32) -> Markup { todo!() }");
+        assert!(expanded.contains(":: exos :: detached"));
     }
 
     #[test]
