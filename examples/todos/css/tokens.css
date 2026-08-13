@@ -1,0 +1,30 @@
+/* Design tokens. Imported by app.css and inlined at build time. */
+
+:root {
+  color-scheme: light dark;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --bg: light-dark(#f5f5f5, #16161a);
+  --surface: light-dark(#ffffff, #1e1e24);
+  --border: light-dark(#ededed, #2e2e37);
+
+  --text: light-dark(#4d4d4d, #ececf1);
+  --text-subtle: light-dark(#777783, #a0a0b0);
+  --text-faint: light-dark(#bfbfbf, #6b6b7b);
+
+  --accent: light-dark(#af2f2f, #e06c6c);
+  --accent-subtle: light-dark(#af2f2f26, #e06c6c26);
+
+  --done: light-dark(#5dc2af, #5dc2af);
+
+  --space-xs: 0.25rem;
+  --space-s: 0.5rem;
+  --space-m: 1rem;
+  --space-l: 2rem;
+
+  --radius: 0.25rem;
+
+  --shadow: 0 2px 4px light-dark(rgb(0 0 0 / 20%), rgb(0 0 0 / 45%)),
+    0 25px 50px light-dark(rgb(0 0 0 / 10%), rgb(0 0 0 / 35%));
+}

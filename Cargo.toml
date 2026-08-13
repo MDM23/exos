@@ -1,5 +1,11 @@
 [workspace]
-members = ["crates/exos", "crates/exos-build", "crates/exos-macro", "examples/files"]
+members = [
+  "crates/exos",
+  "crates/exos-build",
+  "crates/exos-macro",
+  "examples/files",
+  "examples/todos",
+]
 resolver = "3"
 
 [workspace.package]

@@ -1,0 +1,279 @@
+/* The example's styles. @import is resolved at build time, so this file and
+   everything it pulls in ship as one hashed stylesheet. */
+
+@import url("tokens.css");
+
+/* -------------------------------------------------------------------------- */
+/*                               THE PAGE SHELL                               */
+/* -------------------------------------------------------------------------- */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: var(--space-l) var(--space-m);
+  font-family: var(--font-sans);
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.4;
+}
+
+.todoapp {
+  max-inline-size: 34rem;
+  margin-inline: auto;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  /* Double-clicking a title opens the editor, and a browser's own answer to a
+     double click is to select the word under it. The fields below opt back
+     in, because the text in those is the text you came to edit. */
+  user-select: none;
+}
+
+.info {
+  margin-block-start: var(--space-l);
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.info p {
+  margin-block: var(--space-xs);
+}
+
+/* An action in flight. The runtime sets aria-busy for the duration, so this
+   needs no class bookkeeping and is announced as well as shown. */
+[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+/* A round trip slow enough to notice. The runtime draws the bar and reads
+   these, so a theme sets values rather than rules. */
+:root {
+  --exos-progress-color: var(--accent);
+  --exos-progress-height: 3px;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                THE NEW TODO                                */
+/* -------------------------------------------------------------------------- */
+
+.header h1 {
+  margin: 0;
+  padding-block: var(--space-m);
+  font-size: 5rem;
+  font-weight: 200;
+  color: var(--accent);
+  text-align: center;
+}
+
+.new-todo {
+  inline-size: 100%;
+  border: 0;
+  border-block-start: 1px solid var(--border);
+  padding: var(--space-m) var(--space-m) var(--space-m) 3.5rem;
+  font: inherit;
+  font-size: 1.5rem;
+  color: inherit;
+  background: transparent;
+  user-select: text;
+}
+
+.new-todo::placeholder {
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+.new-todo:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  THE LIST                                  */
+/* -------------------------------------------------------------------------- */
+
+.main {
+  border-block-start: 1px solid var(--border);
+}
+
+.mark-all {
+  display: flex;
+  align-items: center;
+  gap: var(--space-m);
+  padding: var(--space-s) var(--space-m);
+  border-block-end: 1px solid var(--border);
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+}
+
+.mark-all input {
+  inline-size: 1.1rem;
+  block-size: 1.1rem;
+  accent-color: var(--done);
+}
+
+.mark-all label {
+  cursor: pointer;
+}
+
+.todo-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  ONE TODO                                  */
+/* -------------------------------------------------------------------------- */
+
+.todo {
+  position: relative;
+  border-block-end: 1px solid var(--border);
+  font-size: 1.5rem;
+}
+
+.todo:last-child {
+  border-block-end: 0;
+}
+
+.view {
+  display: flex;
+  align-items: center;
+  gap: var(--space-m);
+  padding: var(--space-m);
+}
+
+.toggle {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  flex: none;
+  accent-color: var(--done);
+}
+
+.view label {
+  flex: 1;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+/* Matching the value, not merely the attribute: [data-done] alone would also
+   match data-done="false". */
+.todo[data-done="true"] label {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.destroy {
+  flex: none;
+  border: 0;
+  padding: 0 var(--space-xs);
+  font-size: 1.75rem;
+  line-height: 1;
+  color: var(--accent);
+  background: none;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.destroy::after {
+  content: "\00d7";
+}
+
+.todo:hover .destroy,
+.destroy:focus-visible {
+  opacity: 1;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 THE EDITOR                                 */
+/* -------------------------------------------------------------------------- */
+
+/* Editing is a signal on the row, so the class is toggled in the browser and
+   which of the two halves is on screen is only ever CSS. */
+.editor {
+  display: none;
+}
+
+.todo.editing .editor {
+  display: block;
+}
+
+.todo.editing .view {
+  display: none;
+}
+
+.edit {
+  inline-size: 100%;
+  border: 1px solid var(--border);
+  padding: var(--space-m) var(--space-m) var(--space-m) 3.5rem;
+  font: inherit;
+  font-size: 1.5rem;
+  color: inherit;
+  background: transparent;
+  user-select: text;
+}
+
+.edit:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 THE FOOTER                                 */
+/* -------------------------------------------------------------------------- */
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-s);
+  padding: var(--space-s) var(--space-m);
+  border-block-start: 1px solid var(--border);
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+}
+
+.filters {
+  display: flex;
+  gap: var(--space-s);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.filters a {
+  padding: var(--space-xs) var(--space-s);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: inherit;
+  text-decoration: none;
+}
+
+.filters a:hover {
+  border-color: var(--accent-subtle);
+}
+
+.filters a[aria-current="page"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.clear-completed {
+  border: 0;
+  padding: var(--space-xs) 0;
+  font: inherit;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+}
+
+.clear-completed:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
