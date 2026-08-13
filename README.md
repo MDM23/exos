@@ -7,6 +7,7 @@ One binary. Just `cargo run`. No bundler, no npm, no build step.
 
 ```bash
 cargo run -p files    # then open http://localhost:3000, twice
+cargo run -p todos    # the classic list, on the same address
 ```
 
 ## What it looks like
@@ -87,8 +88,12 @@ instead of excluding one another.
   your crate compiles: bundle CSS, bundle and minify JS, content-hash, embed.
   There is no build script.
 
-The [guide](docs/guide.md) walks through the whole surface, and
-[`examples/files`](examples/files) exercises it in one page.
+The [guide](docs/guide.md) walks through the whole surface.
+[`examples/files`](examples/files) exercises it in one page: selection with a
+batch action, optimistic updates, drag to reorder, live presence.
+[`examples/todos`](examples/todos) is TodoMVC, where the list is a live
+fragment per filter and editing a row is client state from the double click to
+the save.
 
 ## Status
 

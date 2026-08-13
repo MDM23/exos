@@ -730,11 +730,19 @@ Knowing the edges is more useful than a feature list.
   `unsafe-eval` blocks them. A precompiled mode is the answer and does not
   exist yet.
 
-## Reading the example
+## Reading the examples
 
 [`examples/files`](../examples/files) exercises all of it in one page:
 selection with a batch action, optimistic favourite and delete, drag to
 reorder, and live presence dots. Run it with `cargo run -p files` and open two
 tabs.
+
+[`examples/todos`](../examples/todos) is TodoMVC, and covers what the first one
+does not: a live fragment per filter, because a topic has to determine its
+content and a filtered list is not the list; filters as routes rather than as
+client state; editing a row as viewer state from the double click through
+escape and blur to the save; and a list that renders nothing at all when it is
+empty, decided by an ordinary `if` on the server. Run it with
+`cargo run -p todos`, also twice.
 
 [`Markup`]: https://docs.rs/exos/latest/exos/struct.Markup.html

@@ -212,17 +212,56 @@ Effect::set(&Toast::signals().message, "Ada mentioned you in Q3 planning")
 This works with no new step. Two things follow from `set` taking a handle
 rather than a name.
 
-The first is a caveat to document: signals arriving on the stream merge into
-the global namespace, since there is no element to resolve a scope against, so
-the receiving template has to declare the handle at the root and not inside a
-scope.
+The first has been settled since this was written. Signals arriving on the
+stream merge into the global namespace, because there is no element to resolve
+a scope against, and a `#[model]` field is now declared there wherever the
+template puts the handle. So a receiving template declares it next to the
+markup it belongs to, and the only rule left is that it declares it somewhere.
 
-The second is an open question. A toast is not a request body, so making it a
-`#[model]` purely to earn a name is the tail wagging the dog, and today that is
-the only way to get a writable one. Whether that calls for a third kind of
-signal, named but not a model, is deliberately left until there are enough
-cases to see the shape. Until then the generated names stay unpublished, which
-is what keeps the answer open.
+The second is an open question with two halves.
+
+A toast is not a request body, so making it a `#[model]` purely to earn a name
+is the tail wagging the dog, and today that is the only way to get a writable
+one.
+
+A toast also has to outlive a page, and a model does not. A document's
+declaration says what that page's signals start as, and a navigation re-seeds
+them, which is what stops a model reused with a second meaning from opening on
+the previous page's value. A toast pushed while somebody is clicking a link
+would be cleared by the page they land on.
+
+Those are two axes rather than one knob:
+
+| | reach: where the name resolves | lifetime: when the value resets |
+| --- | --- | --- |
+| `signal()` | the element that declared it | that element leaving the DOM |
+| `#[model]` | the document | the next navigation |
+| what a toast wants | the document | the tab closing |
+
+So the shape that fits is a lifetime on the type rather than a third placement.
+On the type, because one model kept in one template and reset in another would
+be ambiguous about which it is:
+
+```rust
+#[exos::model(keep)]
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct Toast {
+    message: String,
+}
+```
+
+Mechanically that is one more declaration attribute, say `data-signals-kept`,
+which the re-seed skips and everything else treats identically.
+[`Placement`](../../crates/exos/src/signal.rs) is `#[non_exhaustive]` so that
+it can land additively.
+
+Both halves are deliberately left until there are enough cases to see the
+shape, and the toast is likely to be the first of them. One thing to settle
+before building it: "survives a navigation" and "survives a reload" are
+different features, the second being `localStorage` and a plugin that reads it
+before the first paint. Guessing which one is meant is what this is waiting to
+stop doing. Until then the generated names stay unpublished, which is what
+keeps the answer open.
 
 **A custom event.** `Step::Event(name, payload)`, dispatched on `document` the
 way `exos:busy`, `exos:idle` and `exos:mutated` already are, is the general
@@ -262,6 +301,12 @@ The cheap fix is on the client. On a reopen that follows a drop, rather than on
 the first open, re-fetch the current URL and morph, which is one call to
 `navigate(location.href, false)` and repairs everything state-backed in one
 request.
+
+One detail to get right when writing it: a navigation re-seeds the signals the
+arriving document declares, because a page says what its own state starts as. A
+repair is the same page arriving again rather than a different one, so it has
+to morph without re-seeding, or a dropped connection would empty the field
+somebody is typing into.
 
 The expensive fix is to make topics re-renderable: `#[exos::live]` registers a
 renderer by name through `inventory`, the wrapper element carries its signed
