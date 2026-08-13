@@ -333,7 +333,11 @@
 
         // data-text="$.name"
         "data-text": (el, source) => () => {
-            el.textContent = evaluate(source, el, null, false) ?? "";
+            // Compared first, because a morph re-runs this and replacing a
+            // text node with an identical one drops a selection that was
+            // sitting in it.
+            const value = String(evaluate(source, el, null, false) ?? "");
+            if (el.textContent !== value) el.textContent = value;
         },
     };
 
@@ -741,6 +745,27 @@
 
         syncAttributes(from, to);
         morphChildren(from, to);
+        reapply(from);
+    }
+
+    // A binding owns what it writes, and the markup that arrives does not know
+    // that. The server renders class="todo" over a row a data-class binding
+    // has put "editing" on, syncAttributes takes the incoming word for it, and
+    // the class is gone while the signal still says true. Nothing re-applies
+    // it, because writing true over true is not a change, so the row is stuck
+    // out of edit mode until something else happens to flip the signal, and
+    // double-clicking it again does nothing at all.
+    //
+    // Re-running the element's effects after a morph is what makes the binding
+    // the authority again, for everything one of them owns: class, hidden,
+    // text, attributes and properties alike. A speculative write from attr_now
+    // is deliberately not in that set. It has no second copy to disagree with
+    // the patch, which is the whole reason it is not a signal.
+    function reapply(el) {
+        const effects = bound.get(el);
+        if (!effects) return;
+
+        for (const effect of effects) run(effect);
     }
 
     function syncAttributes(from, to) {

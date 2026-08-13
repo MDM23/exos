@@ -537,6 +537,12 @@ truth drifts the moment a patch lands: the morph writes the server's value
 while the signal still holds the client's. A speculative write has no second
 copy, so the next patch corrects it either way.
 
+A binding is the other way round, and the runtime treats it that way: what
+`class`, `show`, `text`, `attr` and `prop` write belongs to the binding, so a
+morph re-applies them afterwards rather than leaving the incoming markup's
+version in place. Server-owned state that a patch should win is markup, and a
+speculative write is how you paint it early.
+
 Signals are for state the server does not own: a row pending deletion, a modal,
 a draft input, a selection.
 
