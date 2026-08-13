@@ -186,7 +186,7 @@
             fn = new Function(
                 "$", "el", "ev",
                 "get", "post", "put", "patch", "del",
-                "attr", "append",
+                "attr", "append", "focus",
                 statement ? source : `return (${source})`,
             );
         } catch (error) {
@@ -240,6 +240,16 @@
         into.appendChild(clone);
     }
 
+    // Focus, after the effects this turn scheduled have run. A handler that
+    // reveals a field and focuses it is the ordinary case, and at the moment
+    // it asks, the field is still hidden: bindings flush on a microtask, and
+    // an element that is not displayed cannot take focus. Queueing after them
+    // is the difference between the caret landing in the field and nothing
+    // happening at all.
+    function focusLater(selector) {
+        queueMicrotask(() => document.querySelector(selector)?.focus());
+    }
+
     function evaluate(source, el, ev, statement) {
         const action = (method) => (url, data) => request(method, url, el, data);
 
@@ -256,6 +266,7 @@
             action("DELETE"),
             (name, value) => speculate(el, name, value),
             appendTemplate,
+            focusLater,
         );
     }
 
@@ -611,7 +622,10 @@
     function apply(step, payload) {
         switch (step) {
             case "focus":
-                document.querySelector(payload)?.focus();
+                // The same deferral a handler's focus gets, so a field this
+                // burst patched in and a binding is about to unhide is
+                // focusable by the time this runs.
+                focusLater(payload);
                 break;
 
             case "navigate":

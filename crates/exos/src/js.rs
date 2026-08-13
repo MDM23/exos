@@ -228,6 +228,20 @@ pub fn attr_now(name: &str, value: impl IntoJs<bool>) {
     ));
 }
 
+/// Moves the keyboard focus to the first element matching `selector`.
+///
+/// The client half of [`Effect::focus`](crate::Effect::focus), for the field a
+/// handler has just revealed. Focusing waits for the bindings this handler
+/// scheduled, since an element still hidden when the handler returns cannot
+/// take focus and the same click is usually what unhides it.
+///
+/// # Panics
+///
+/// If called outside a handler; see [`emit`].
+pub fn focus_now(selector: &str) {
+    emit(format!("focus({})", quote_js(selector)));
+}
+
 /// Clones a `<template>` into a container.
 ///
 /// Adding a form row does not need a reactive list; it needs a copy. The clone
@@ -306,6 +320,11 @@ mod tests {
     #[should_panic(expected = "only works inside a handler")]
     fn emitting_outside_a_handler_says_so() {
         emit("orphan()");
+    }
+
+    #[test]
+    fn focus_is_a_statement_rather_than_a_round_trip() {
+        assert_eq!(record(|| focus_now("#edit-3")), "focus(\"#edit-3\")");
     }
 
     #[test]

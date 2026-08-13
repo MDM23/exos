@@ -45,7 +45,9 @@ pub use crate::{
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry, app},
     effect::{Effect, Step},
-    js::{IntoJs, IntoPayload, Js, append, attr_now, call, emit, quote_js, record, when},
+    js::{
+        IntoJs, IntoPayload, Js, append, attr_now, call, emit, focus_now, quote_js, record, when,
+    },
     keys::{Keys, keys},
     live::{Fragment, Topic, connection_count, publish},
     model::{Model, ModelFields, ModelRejection, to_wire},

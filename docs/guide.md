@@ -393,6 +393,22 @@ on_change(|event| selection.fail.set(event.target().checked()))
 `event.target().value()` is `Js<String>` and `.checked()` is `Js<bool>`.
 Nothing is read at render time; these build expressions.
 
+### Moving the focus
+
+`focus_now` is the client half of `Effect::focus`, for a control the same click
+has just revealed:
+
+```rust
+on("dblclick", move |_| {
+    editing.set(true);
+    focus_now(&format!("#edit-{id}"));
+})
+```
+
+It waits for the bindings the handler scheduled. While the handler runs, the
+field is still hidden, and a hidden element cannot take focus, so focusing it
+there would silently do nothing.
+
 ## Expressions
 
 `Js<T>` is a client-side expression of type `T`.
