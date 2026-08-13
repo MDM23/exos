@@ -22,36 +22,50 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+
+      # Every tool comes from the flake, so this runs the compiler a
+      # contributor's shell runs and there is one version to raise rather than
+      # two that can disagree. Nothing here installs a toolchain of its own.
+      - uses: cachix/install-nix-action@v31
+
+      # Keyed on both locks, since a change to either is a different build.
+      # rust-cache is the better tool for this and cannot be used: it runs
+      # `rustc -vV` to build its key, and rustc only exists inside the shell.
+      - uses: actions/cache@v4
         with:
-          components: clippy, rustfmt
-      - uses: Swatinem/rust-cache@v2
+          key: cargo-${{ hashFiles('Cargo.lock', 'flake.lock') }}
+          path: |
+            ~/.cargo/git
+            ~/.cargo/registry
+            target
+          restore-keys: cargo-
 
       - name: Format
-        run: cargo fmt --all --check
+        run: nix develop --command cargo fmt --all --check
 
-      # Every target, so the tests and the example are linted as the library
+      # Every target, so the tests and the examples are linted as the library
       # is. Warnings fail through RUSTFLAGS rather than a lint attribute, which
       # keeps `cargo clippy` locally quiet enough to work in.
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features
+        run: nix develop --command cargo clippy --workspace --all-targets --all-features
 
       - name: Test
-        run: cargo test --workspace --all-features
+        run: nix develop --command cargo test --workspace --all-features
 
       # Doc links break silently otherwise, and the guide leans on them.
       - name: Docs
-        run: cargo doc --workspace --all-features --no-deps
+        run: nix develop --command cargo doc --workspace --all-features --no-deps
 
   msrv:
     name: MSRV
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      # Kept in step with `rust-version` in the workspace manifest by hand.
-      # Raising one without the other is what this job exists to catch.
-      - uses: dtolnay/rust-toolchain@1.88.0
-      - uses: Swatinem/rust-cache@v2
+      - uses: cachix/install-nix-action@v31
 
+      # The shell reads `rust-version` out of the workspace manifest, so what
+      # this builds with is what the manifest claims, with nothing to keep in
+      # step by hand. What the job catches is the code quietly needing a newer
+      # compiler than either of them says.
       - name: Build
-        run: cargo build --workspace --all-features
+        run: nix develop .#msrv --command cargo build --workspace --all-features
