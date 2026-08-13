@@ -14,7 +14,10 @@ mod handler;
 mod helper;
 
 pub use crate::attributes::{
-    handler::{Event, Target, on, on_change, on_click, on_input, on_submit},
+    handler::{
+        Event, EventType, Target, on, on_change, on_click, on_dblclick, on_focusout, on_input,
+        on_keydown, on_submit,
+    },
     helper::{Attr, Bind, BindKind, Class, attr, bind, class, preserve, prop, show, text},
 };
 

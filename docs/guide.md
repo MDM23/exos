@@ -384,6 +384,29 @@ when(selection.picked.get().any(), |()| archive::post(selection));
 Sequencing is free, since consecutive statements record in order, which covers
 the large majority of handlers.
 
+### Which events there are
+
+`on_change`, `on_click`, `on_dblclick`, `on_focusout`, `on_input`, `on_keydown`
+and `on_submit` are the shorthands; `on(EventType::PointerUp, ..)` names the
+rest. The set is closed on purpose. One listener per type sits on `document`,
+so an event nobody listens for would be a handler in the DOM that never fires,
+and a string would let that be a typo rather than a compile error.
+
+Two of those names are the delegated form rather than the familiar one:
+`focusout` bubbles and `blur` does not, and the same goes for `focusin` against
+`focus`.
+
+An event of your own is registered from JavaScript and named with `Custom`,
+which is a promise that you called `listen` for it:
+
+```js
+window.exos.listen("swipe");
+```
+
+```rust
+on(EventType::Custom("swipe"), |_| archive::post(selection))
+```
+
 ### The event
 
 ```rust
@@ -399,7 +422,7 @@ Nothing is read at render time; these build expressions.
 has just revealed:
 
 ```rust
-on("dblclick", move |_| {
+on_dblclick(move |_| {
     editing.set(true);
     focus_now(&format!("#edit-{id}"));
 })
@@ -446,7 +469,7 @@ Attribute blocks produce attributes, one value at a time, repeated as needed.
 | block | emits |
 | --- | --- |
 | `{&handle}` | declares signals on this element's scope |
-| `{on_click(...)}`, `{on(Event::Input, ...)}` | a delegated handler |
+| `{on_click(...)}`, `{on(EventType::PointerDown, ...)}` | a delegated handler |
 | `{text(expression)}` | text content |
 | `{show(expression)}` | toggles `hidden` |
 | `{class(name, expression)}` | one class toggle |
