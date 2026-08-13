@@ -11,6 +11,10 @@ repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
 
+# The runtime's tests need a DOM and therefore node, which nothing depending on
+# this crate has to have.
+exclude = ["js/tests"]
+
 [dependencies]
 axum.workspace = true
 exos-macro.workspace = true

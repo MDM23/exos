@@ -1,0 +1,13 @@
+{
+  "description": "Tests for the exos client runtime. Nothing here is needed to build or run an application; see the readme.",
+  "license": "MIT OR Apache-2.0",
+  "name": "exos-runtime-tests",
+  "private": true,
+  "scripts": {
+    "test": "node --test crates/exos/js/tests/*.test.js"
+  },
+  "type": "module",
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
+}

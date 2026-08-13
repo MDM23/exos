@@ -56,6 +56,24 @@ jobs:
       - name: Docs
         run: nix develop --command cargo doc --workspace --all-features --no-deps
 
+  runtime:
+    name: Client runtime
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # The one place this project needs node, and it comes from the flake like
+      # everything else. Applications built with exos need none, which is what
+      # the asset pipeline is for; the runtime is the half of the framework
+      # `cargo test` cannot reach, and testing a DOM takes one.
+      - uses: cachix/install-nix-action@v31
+
+      - name: Install
+        run: nix develop --command npm ci
+
+      - name: Test
+        run: nix develop --command npm test
+
   msrv:
     name: MSRV
     runs-on: ubuntu-latest
