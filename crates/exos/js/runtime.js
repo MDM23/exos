@@ -113,10 +113,11 @@
     //                                  SCOPES
     // -------------------------------------------------------------------------
 
-    // An element that declares signals opens a scope, and its id names it. A
-    // row already needs an id for morphing to key on, so a hundred rows each
-    // holding a `fav` signal need no unique names invented for them: inside
-    // `#file-3`, `$.fav` is `file-3/fav`.
+    // An element that declares signals opens a scope of its own. A row already
+    // needs an id for morphing to key on, so a hundred rows each holding a
+    // `fav` signal need no unique names invented for them: inside `#file-3`,
+    // `$.fav` is `file-3-7/fav`, where the id is there to be read and the
+    // counter is what makes the scope that element's.
     //
     // Resolution walks up and takes the nearest scope that actually declares
     // the name, so an inner scope shadows an outer one and anything undeclared
@@ -135,9 +136,22 @@
         let scope = scopes.get(el);
         if (scope) return scope;
 
-        // An id is preferred because it survives a morph, and because it is
-        // already what identifies this element to the server.
-        scope = el.id || `exos-${++scopeCounter}`;
+        // The id is in the name because it makes the store readable in a
+        // debugger; the counter is what makes the name this element's alone.
+        //
+        // Two elements can carry one id over a page's life, and the scope has
+        // to survive that. A morph that replaces a subtree rather than
+        // updating it builds the new one before tearing the old one down, so
+        // there is a moment when both are here, and a fragment rendered twice
+        // is two elements with one id for as long as the page lasts. Sharing a
+        // scope name means the departing element's cleanup deletes the
+        // arriving element's signals: the row is still on screen, still
+        // wired, and every write from it goes somewhere nothing is watching.
+        //
+        // A scope is per element rather than per id, so the element that
+        // survives a morph keeps its state through the WeakMap and the element
+        // that replaces one starts from what its markup declares.
+        scope = `${el.id || "exos"}-${++scopeCounter}`;
         scopes.set(el, scope);
         return scope;
     }
