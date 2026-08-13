@@ -295,6 +295,23 @@ markup rather than being a rule to remember. A `signal` handle is not reachable
 from a handler at all, and a debug build says so rather than writing a signal
 nothing reads.
 
+### What a model's state lasts for
+
+A model's state is the page's. One model is one value however many elements
+declare it, they cannot disagree because the starting value is always the
+model's `Default`, and it outlives the element that carried the declaration:
+that is what lets a list declare one editing buffer and every row use it.
+
+Two consequences worth knowing before reusing a model type:
+
+- **One model is one instance.** Two comment boxes each with their own draft
+  are two model types, not two declarations of one. Element signals are the
+  ones that repeat.
+- **A navigation re-seeds it.** The document that arrives declares what its
+  signals start as, so a page does not inherit what the last one was holding.
+  Names the new document does not mention keep their value, and a patch never
+  re-seeds anything, since a patch is an update to the page you are on.
+
 Anything `Serialize + Deserialize` can be a signal: `bool`, numbers, `String`,
 `Vec<T>`, and nested models.
 

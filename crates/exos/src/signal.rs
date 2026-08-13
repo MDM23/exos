@@ -51,6 +51,12 @@
 //! handle declares rather than something a template has to arrange by putting
 //! the declaration on `<html>`.
 //!
+//! That makes a model's state the page's. One model is one value however many
+//! elements declare it, and they cannot disagree, since the starting value is
+//! always the model's `Default`. It outlives the element that declared it, and
+//! a navigation re-seeds whatever the arriving document declares, so a page
+//! starts as its own markup says rather than as the last page left things.
+//!
 //! The exception is a name some other language owns, such as the sortable
 //! plugin's `_order`. Those are written in JavaScript, so they reach a
 //! template as a raw expression and [`view!`](crate::view) declares them where
@@ -67,7 +73,12 @@ use crate::{IntoJs, Js, emit};
 ///
 /// Not something a template chooses. Each kind of handle declares the only
 /// placement that makes sense for it; see the module docs.
+///
+/// Non-exhaustive because the two placements answer where a name lives, and
+/// how long its value lasts is a second question this may one day have to
+/// answer too.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[non_exhaustive]
 pub enum Placement {
     /// The element that declares it, so repeating a name down a list is what
     /// gives every row its own value.

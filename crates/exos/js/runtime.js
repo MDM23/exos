@@ -345,17 +345,30 @@
     // Declares, and never overwrites, so a morph that re-delivers the same
     // markup does not reset live state, and a name a second row declares is
     // the one the first row already put there.
-    function declare(el, attribute, key) {
+    function declare(el, attribute, key, force) {
         const declared = el.getAttribute(attribute);
         if (!declared) return;
 
         try {
             for (const [name, value] of Object.entries(JSON.parse(declared))) {
                 const slot = key(name);
-                if (!store.has(slot)) write(slot, value);
+                if (force || !store.has(slot)) write(slot, value);
             }
         } catch (error) {
             console.error(`[exos] bad ${attribute}:`, declared, error);
+        }
+    }
+
+    // The one thing that does overwrite, and the reason is what a navigation
+    // is: a different page, saying what its own signals start as. A document
+    // signal outlives the element that declared it, so without this the page
+    // that arrives inherits whatever the last one was left holding, and a
+    // model reused with a second meaning opens on the first one's value. Only
+    // the names the new document actually declares are touched, so anything it
+    // does not mention keeps what it has.
+    function reseed() {
+        for (const el of document.querySelectorAll("[data-signals-root]")) {
+            declare(el, "data-signals-root", (name) => name, true);
         }
     }
 
@@ -636,6 +649,9 @@
                 const next = new DOMParser().parseFromString(payload, "text/html");
                 morph(document.body, next.body);
                 if (next.title) document.title = next.title;
+                // A page handed over by an action is a navigation that saved a
+                // fetch, so it starts the same way one does.
+                reseed();
                 break;
             }
 
@@ -839,6 +855,7 @@
             const next = new DOMParser().parseFromString(await response.text(), "text/html");
 
             morph(document.body, next.body);
+            reseed();
             document.title = next.title;
             if (push) history.pushState(null, "", response.url || url);
             window.scrollTo(0, 0);
