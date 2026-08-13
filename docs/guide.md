@@ -202,7 +202,7 @@ once, which `provide` cannot do.
 async fn index() -> Page { /* ... */ }
 
 #[exos::post("/files/{id}/favorite")]
-async fn favorite(Path(id): Path<u32>, Json(body): Json<Selection>) -> Effect {
+async fn favorite(Path(id): Path<u32>, Model(body): Model<Selection>) -> Effect {
     /* ... */
 }
 ```
@@ -216,10 +216,10 @@ routes into a library.
 
 ## Client state: signals
 
-A signal is a named piece of state in the browser, defined once in Rust:
+A signal is a piece of state in the browser, declared once in Rust:
 
 ```rust
-let gone = signal!(_gone = false);   // Signal<bool>
+let gone = signal(false);   // Signal<bool>
 ```
 
 Put the handle in an attribute block to declare it. That element becomes its
@@ -233,12 +233,25 @@ view! {
 
 Scoping is lexical with the DOM as the tree: the nearest ancestor that declares
 a name wins. A row already needs an `id` for morphing, so a hundred rows can
-each declare `_gone` without colliding and you never invent `gone_3`.
+each declare their own without colliding and you never invent `gone_3`.
 
-A signal that starts as `null` does not even need declaring. The macro reads
-the names out of the expressions in a subtree and declares what it finds, so
-`{show(!gone.get())}` is enough. A signal carrying a value from the server
-still says so, because that value has to come from somewhere.
+### Most signals have no name
+
+The handle is the whole interface. `signal` takes no name because nothing
+outside the handle should be spelling one: the store is keyed by a name derived
+from the declaration site, and that key is not published. Read it with
+`gone.name()` while debugging, never in a template.
+
+A name is a contract, so it exists only where something off the page needs one,
+and then it comes from a type rather than a string:
+
+- **`#[model]` fields**, below. These are what an action's body carries and what
+  a handler writes with `Effect::set`. Their names are generated too, per model
+  and field rather than per call site, so that every `signals()` agrees.
+- **Names a plugin owns**, such as the sortable plugin's `_order`. Those are
+  written in JavaScript and reach a template as a raw expression, so `view!`
+  reads the names out of the expressions in a subtree and declares whatever it
+  finds as `null`.
 
 ### Models: state that is also a request body
 
@@ -255,11 +268,53 @@ struct Selection {
 let selection = Selection::signals();   // selection.picked: Signal<Vec<u32>>
 ```
 
-The handler takes `Json<Selection>`. Rename `picked` and both sides stop
+The handler takes `Model<Selection>`. Rename `picked` and both sides stop
 compiling. `selection.` autocompletes.
+
+Two models with a field of the same name are two signals, which also means
+nesting one scope inside another cannot silently shadow.
 
 Anything `Serialize + Deserialize` can be a signal: `bool`, numbers, `String`,
 `Vec<T>`, and nested models.
+
+### The wire is private
+
+A field name never leaves the server. Both the signal and the payload key are
+named after the model and the field, so the call above compiles to:
+
+```js
+post('/files/archive', {"sc523a195": $.sc523a195, "s70c556ff": $.s70c556ff})
+```
+
+An action route is not a public API. Its response is a stream of DOM patches,
+so there was never anything useful to integrate against, and the point of
+keeping the request private is not to stop anyone: it is that nothing outside
+the generated pair can depend on the shape, so the shape stays free to change.
+Batching several actions into one request, sending only what changed,
+versioning the envelope. A payload someone has written into a script is a
+payload that cannot move again.
+
+Two consequences worth stating plainly.
+
+**This is not authorization.** An opaque key is a "do not depend on this"
+marker, in the way an unstable ABI is. The keys are sitting in `data-signals`
+for anyone who opens the inspector. Every route still authorizes for itself.
+
+**A body written elsewhere keeps `Json`.** The sortable plugin posts
+`{ order: $._order }`, which JavaScript writes by hand, so `Reorder` is a plain
+`Deserialize` struct behind `Json<Reorder>` and its field names are legible on
+purpose. The extractor a handler names is what says which of the two it is.
+
+Where the server already knows a body, `exos::to_wire` builds one, which is
+also how a test posts to its own action:
+
+```rust
+let body = exos::to_wire(&Selection { picked: vec![], fail: true });
+```
+
+Writing `Json<Selection>` on an action still compiles, because a model is an
+ordinary `Deserialize` type. It fails at runtime with a missing field, since
+the keys that arrive are not the ones serde is looking for.
 
 ## Handlers
 
@@ -278,7 +333,7 @@ view! {
 That renders as:
 
 ```html
-<button data-on-click="$._gone = true; post('/files/3/delete', {...})">
+<button data-on-click="$.s1f4c20a9 = true; post('/files/3/delete', {...})">
 ```
 
 ### How that works
@@ -383,7 +438,7 @@ A route attribute generates a typed caller from the handler's own signature:
 
 ```rust
 #[exos::post("/files/{id}/favorite")]
-async fn favorite(Path(id): Path<u32>, Json(body): Json<Selection>) -> Effect
+async fn favorite(Path(id): Path<u32>, Model(body): Model<Selection>) -> Effect
 ```
 
 gives you `favorite::post(id, selection)`. The URL, the path parameter type and
@@ -464,28 +519,35 @@ no signature:
 
 ```rust
 #[exos::post("/files/archive")]
-async fn archive(Json(selection): Json<Selection>) -> Effect {
+async fn archive(Model(selection): Model<Selection>) -> Effect {
     data::<Files>().update(|entries| store::archive(entries, &selection.picked));
 
     publish(&file_list());
-    Effect::signals(json!({ "picked": [] })).scroll("#file-list")
+    Effect::set(&Selection::signals().picked, Vec::new()).scroll("#file-list")
 }
 ```
 
 | effect | does |
 | --- | --- |
 | `patch(markup)` | morph HTML into place, keyed by `id` |
-| `signals(value)` | merge into the client's signal store |
+| `set(&handle, value)` | write a signal in the client's store |
 | `remove(selector)` | delete matching elements |
 | `navigate(url)` | client-side navigation |
 | `page(markup)` | replace the active page without a second fetch |
 | `focus(selector)`, `scroll(selector)` | move the user |
 | `reload()`, `none()` | the extremes |
 
-Several steps compose with the `and_` methods. The wire format is the same
-server-sent event format the live channel uses, so there is one parser rather
-than two, the action path and the live path are the same code, and a slow
-handler can stream effects as it computes them.
+Several steps compose with the `and_` methods, and consecutive `set` calls
+become one merge on the wire. The wire format is the same server-sent event
+format the live channel uses, so there is one parser rather than two, the
+action path and the live path are the same code, and a slow handler can stream
+effects as it computes them.
+
+`set` takes a handle, so the name and the type come from wherever the template
+got them and no string has to agree with anything. The client resolves that
+name from the document root, which means a signal declared inside a scope is
+not reachable from a handler at all. That is the same rule a plugin follows,
+and it is the reason the writable ones are model fields.
 
 ### Why `Page` is still its own type
 

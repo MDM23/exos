@@ -1,0 +1,233 @@
+//! Request bodies this framework's own client wrote.
+//!
+//! An action route is not a public API. The typed caller builds the body, the
+//! extractor reads it, and both are generated from the same `#[model]`, so the
+//! keys on the wire are the generated names from [`signal`](crate::signal)
+//! rather than the field names:
+//!
+//! ```json
+//! {"sc523a195": [1, 2], "s70c556ff": false}
+//! ```
+//!
+//! That is not obfuscation for its own sake. Nothing outside the generated
+//! pair can depend on the shape, so the shape stays free to change: batching
+//! several actions into one request, sending only what changed, versioning the
+//! envelope. A payload someone has written into a script is a payload that
+//! cannot move again.
+//!
+//! # This is not authorization
+//!
+//! An opaque key is a "do not depend on this" marker, in the way an unstable
+//! ABI is. It is not a control, and it does not try to be: the keys are in the
+//! page's `data-signals` for anyone who opens the inspector. Every route still
+//! authorizes for itself.
+//!
+//! # Bodies written elsewhere
+//!
+//! A body some other language writes needs names that language can spell, so
+//! it keeps [`Json`](axum::Json) and a plain `Deserialize` struct. The
+//! sortable plugin posting `{ order: $._order }` is the case in the tree, and
+//! the extractor a handler names says which of the two it is.
+
+use axum::{
+    body::Bytes,
+    extract::{FromRequest, Request, rejection::BytesRejection},
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
+use serde::{Serialize, de::DeserializeOwned};
+use serde_json::{Map, Value};
+
+/// The wire name of every field of a model.
+///
+/// Implemented by `#[model]`, which is the only thing that can implement it
+/// correctly, since it is the only thing that knows both names.
+#[doc(hidden)]
+pub trait ModelFields {
+    /// `(wire key, field name)` per field, in declaration order.
+    const FIELDS: &'static [(&'static str, &'static str)];
+}
+
+/// A `#[model]` body, extracted from the wire form.
+///
+/// Stands where [`Json`](axum::Json) would:
+///
+/// ```ignore
+/// #[exos::post("/files/archive")]
+/// async fn archive(Model(selection): Model<Selection>) -> Effect
+/// ```
+///
+/// Writing `Json<Selection>` instead still compiles, because a model is an
+/// ordinary `Deserialize` type. It fails at runtime with a missing field,
+/// since the keys that arrive are not the ones serde is looking for.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Model<T>(pub T);
+
+impl<S, T> FromRequest<S> for Model<T>
+where
+    S: Send + Sync,
+    T: DeserializeOwned + ModelFields,
+{
+    type Rejection = ModelRejection;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
+        let bytes = Bytes::from_request(request, state).await?;
+        let wire: Value = serde_json::from_slice(&bytes)?;
+
+        let Value::Object(wire) = wire else {
+            return Err(ModelRejection::NotAnObject);
+        };
+
+        Ok(Self(serde_json::from_value(Value::Object(
+            from_wire::<T>(wire),
+        ))?))
+    }
+}
+
+/// Renames the wire keys back to the field names serde is expecting.
+///
+/// Only the keys this model declares survive. Anything else was not written by
+/// the caller this route has, and a field spelled the way the struct spells it
+/// is exactly that: dropping it is what makes a hand-written body fail with
+/// the missing field it is missing.
+fn from_wire<T: ModelFields>(mut wire: Map<String, Value>) -> Map<String, Value> {
+    let mut fields = Map::new();
+
+    for (key, field) in T::FIELDS {
+        if let Some(value) = wire.remove(*key) {
+            fields.insert((*field).to_owned(), value);
+        }
+    }
+
+    fields
+}
+
+/// Serializes a model into the wire form [`Model`] reads.
+///
+/// The keys are private, so this is how anything other than the generated
+/// caller builds a body: the `#[model]` expansion uses it when the server
+/// already knows what to send, and a test posting to its own action wants it
+/// rather than a JSON literal that would have to be kept in step by hand.
+///
+/// ```ignore
+/// let body = exos::to_wire(&Selection { picked: vec![], fail: true });
+/// ```
+///
+/// The value serializes under its field names and the keys are renamed
+/// afterwards, so the model's own `Serialize` stays whatever it is for every
+/// other use it has.
+#[must_use]
+pub fn to_wire<T: ModelFields + Serialize>(value: &T) -> String {
+    let Ok(Value::Object(fields)) = serde_json::to_value(value) else {
+        return String::from("{}");
+    };
+
+    let mut wire = Map::new();
+
+    for (key, field) in T::FIELDS {
+        if let Some(value) = fields.get(*field) {
+            wire.insert((*key).to_owned(), value.clone());
+        }
+    }
+
+    Value::Object(wire).to_string()
+}
+
+/// Why a [`Model`] body was refused.
+#[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
+pub enum ModelRejection {
+    /// The body could not be read at all.
+    #[error("could not read the request body")]
+    Unreadable(#[from] BytesRejection),
+
+    /// The body parsed, but a JSON object is what a model is.
+    #[error("expected a JSON object")]
+    NotAnObject,
+
+    /// The body was not JSON, or a field did not match its declared type.
+    ///
+    /// The message names the field the model declares rather than the key that
+    /// arrived, because the keys are renamed before serde sees them.
+    #[error(transparent)]
+    Invalid(#[from] serde_json::Error),
+}
+
+impl IntoResponse for ModelRejection {
+    fn into_response(self) -> Response {
+        let status = match self {
+            // Nothing arrived to be understood, so this is not the body being
+            // wrong.
+            Self::Unreadable(_) => StatusCode::BAD_REQUEST,
+            Self::Invalid(_) | Self::NotAnObject => StatusCode::UNPROCESSABLE_ENTITY,
+        };
+
+        (status, self.to_string()).into_response()
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    reason = "a failing assertion is the point of a test"
+)]
+mod tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Debug, Default, Deserialize, PartialEq, Serialize)]
+    struct Selection {
+        picked: Vec<u32>,
+        fail: bool,
+    }
+
+    impl ModelFields for Selection {
+        const FIELDS: &'static [(&'static str, &'static str)] =
+            &[("sc523a195", "picked"), ("s70c556ff", "fail")];
+    }
+
+    fn read(body: &str) -> Result<Selection, serde_json::Error> {
+        let wire: Map<String, Value> = serde_json::from_str(body).expect("valid json");
+        serde_json::from_value(Value::Object(from_wire::<Selection>(wire)))
+    }
+
+    #[test]
+    fn a_wire_key_arrives_as_the_field_it_names() {
+        let selection = read(r#"{"sc523a195":[1,2],"s70c556ff":true}"#).expect("a body");
+
+        assert_eq!(
+            selection,
+            Selection {
+                picked: vec![1, 2],
+                fail: true
+            }
+        );
+    }
+
+    /// The wire is private, so spelling a field name is not another way in.
+    #[test]
+    fn a_field_name_on_the_wire_is_not_accepted() {
+        let error = read(r#"{"picked":[1,2],"fail":true}"#).expect_err("no such key");
+
+        assert!(error.to_string().contains("picked"), "{error}");
+    }
+
+    #[test]
+    fn what_the_server_writes_is_what_the_extractor_reads() {
+        let selection = Selection {
+            picked: vec![3],
+            fail: false,
+        };
+
+        assert_eq!(read(&to_wire(&selection)).expect("a body"), selection);
+    }
+
+    /// A key nothing declares is dropped rather than passed through, so it
+    /// cannot collide with a field name on the way in.
+    #[test]
+    fn an_unknown_key_is_dropped() {
+        let selection = read(r#"{"sc523a195":[1],"s70c556ff":false,"other":9}"#).expect("a body");
+
+        assert_eq!(selection.picked, vec![1]);
+    }
+}

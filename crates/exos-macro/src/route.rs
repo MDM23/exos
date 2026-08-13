@@ -46,8 +46,9 @@ pub(crate) fn expand(attribute: TokenStream, item: TokenStream, method: &str) ->
 /// namespaces, so `favorite::post(..)` sits beside `async fn favorite`.
 ///
 /// Only the extractors a caller can supply are understood: `Path<T>` becomes a
-/// positional argument and `Json<T>` becomes the payload. Anything else is
-/// server-side and simply is not part of the client-visible signature.
+/// positional argument, and `Model<T>` or `Json<T>` becomes the payload.
+/// Anything else is server-side and simply is not part of the client-visible
+/// signature.
 fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
     let name = &function.sig.ident;
     let (path_types, body_type) = extractors(function);
@@ -104,7 +105,12 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
     }
 }
 
-/// The `Path<T>` and `Json<T>` types in a handler's signature.
+/// The `Path<T>` and body types in a handler's signature.
+///
+/// Both body extractors count. `Model<T>` is the one an action uses, and
+/// `Json<T>` stays for a body something other than this crate's client wrote;
+/// which of them a handler names does not change what the caller looks like,
+/// because [`IntoPayload`] is what decides the shape either way.
 fn extractors(function: &ItemFn) -> (Vec<syn::GenericArgument>, Option<syn::GenericArgument>) {
     let mut path_types = Vec::new();
     let mut body_type = None;
@@ -127,7 +133,7 @@ fn extractors(function: &ItemFn) -> (Vec<syn::GenericArgument>, Option<syn::Gene
 
         match (segment.ident.to_string().as_str(), inner) {
             ("Path", Some(inner)) => path_types.push(inner),
-            ("Json", Some(inner)) => body_type = Some(inner),
+            ("Json" | "Model", Some(inner)) => body_type = Some(inner),
             _ => {}
         }
     }
@@ -190,6 +196,21 @@ mod tests {
 
         assert!(expanded.contains("pub mod files"));
         assert!(expanded.contains("pub fn get"));
+    }
+
+    /// A handler naming either body extractor gets the same typed caller, so
+    /// moving one to `Model<T>` is not a change to its call sites.
+    #[test]
+    fn either_body_extractor_becomes_the_payload() {
+        for extractor in ["Json", "Model"] {
+            let handler = format!("async fn save({extractor}(body): {extractor}<Draft>) {{}}");
+            let expanded = expand_ok(r#""/drafts""#, &handler);
+
+            assert!(
+                expanded.contains("IntoPayload < Draft >"),
+                "{extractor}: {expanded}"
+            );
+        }
     }
 
     #[test]

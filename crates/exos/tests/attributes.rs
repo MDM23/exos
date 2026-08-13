@@ -1,22 +1,25 @@
 //! Attribute blocks and the typed handlers that hang on them.
 
-use exos::{Js, Signal, bind, class, on_click, show, signal, signals, text, view, when};
+use exos::{Js, bind, class, on_click, show, signal, text, view, when};
 
 #[test]
 fn a_signal_handle_declares_itself_on_its_element() {
-    let gone = signal!(gone = false);
+    let gone = signal(false);
     let markup = view! { <li id="row" {&gone}></li> };
 
     assert_eq!(
         markup.as_str(),
-        "<li id=\"row\" data-signals=\"{&quot;gone&quot;:false}\"></li>"
+        format!(
+            "<li id=\"row\" data-signals=\"{{&quot;{}&quot;:false}}\"></li>",
+            gone.name()
+        )
     );
 }
 
 #[test]
 fn repeated_blocks_merge_into_one_attribute() {
-    let open = signal!(open = false);
-    let busy = signal!(busy = false);
+    let open = signal(false);
+    let busy = signal(false);
 
     let markup = view! {
         <div id="panel" {(&open, &busy)} {class("is-open", open.get())} {class("busy", busy.get())}>
@@ -29,7 +32,7 @@ fn repeated_blocks_merge_into_one_attribute() {
 
 #[test]
 fn a_handler_compiles_to_javascript() {
-    let gone = signal!(gone = false);
+    let gone = signal(false);
 
     let markup = view! {
         <button {on_click(|_| gone.set(true))}>"Delete"</button>
@@ -37,22 +40,29 @@ fn a_handler_compiles_to_javascript() {
 
     assert_eq!(
         markup.as_str(),
-        "<button data-on-click=\"$.gone = true\">Delete</button>"
+        format!(
+            "<button data-on-click=\"$.{} = true\">Delete</button>",
+            gone.name()
+        )
     );
 }
 
 #[test]
 fn a_binding_carries_the_signals_type_across() {
-    let picked: Signal<Vec<u32>> = Signal::new("picked", Vec::new());
+    let picked = signal(Vec::<u32>::new());
     let markup = view! { <input type="checkbox" value="1" {bind(&picked)}> };
 
-    assert!(markup.as_str().contains("data-bind=\"picked\""));
+    assert!(
+        markup
+            .as_str()
+            .contains(&format!("data-bind=\"{}\"", picked.name()))
+    );
     assert!(markup.as_str().contains("data-bind-kind=\"number\""));
 }
 
 #[test]
 fn a_derived_value_reads_the_signal_rather_than_copying_it() {
-    let picked: Signal<Vec<u32>> = Signal::new("picked", Vec::new());
+    let picked = signal(Vec::<u32>::new());
 
     let markup = view! {
         <div id="bar" {&picked} {show(picked.get().any())}>
@@ -63,14 +73,18 @@ fn a_derived_value_reads_the_signal_rather_than_copying_it() {
     assert!(
         markup
             .as_str()
-            .contains("data-show=\"$.picked.length &gt; 0\"")
+            .contains(&format!("data-show=\"$.{}.length &gt; 0\"", picked.name()))
     );
-    assert!(markup.as_str().contains("data-text=\"$.picked.length\""));
+    assert!(
+        markup
+            .as_str()
+            .contains(&format!("data-text=\"$.{}.length\"", picked.name()))
+    );
 }
 
 #[test]
 fn branching_in_the_browser_records_a_conditional() {
-    let count: Signal<Vec<u32>> = Signal::new("count", Vec::new());
+    let count = signal(Vec::<u32>::new());
 
     let markup = view! {
         <button {on_click(|_| {
@@ -79,9 +93,10 @@ fn branching_in_the_browser_records_a_conditional() {
     };
 
     assert!(
-        markup
-            .as_str()
-            .contains("data-on-click=\"if ($.count.length &gt; 0) { $.count = [] }\""),
+        markup.as_str().contains(&format!(
+            "data-on-click=\"if ($.{name}.length &gt; 0) {{ $.{name} = [] }}\"",
+            name = count.name()
+        )),
         "{}",
         markup.as_str()
     );
@@ -89,28 +104,37 @@ fn branching_in_the_browser_records_a_conditional() {
 
 #[test]
 fn a_signal_used_but_never_declared_is_inferred() {
-    // `gone` is referenced in a raw expression attribute and nothing declares
-    // it, so the macro reads the name out and declares it as null.
-    let markup = view! { <li id="row" data-show="!$._gone"></li> };
+    // `_order` belongs to the sortable plugin, so no handle can declare it.
+    // The macro reads the name out of the expression and declares it as null.
+    let markup = view! {
+        <ul id="list" data-sortable="post('/reorder', { order: $._order })"></ul>
+    };
 
     assert!(
         markup
             .as_str()
-            .contains("data-signals=\"{&quot;_gone&quot;:null}\""),
+            .contains("data-signals=\"{&quot;_order&quot;:null}\""),
         "{}",
         markup.as_str()
     );
 }
 
+/// An element can declare a handle and mention a plugin's name in the same
+/// breath. Two `data-signals` attributes would leave the browser keeping the
+/// first and silently dropping the other.
 #[test]
-fn an_explicit_starting_value_wins_over_an_inferred_default() {
+fn a_handle_and_an_inferred_name_share_one_declaration() {
+    let gone = signal(false);
+
     let markup = view! {
-        <li id="row" data-signals={ signals! { fav: true } } data-show="!$._gone"></li>
+        <li id="row" {&gone} data-sortable="post('/reorder', { order: $._order })"></li>
     };
 
     let rendered = markup.as_str();
-    assert!(rendered.contains("&quot;fav&quot;:true"));
-    assert!(rendered.contains("&quot;_gone&quot;:null"));
+
+    assert_eq!(rendered.matches("data-signals").count(), 1);
+    assert!(rendered.contains(&format!("&quot;{}&quot;:false", gone.name())));
+    assert!(rendered.contains("&quot;_order&quot;:null"));
 }
 
 #[test]

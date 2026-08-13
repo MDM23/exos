@@ -122,11 +122,18 @@ method_attribute!(put, "PUT");
 /// ```
 ///
 /// Declaring the fields once is the point: the handler takes
-/// `Json<Selection>`, the template binds `selection.picked`, and renaming the
+/// `Model<Selection>`, the template binds `selection.picked`, and renaming the
 /// field breaks both. Alongside the struct it generates a handle whose fields
 /// are signals, a typed token per field for error reporting, and the
 /// implementations that let the handle declare itself on an element and be
 /// sent as a payload.
+///
+/// A field name never leaves the server. Both the signal and the payload key
+/// are named after the model and the field, so nothing outside the generated
+/// pair can name either, which is what leaves both free to change; see
+/// [`Model`](../exos/struct.Model.html). A `serde` rename is refused for that
+/// reason, since it would change what the server expects and nothing the
+/// client sends.
 #[proc_macro_attribute]
 pub fn model(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     model::expand(item.into()).into()

@@ -1,11 +1,11 @@
 //! Typed signal handles.
 //!
-//! A signal is a named piece of state in the browser. It is defined once, in
-//! Rust, and the handle is what templates use, so renaming it is a compile
-//! error at every use site.
+//! A signal is a piece of state in the browser. It is declared once, in Rust,
+//! and the handle is the only way to read or write it, so there is no name to
+//! keep in step with anything.
 //!
 //! ```ignore
-//! let gone = signal!(gone = false);   // Signal<bool>
+//! let gone = signal(false);   // Signal<bool>
 //!
 //! view! {
 //!     <li id={ row_id } {&gone} {show(!gone.get())}>
@@ -18,18 +18,38 @@
 //! modal, a draft input, a selection. Server-owned state lives in markup and
 //! changes only by a patch. Mirroring it into a signal gives one value two
 //! sources of truth, and they drift as soon as a patch lands.
+//!
+//! # Which signals have a name
+//!
+//! None of them, as far as anything that writes a template is concerned. Every
+//! signal is keyed by a name in the client store, because the store is a map,
+//! but no name here is written by hand:
+//!
+//! - A signal from [`signal`] is named after where it was declared.
+//! - A `#[model]` field is named after its model and itself, so that every
+//!   `signals()` call agrees and the template that declares one and the
+//!   handler that writes it with [`Effect::set`](crate::Effect::set) name the
+//!   same signal. The *field* name is still the JSON key of the request body,
+//!   which is a contract; the signal name is not, and they are two different
+//!   strings in the generated call.
+//!
+//! The exception is a name some other language owns, such as the sortable
+//! plugin's `_order`. Those are written in JavaScript, so they reach a
+//! template as a raw expression and [`view!`](crate::view) declares them where
+//! it finds them. Nothing in Rust can hand out a handle to one.
 
-use core::marker::PhantomData;
+use core::{marker::PhantomData, panic::Location};
 
 use serde::Serialize;
 use serde_json::Value;
 
 use crate::{IntoJs, Js, emit};
 
-/// A named piece of client state.
+/// A piece of client state.
 ///
-/// The name resolves against the DOM scope the signal is declared on, so two
-/// rows can both call theirs `gone` without colliding.
+/// The handle carries the type and the name. Names resolve against the DOM
+/// scope the signal is declared on, so a hundred rows can each hold their own
+/// without colliding, and nothing has to invent `gone_3`.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Signal<T> {
     name: String,
@@ -38,13 +58,12 @@ pub struct Signal<T> {
 }
 
 impl<T> Signal<T> {
-    /// A signal with a starting value.
+    /// A signal with a starting value, under a name the caller chooses.
     ///
-    /// Prefer [`signal!`](crate::signal), which takes the name from the
-    /// binding so the two cannot disagree. `initial` is taken by value so that
-    /// it also fixes `T`, sparing every call site a turbofish.
-    #[must_use]
-    pub fn new(name: impl Into<String>, initial: T) -> Self
+    /// Private, because a name is a contract and the two things entitled to
+    /// one build it themselves; see the module docs. `initial` is taken by
+    /// value so that it also fixes `T`, sparing every call site a turbofish.
+    fn new(name: impl Into<String>, initial: T) -> Self
     where
         T: Serialize,
     {
@@ -56,7 +75,9 @@ impl<T> Signal<T> {
     ///
     /// `#[model]` uses this: it has the model's `Default` as one JSON object
     /// and splits it per field, so it never needs `T: Serialize` for each
-    /// field on its own.
+    /// field on its own. Public only because that expansion lands in another
+    /// crate.
+    #[doc(hidden)]
     #[must_use]
     pub fn with_value(name: impl Into<String>, initial: Value) -> Self {
         Self {
@@ -67,6 +88,10 @@ impl<T> Signal<T> {
     }
 
     /// The name this signal is declared under.
+    ///
+    /// For a signal from [`signal`] this is generated and carries no promise:
+    /// it is here to be read while debugging, not to be written into a
+    /// template. Reach the signal through the handle instead.
     #[must_use]
     pub fn name(&self) -> &str {
         &self.name
@@ -149,6 +174,27 @@ impl<T> Signal<Vec<T>> {
     }
 }
 
+/// A signal nothing off the page names.
+///
+/// This is how client state is declared. The handle is the whole interface:
+/// put it in an attribute block to declare it, call [`get`](Signal::get) and
+/// [`set`](Signal::set) to use it.
+///
+/// ```
+/// # use exos::signal;
+/// let gone = signal(false);          // Signal<bool>
+/// assert_eq!(gone.get().source(), format!("$.{}", gone.name()));
+/// ```
+///
+/// Where the same state is also what an action sends, use `#[model]`, which
+/// names its signals per field rather than per call site so that every
+/// `signals()` call hands back the same ones.
+#[must_use]
+#[track_caller]
+pub fn signal<T: Serialize>(initial: T) -> Signal<T> {
+    Signal::new(generated(Location::caller()), initial)
+}
+
 /// A typed reference to one field of a model.
 ///
 /// Generated by `#[model]` as an associated constant, so error reporting and
@@ -162,6 +208,10 @@ pub struct Field<M> {
 
 impl<M> Field<M> {
     /// Names a field of `M`.
+    ///
+    /// Called by the `#[model]` expansion, which lands in another crate. There
+    /// is no reason to name a field by hand.
+    #[doc(hidden)]
     #[must_use]
     pub const fn new(name: &'static str) -> Self {
         Self {
@@ -177,18 +227,41 @@ impl<M> Field<M> {
     }
 }
 
-/// Declares a signal, taking its client-side name from the Rust binding.
+/// A name derived from where the signal was declared.
 ///
-/// ```
-/// # use exos::signal;
-/// let gone = signal!(gone = false);
-/// assert_eq!(gone.name(), "gone");
-/// ```
-#[macro_export]
-macro_rules! signal {
-    ($name:ident = $initial:expr) => {
-        $crate::Signal::new(::core::stringify!($name), $initial)
-    };
+/// Being a function of the call site rather than a counter is what a live
+/// fragment needs: its body renders inline and again from whatever publishes
+/// it, and the two must agree byte for byte.
+///
+/// A helper called once per row hands every row the same name, which is
+/// exactly right, because each row is its own scope. Two signals collide only
+/// when one element declares both, and that is the clash a hand-written name
+/// could always have.
+fn generated(at: &Location<'_>) -> String {
+    // FNV-1a over the call site, for a short name that needs no dependency.
+    // Truncated to 32 bits: a collision has to survive landing on the same
+    // element to matter at all.
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+
+    for byte in at.file().bytes() {
+        hash = mix(hash, byte);
+    }
+
+    for byte in at.line().to_le_bytes() {
+        hash = mix(hash, byte);
+    }
+
+    for byte in at.column().to_le_bytes() {
+        hash = mix(hash, byte);
+    }
+
+    // Leading letter, because a JavaScript identifier cannot start with a
+    // digit and this name is read back as `$.<name>`.
+    format!("s{:08x}", hash >> 32)
+}
+
+const fn mix(hash: u64, byte: u8) -> u64 {
+    (hash ^ byte as u64).wrapping_mul(0x0000_0100_0000_01b3)
 }
 
 #[cfg(test)]
@@ -223,11 +296,31 @@ mod tests {
     }
 
     #[test]
-    fn the_macro_takes_the_name_from_the_binding() {
-        let gone = signal!(gone = false);
+    fn a_generated_name_is_a_javascript_identifier() {
+        let gone = signal(false);
 
-        assert_eq!(gone.name(), "gone");
+        assert!(gone.name().starts_with('s'));
+        assert!(gone.name().chars().all(|c| c.is_ascii_alphanumeric()));
         assert_eq!(gone.initial(), &serde_json::json!(false));
+    }
+
+    /// What a live fragment depends on: its body renders inline and again from
+    /// whatever publishes it, so one call site has to keep producing one name.
+    #[test]
+    fn one_call_site_always_produces_the_same_name() {
+        fn declare() -> Signal<bool> {
+            signal(false)
+        }
+
+        assert_eq!(declare().name(), declare().name());
+    }
+
+    #[test]
+    fn two_call_sites_produce_different_names() {
+        let first = signal(false);
+        let second = signal(false);
+
+        assert_ne!(first.name(), second.name());
     }
 
     #[test]

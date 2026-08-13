@@ -3,10 +3,11 @@
 //! One type, so adding a capability later changes no signature.
 //!
 //! ```
-//! # use exos::{Effect, Markup};
+//! # use exos::{Effect, Markup, signal};
 //! # fn file_list() -> Markup { Markup::default() }
+//! # let picked = signal(Vec::<u32>::new());
 //! let effect = Effect::patch(file_list())
-//!     .and_signals(serde_json::json!({ "picked": [] }))
+//!     .and_set(&picked, Vec::new())
 //!     .focus("#file-list");
 //!
 //! assert_eq!(effect.steps().len(), 3);
@@ -25,9 +26,10 @@ use axum::{
     http::{HeaderValue, header},
     response::{IntoResponse, Response, sse},
 };
-use serde_json::Value;
+use serde::Serialize;
+use serde_json::{Map, Value};
 
-use crate::Markup;
+use crate::{Markup, Signal};
 
 /// One instruction for the client.
 #[derive(Clone, Debug, PartialEq)]
@@ -97,10 +99,10 @@ impl Effect {
         Self::none().and_patch(markup)
     }
 
-    /// Starts with a signal merge.
+    /// Starts by writing a signal.
     #[must_use]
-    pub fn signals(value: Value) -> Self {
-        Self::none().and_signals(value)
+    pub fn set<T: Serialize>(signal: &Signal<T>, value: T) -> Self {
+        Self::none().and_set(signal, value)
     }
 
     /// Starts with a removal.
@@ -133,10 +135,35 @@ impl Effect {
         self.push(Step::Patch(markup.into()))
     }
 
-    /// Adds a signal merge.
+    /// Writes a signal.
+    ///
+    /// The handle carries both the name and the type, so there is no string to
+    /// keep in step with the template. In practice that means a `#[model]`
+    /// field: those are named per field, so the handle a handler builds names
+    /// the same signal the template declared, where a [`signal`](crate::signal)
+    /// handle would be named after this call site and reach nothing.
+    ///
+    /// The client resolves the name from the document root, so a signal
+    /// declared inside a scope is not reachable from here either. That is the
+    /// same rule a plugin follows.
     #[must_use]
-    pub fn and_signals(self, value: Value) -> Self {
-        self.push(Step::Signals(value))
+    pub fn and_set<T: Serialize>(mut self, signal: &Signal<T>, value: T) -> Self {
+        let value = serde_json::to_value(&value).unwrap_or(Value::Null);
+
+        // Consecutive writes are one merge, which keeps `Object.assign` on the
+        // client to a single pass and the wire to a single event. Anything
+        // between them keeps its place, because order is what a caller sees.
+        match self.steps.last_mut() {
+            Some(Step::Signals(Value::Object(held))) => {
+                held.insert(signal.name().to_owned(), value);
+                self
+            }
+            _ => {
+                let mut merge = Map::new();
+                merge.insert(signal.name().to_owned(), value);
+                self.push(Step::Signals(Value::Object(merge)))
+            }
+        }
     }
 
     /// Adds a removal.
@@ -242,10 +269,11 @@ impl IntoResponse for Effect {
 )]
 mod tests {
     use super::*;
+    use crate::signal;
 
     #[test]
     fn steps_keep_the_order_they_were_added_in() {
-        let stream = Effect::signals(serde_json::json!({ "a": 1 }))
+        let stream = Effect::set(&signal(0_u32), 1)
             .and_patch(Markup(String::from("<li id=\"x\"></li>")))
             .focus("#x")
             .to_stream();
@@ -255,6 +283,43 @@ mod tests {
         let focus = stream.find("event: focus").expect("a focus step");
 
         assert!(signals < patch && patch < focus);
+    }
+
+    #[test]
+    fn a_write_is_keyed_by_the_handles_name() {
+        let picked = signal(Vec::<u32>::new());
+        let effect = Effect::set(&picked, vec![1, 2]);
+
+        assert_eq!(
+            effect.steps(),
+            [Step::Signals(serde_json::json!({ picked.name(): [1, 2] }))]
+        );
+    }
+
+    /// One event rather than three, and the client assigns once.
+    #[test]
+    fn consecutive_writes_merge_into_one_step() {
+        let picked = signal(Vec::<u32>::new());
+        let fail = signal(false);
+
+        let effect = Effect::set(&picked, Vec::new()).and_set(&fail, true);
+
+        assert_eq!(effect.steps().len(), 1);
+        assert_eq!(effect.to_stream().matches("event: signals").count(), 1);
+    }
+
+    /// Merging must not reorder anything: a write after a patch stays after it.
+    #[test]
+    fn a_step_between_two_writes_keeps_them_apart() {
+        let picked = signal(Vec::<u32>::new());
+        let fail = signal(false);
+
+        let effect = Effect::set(&picked, Vec::new())
+            .and_patch(Markup(String::from("<li id=\"x\"></li>")))
+            .and_set(&fail, true);
+
+        assert_eq!(effect.steps().len(), 3);
+        assert!(matches!(effect.steps()[2], Step::Signals(_)));
     }
 
     #[test]

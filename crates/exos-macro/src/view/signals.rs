@@ -5,16 +5,15 @@
 //! macro holds the whole subtree at expansion time, so the names can be read
 //! out and declared automatically.
 //!
-//! Only signals that need no starting value are inferred, with `null` as the
-//! default: `!$._gone` on an undeclared signal is already `true`. A signal
-//! carrying a value from the server still says so, because that value has to
-//! come from somewhere.
+//! Every inferred name starts as `null`, which is all a name in a raw string
+//! can ask for: there is no Rust value to take a starting value from.
 //!
-//! Typed handles bypass this entirely. They are Rust values, so the compiler
-//! already checks them and there is no string to read.
+//! This is the path for names something other than Rust owns, the sortable
+//! plugin's `_order` being the one in the tree. Handles bypass it entirely.
+//! They are Rust values, so the compiler already checks them, their names are
+//! generated rather than written, and there is no string to read.
 
 use proc_macro2::{TokenStream, TokenTree};
-use quote::quote;
 use rstml::node::{Node, NodeAttribute, NodeElement};
 
 // -----------------------------------------------------------------------------
@@ -66,8 +65,6 @@ pub(super) fn inferred<C: rstml::node::CustomNode>(element: &NodeElement<C>) -> 
         collect(child, &mut found);
     }
 
-    let declared = declared(element);
-    found.retain(|name| !declared.contains(name));
     found
 }
 
@@ -103,15 +100,15 @@ fn collect_from_attributes<C: rstml::node::CustomNode>(
         }
 
         match attribute.value() {
-            // `data-show="!$._gone"`
+            // `data-sortable="post('/reorder', { order: $._order })"`
             Some(syn::Expr::Lit(syn::ExprLit {
                 lit: syn::Lit::Str(text),
                 ..
             })) => scan(&text.value(), found),
 
-            // `data-on-click={ format!("$._gone = true; {url}") }`. The
+            // `data-on-click={ format!("$._order = null; {url}") }`. The
             // literal part of a format string is still a literal, and this is
-            // how a per-row handler tends to be written.
+            // how a hand-written handler tends to be built.
             Some(syn::Expr::Macro(call)) => {
                 if let Some(literal) = format_literal(call) {
                     scan(&literal, found);
@@ -189,56 +186,6 @@ fn scan(source: &str, found: &mut Vec<String>) {
 }
 
 // -----------------------------------------------------------------------------
-//                                DECLARED NAMES
-// -----------------------------------------------------------------------------
-
-/// Names the element declares itself, which are never inferred over.
-fn declared<C: rstml::node::CustomNode>(element: &NodeElement<C>) -> Vec<String> {
-    for attribute in element.attributes() {
-        let NodeAttribute::Attribute(attribute) = attribute else {
-            continue;
-        };
-
-        if attribute.key.to_string() != DECLARATION {
-            continue;
-        }
-
-        // `signals! { fav: x, gone: false }`: read the keys back out.
-        if let Some(syn::Expr::Macro(call)) = attribute.value()
-            && call
-                .mac
-                .path
-                .segments
-                .last()
-                .is_some_and(|segment| segment.ident == "signals")
-        {
-            return keys(&call.mac.tokens);
-        }
-    }
-
-    Vec::new()
-}
-
-/// The identifiers that appear in key position of a `signals!` invocation.
-fn keys(tokens: &TokenStream) -> Vec<String> {
-    let mut names = Vec::new();
-    let mut expecting_name = true;
-
-    for token in tokens.clone() {
-        match &token {
-            TokenTree::Ident(ident) if expecting_name => {
-                names.push(ident.to_string());
-                expecting_name = false;
-            }
-            TokenTree::Punct(punct) if punct.as_char() == ',' => expecting_name = true,
-            _ => {}
-        }
-    }
-
-    names
-}
-
-// -----------------------------------------------------------------------------
 //                                   EMISSION
 // -----------------------------------------------------------------------------
 
@@ -253,33 +200,24 @@ pub(super) fn static_declaration(names: &[String]) -> String {
     format!(" {DECLARATION}=\"{{{body}}}\"")
 }
 
-/// Emits `data-signals`, folding the inferred names in as defaults.
-pub(super) fn emit_declaration(
-    value: Option<&syn::Expr>,
-    inferred: &[String],
-    out: &mut TokenStream,
-) {
+/// Rejects a value on `data-signals`.
+///
+/// The attribute is a bare marker: it says this element is a scope, which an
+/// element without an `id` cannot otherwise say. Starting values come from
+/// handles, so a value here is a mistake worth naming rather than ignoring.
+pub(super) fn reject_value(value: Option<&syn::Expr>, out: &mut TokenStream) {
     let Some(expression) = value else {
-        // `<div data-signals>` is meaningless on its own, but it does mark a
-        // scope, so honour the inferred set and nothing else.
-        if !inferred.is_empty() {
-            let literal = static_declaration(inferred);
-            out.extend(quote! { __out.push_str(#literal); });
-        }
         return;
     };
 
-    out.extend(quote! {
-        {
-            let mut __signals = #expression;
-            // Inferred names are defaults: an explicit starting value in the
-            // declaration is left alone.
-            __signals.default_null(&[#(#inferred),*]);
-            __out.push_str(" data-signals=\"");
-            ::exos::Render::render_to(&__signals, &mut __out);
-            __out.push('"');
-        }
-    });
+    out.extend(
+        syn::Error::new_spanned(
+            expression,
+            "data-signals takes no value; declare a signal by putting its \
+             handle in an attribute block, as in `{&gone}`",
+        )
+        .to_compile_error(),
+    );
 }
 
 // -----------------------------------------------------------------------------
@@ -298,7 +236,7 @@ mod tests {
 
     #[test]
     fn reads_signal_names_out_of_an_expression() {
-        assert_eq!(names("!$._gone"), vec!["_gone"]);
+        assert_eq!(names("!$._order"), vec!["_order"]);
         assert_eq!(names("$.a + $.b"), vec!["a", "b"]);
     }
 
@@ -310,11 +248,5 @@ mod tests {
     #[test]
     fn reports_each_name_once() {
         assert_eq!(names("$.x = !$.x"), vec!["x"]);
-    }
-
-    #[test]
-    fn reads_the_keys_of_a_signals_invocation() {
-        let tokens: TokenStream = "fav: entry.favorite, gone: false".parse().expect("valid");
-        assert_eq!(keys(&tokens), vec!["fav", "gone"]);
     }
 }

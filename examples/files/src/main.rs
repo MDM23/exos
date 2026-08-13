@@ -8,7 +8,7 @@
 //! Run it with `cargo run -p files` and open <http://localhost:3000> twice.
 
 use axum::{Json, extract::Path};
-use exos::{Effect, Page, data, on_change, publish, view};
+use exos::{Effect, Model, Page, data, on_change, publish, view};
 use serde::{Deserialize, Serialize};
 
 mod store;
@@ -63,8 +63,10 @@ fn simulate_presence() {
 
 /// What the selection bar holds and what a batch action sends.
 ///
-/// Declared once: the handlers below take `Json<Selection>` and the template
-/// binds `selection.picked`, so renaming a field breaks both.
+/// Declared once: the handlers below take `Model<Selection>` and the template
+/// binds `selection.picked`, so renaming a field breaks both. Neither name
+/// reaches the browser, so neither can be written into anything that would
+/// then have to keep agreeing with this struct.
 #[exos::model]
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Selection {
@@ -176,7 +178,7 @@ async fn about() -> Page {
 // -----------------------------------------------------------------------------
 
 #[exos::post("/files/{id}/favorite")]
-async fn favorite(Path(id): Path<u32>, Json(selection): Json<Selection>) -> Effect {
+async fn favorite(Path(id): Path<u32>, Model(selection): Model<Selection>) -> Effect {
     if !selection.fail {
         data::<Files>().update(|entries| {
             store::toggle_favorite(entries, id);
@@ -190,7 +192,7 @@ async fn favorite(Path(id): Path<u32>, Json(selection): Json<Selection>) -> Effe
 }
 
 #[exos::post("/files/{id}/delete")]
-async fn delete_file(Path(id): Path<u32>, Json(selection): Json<Selection>) -> Effect {
+async fn delete_file(Path(id): Path<u32>, Model(selection): Model<Selection>) -> Effect {
     if !selection.fail {
         data::<Files>().update(|entries| store::delete(entries, id));
     }
@@ -200,7 +202,7 @@ async fn delete_file(Path(id): Path<u32>, Json(selection): Json<Selection>) -> E
 }
 
 #[exos::post("/files/archive")]
-async fn archive(Json(selection): Json<Selection>) -> Effect {
+async fn archive(Model(selection): Model<Selection>) -> Effect {
     if !selection.fail {
         data::<Files>().update(|entries| store::archive(entries, &selection.picked));
     }
@@ -208,8 +210,10 @@ async fn archive(Json(selection): Json<Selection>) -> Effect {
     publish(&file_list());
 
     // Whether the batch applied or not, the selection no longer refers to
-    // anything the viewer can see.
-    Effect::signals(serde_json::json!({ "picked": [] })).scroll("#file-list")
+    // anything the viewer can see. The handle names the signal, so this cannot
+    // drift from what the template declared or from what the extractor reads
+    // back.
+    Effect::set(&Selection::signals().picked, Vec::new()).scroll("#file-list")
 }
 
 #[exos::post("/files/reorder")]
@@ -296,9 +300,11 @@ mod tests {
     async fn handlers_compile_to_javascript() {
         let html = get("/").await;
 
-        // Written in Rust as a signal write followed by a typed call.
+        // Written in Rust as a signal write followed by a typed call. The
+        // signal is anonymous, so the assertion names the shape rather than
+        // the generated key.
         assert!(
-            html.contains("$._gone = true; post(&quot;/files/1/delete&quot;"),
+            html.contains("= true; post(&quot;/files/1/delete&quot;"),
             "{html:.900}"
         );
     }
@@ -306,20 +312,38 @@ mod tests {
     #[tokio::test]
     async fn a_typed_call_sends_exactly_the_model_fields() {
         let html = get("/").await;
+        let selection = Selection::signals();
 
-        // The handle compiled into an object of signal reads: the same fields
-        // Json<Selection> deserializes.
-        assert!(html.contains("&quot;picked&quot;: $.picked"));
-        assert!(html.contains("&quot;fail&quot;: $.fail"));
+        // The handle compiled into an object of signal reads: one entry per
+        // field of Selection, and nothing else.
+        for signal in [&selection.picked.name(), &selection.fail.name()] {
+            assert!(
+                html.contains(&format!("&quot;{signal}&quot;: $.{signal}")),
+                "{html:.900}"
+            );
+        }
+    }
+
+    /// The whole page is server-generated and so is everything that reads it
+    /// back, so a field name has no reason to appear in either. If one did, it
+    /// could be written into a template or a script, and renaming the field
+    /// would then break the browser rather than the build.
+    #[tokio::test]
+    async fn a_field_name_never_leaves_the_server() {
+        let html = get("/").await;
+
+        assert!(!html.contains("picked"));
+        assert!(!html.contains("fail"));
     }
 
     #[tokio::test]
     async fn the_selection_bar_derives_from_the_signal() {
         let html = get("/").await;
+        let picked = Selection::signals().picked;
 
-        assert!(html.contains("data-show=\"$.picked.length &gt; 0\""));
-        assert!(html.contains("data-text=\"$.picked.length\""));
-        assert!(html.contains("data-bind=\"picked\""));
+        assert!(html.contains(&format!("data-show=\"$.{}.length &gt; 0\"", picked.name())));
+        assert!(html.contains(&format!("data-text=\"$.{}.length\"", picked.name())));
+        assert!(html.contains(&format!("data-bind=\"{}\"", picked.name())));
     }
 
     #[tokio::test]
@@ -366,7 +390,13 @@ mod tests {
                     .method("POST")
                     .uri("/files/archive")
                     .header("content-type", "application/json")
-                    .body(Body::from(r#"{"picked":[],"fail":true}"#))
+                    // Built from the model rather than written out, because
+                    // the keys are the framework's business and not this
+                    // test's.
+                    .body(Body::from(exos::to_wire(&Selection {
+                        picked: Vec::new(),
+                        fail: true,
+                    })))
                     .expect("a valid request"),
             )
             .await
@@ -384,5 +414,29 @@ mod tests {
         let stream = body(response).await;
         assert!(stream.contains("event: signals"));
         assert!(stream.contains("event: scroll"));
+    }
+
+    /// An action's body is between this server and the client it generated. A
+    /// request written by hand against the field names is refused, which is
+    /// what leaves the shape free to change later.
+    #[tokio::test]
+    async fn a_hand_written_body_does_not_reach_an_action() {
+        let response = app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/files/archive")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"picked":[1],"fail":false}"#))
+                    .expect("a valid request"),
+            )
+            .await
+            .expect("the router answers");
+
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+        // Named for what the model declares, because the keys are renamed
+        // before serde ever sees them.
+        assert!(body(response).await.contains("picked"));
     }
 }

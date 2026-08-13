@@ -159,7 +159,7 @@ fragment on purpose.
 ## Stage 3: sending
 
 ```rust
-exos::send(&Viewer(user), &Effect::signals(json!({ "toast": summary })));
+exos::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
 ```
 
 Every step becomes one event, exactly as `publish` sends one. Delivery is
@@ -202,16 +202,27 @@ a surprise, and one that shows up as silence.
 The toast in the opening example is not a fragment, and it should not become
 one. Two ways to say it, and they are not rivals.
 
-**Signals.** `Effect::signals` merges into the client store, so the sidebar's
+**Signals.** `Effect::set` writes into the client store, so the sidebar's
 template already owns the presentation and the server sends a value:
 
 ```rust
-Effect::signals(json!({ "toast": "Ada mentioned you in Q3 planning" }))
+Effect::set(&Toast::signals().message, "Ada mentioned you in Q3 planning")
 ```
 
-This works with no new step. One caveat to document: signals arriving on the
-stream merge into the global namespace, since there is no element to resolve a
-scope against, so the receiving template has to read an unscoped name.
+This works with no new step. Two things follow from `set` taking a handle
+rather than a name.
+
+The first is a caveat to document: signals arriving on the stream merge into
+the global namespace, since there is no element to resolve a scope against, so
+the receiving template has to declare the handle at the root and not inside a
+scope.
+
+The second is an open question. A toast is not a request body, so making it a
+`#[model]` purely to earn a name is the tail wagging the dog, and today that is
+the only way to get a writable one. Whether that calls for a third kind of
+signal, named but not a model, is deliberately left until there are enough
+cases to see the shape. Until then the generated names stay unpublished, which
+is what keeps the answer open.
 
 **A custom event.** `Step::Event(name, payload)`, dispatched on `document` the
 way `exos:busy`, `exos:idle` and `exos:mutated` already are, is the general
@@ -297,7 +308,7 @@ fn notify(user: u32, event: &Event) {
     publish(&notification_sidebar(user));
 
     // The arrival, to the person.
-    exos::send(&Viewer(user), &Effect::signals(json!({ "toast": event.summary() })));
+    exos::send(&Viewer(user), &Effect::set(&Toast::signals().message, event.summary()));
 }
 ```
 

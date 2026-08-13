@@ -21,11 +21,11 @@ struct Selection {
 }
 
 #[exos::post("/files/archive")]
-async fn archive(Json(selection): Json<Selection>) -> Effect {
+async fn archive(Model(selection): Model<Selection>) -> Effect {
     data::<Files>().update(|files| store::archive(files, &selection.picked));
 
     publish(&file_list());
-    Effect::signals(json!({ "picked": [] })).scroll("#file-list")
+    Effect::set(&Selection::signals().picked, Vec::new()).scroll("#file-list")
 }
 
 view! {

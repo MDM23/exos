@@ -42,9 +42,9 @@ pub(crate) fn row(entry: &Entry, selection: &SelectionSignals) -> Markup {
     let favourited = entry.favorite;
 
     // Whether this row is pending deletion is not something the server has an
-    // opinion about, so it is a real signal. It is never declared: the macro
-    // finds the reference below and declares it as null.
-    let gone = signal!(_gone = false);
+    // opinion about, so it is a real signal. Nothing outside this row names it,
+    // so it has no name worth writing down.
+    let gone = signal(false);
 
     // `data-favorite` is not mirrored into a signal. The server owns it, the
     // click writes it speculatively, and the patch that follows overwrites it

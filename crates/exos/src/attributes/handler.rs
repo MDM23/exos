@@ -98,18 +98,21 @@ pub fn on_submit(handler: impl FnOnce(Event)) -> Attr {
 mod tests {
     use super::*;
     use crate::{
-        Signal,
         attributes::{Attributes, IntoAttributes},
+        signal,
     };
 
     #[test]
     fn a_handler_records_its_body() {
-        let gone = Signal::new("gone", false);
+        let gone = signal(false);
         let mut attributes = Attributes::new();
 
         on_click(|_| gone.set(true)).write(&mut attributes);
 
-        assert_eq!(attributes.render(), " data-on-click=\"$.gone = true\"");
+        assert_eq!(
+            attributes.render(),
+            format!(" data-on-click=\"$.{} = true\"", gone.name())
+        );
     }
 
     #[test]

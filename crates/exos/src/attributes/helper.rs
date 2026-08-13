@@ -131,13 +131,14 @@ pub fn preserve() -> Attr {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signal;
 
     #[test]
     fn a_binding_carries_the_signals_rust_type() {
         // Without this the runtime pushes the string "1" into what the server
         // declared as Vec<u32>, and the request fails to deserialize.
-        let picked: Signal<Vec<u32>> = Signal::new("picked", Vec::new());
-        let query: Signal<String> = Signal::new("query", String::new());
+        let picked = signal(Vec::<u32>::new());
+        let query = signal(String::new());
 
         let mut attributes = Attributes::new();
         bind(&picked).write(&mut attributes);

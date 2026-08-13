@@ -30,6 +30,7 @@ mod effect;
 mod js;
 mod keys;
 mod live;
+mod model;
 mod render;
 mod response;
 mod scope;
@@ -38,8 +39,8 @@ mod signal;
 pub use crate::{
     asset::{Asset, AssetSet, routes as asset_routes, runtime},
     attributes::{
-        Attr, Attributes, Bind, BindKind, Class, Event, IntoAttributes, SignalScope, Target, attr,
-        bind, class, on, on_change, on_click, on_input, on_submit, preserve, prop, show, text,
+        Attr, Attributes, Bind, BindKind, Class, Event, IntoAttributes, Target, attr, bind, class,
+        on, on_change, on_click, on_input, on_submit, preserve, prop, show, text,
     },
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry, app},
@@ -47,10 +48,11 @@ pub use crate::{
     js::{IntoJs, IntoPayload, Js, append, attr_now, call, emit, quote_js, record, when},
     keys::{Keys, keys},
     live::{Fragment, Topic, connection_count, publish},
+    model::{Model, ModelFields, ModelRejection, to_wire},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
     scope::{Scope, detached, scope, with_scope},
-    signal::{Field, Signal},
+    signal::{Field, Signal, signal},
 };
 
 #[doc(inline)]

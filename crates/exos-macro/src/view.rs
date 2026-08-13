@@ -116,26 +116,20 @@ fn emit_element<C: rstml::node::CustomNode>(element: &NodeElement<C>, out: &mut 
 
     push_literal(&format!("<{name}"), out);
 
-    let mut declared = false;
-
     for attribute in element.attributes() {
         if let NodeAttribute::Attribute(attribute) = attribute {
             if attribute.key.to_string() == signals::DECLARATION {
-                declared = true;
-                signals::emit_declaration(attribute.value(), &inferred, out);
+                // Consumed rather than written out. Bare, it only marks a
+                // scope, and the declaration it implies is emitted below with
+                // whatever the handles on this element declare.
+                signals::reject_value(attribute.value(), out);
             } else {
                 emit_attribute(&attribute.key, attribute.value(), out);
             }
         }
     }
 
-    // Nothing was declared by hand but the subtree uses signals, so the whole
-    // declaration is static and goes straight into the markup.
-    if !declared && !inferred.is_empty() {
-        push_literal(&signals::static_declaration(&inferred), out);
-    }
-
-    emit_attribute_blocks(element, out);
+    emit_attribute_blocks(element, &inferred, out);
     push_literal(">", out);
 
     if VOID.contains(&name.as_str()) {
@@ -150,14 +144,18 @@ fn emit_element<C: rstml::node::CustomNode>(element: &NodeElement<C>, out: &mut 
     push_literal(&format!("</{name}>"), out);
 }
 
-/// `<li {gone} {show(..)} {class("busy", ..)}>`.
+/// `<li {gone} {show(..)} {class("busy", ..)}>`, and the signals inferred
+/// alongside them.
 ///
 /// Blocks are collected and merged rather than pushed one at a time: the style
 /// this encourages is to repeat them, so two `class` blocks must produce one
 /// `class` attribute. Emitting duplicates would be silently wrong, because
-/// browsers keep the first and drop the rest.
+/// browsers keep the first and drop the rest. Inferred names go through the
+/// same merge for that reason: an element that both declares a handle and
+/// mentions a name in a raw expression has one `data-signals` between them.
 fn emit_attribute_blocks<C: rstml::node::CustomNode>(
     element: &NodeElement<C>,
+    inferred: &[String],
     out: &mut TokenStream,
 ) {
     let blocks: Vec<TokenStream> = element
@@ -178,12 +176,21 @@ fn emit_attribute_blocks<C: rstml::node::CustomNode>(
         .collect();
 
     if blocks.is_empty() {
+        // Nothing on this element is computed, so its declaration is a
+        // constant and goes straight into the markup.
+        if !inferred.is_empty() {
+            push_literal(&signals::static_declaration(inferred), out);
+        }
+
         return;
     }
 
     out.extend(quote! {
         {
             let mut __attributes = ::exos::Attributes::new();
+            // Seeded first, so a handle declaring the same name wins. An
+            // inferred name is a default; a handle is a statement.
+            #(__attributes.signal(#inferred, ::exos::serde_json::Value::Null);)*
             #(::exos::IntoAttributes::write(#blocks, &mut __attributes);)*
             __out.push_str(&__attributes.render());
         }

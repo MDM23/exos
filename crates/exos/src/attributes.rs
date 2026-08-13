@@ -168,78 +168,6 @@ tuple_attributes!(A, B, C, D, E);
 tuple_attributes!(A, B, C, D, E, F);
 
 // -----------------------------------------------------------------------------
-//                                 SIGNAL SCOPES
-// -----------------------------------------------------------------------------
-
-/// A set of signals declared on an element, rendered as `data-signals`.
-///
-/// Built by [`signals!`](crate::signals). The element it sits on becomes the
-/// scope those names belong to, so nothing has to invent unique names.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct SignalScope(pub Value);
-
-impl SignalScope {
-    /// Wraps a JSON object of starting values.
-    #[must_use]
-    pub fn new(value: Value) -> Self {
-        Self(value)
-    }
-
-    /// Adds `null` for any name not already present.
-    ///
-    /// Called by `view!` with the names it found referenced in this element's
-    /// subtree. A name given a value is left alone, so an explicit declaration
-    /// always wins over an inferred default.
-    pub fn default_null(&mut self, names: &[&str]) {
-        let Some(map) = self.0.as_object_mut() else {
-            return;
-        };
-
-        for name in names {
-            map.entry(*name).or_insert(Value::Null);
-        }
-    }
-}
-
-impl crate::Render for SignalScope {
-    fn render_to(&self, out: &mut String) {
-        // Escaped like any other attribute value: the JSON is full of quotes,
-        // and `&quot;` is what keeps them inside the attribute.
-        escape_into(&self.0.to_string(), out);
-    }
-}
-
-impl crate::AttributeValue for SignalScope {
-    type Output<'value>
-        = &'value Self
-    where
-        Self: 'value;
-
-    fn attribute_value(&self) -> Option<&Self> {
-        Some(self)
-    }
-}
-
-/// Declares signals on an element.
-///
-/// ```
-/// # use exos::signals;
-/// let scope = signals! { fav: true, gone: false };
-/// assert_eq!(scope.0["fav"], serde_json::json!(true));
-/// ```
-///
-/// Names are written as identifiers and become JSON keys; values are anything
-/// `Serialize`.
-#[macro_export]
-macro_rules! signals {
-    ($($name:ident : $value:expr),* $(,)?) => {
-        $crate::SignalScope::new($crate::serde_json::json!({
-            $(::core::stringify!($name): $value),*
-        }))
-    };
-}
-
-// -----------------------------------------------------------------------------
 //                               INTERNAL HELPERS
 // -----------------------------------------------------------------------------
 
@@ -263,6 +191,7 @@ pub(crate) fn source<T>(expression: Js<T>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signal;
 
     #[test]
     fn repeated_classes_merge_into_one_attribute() {
@@ -279,8 +208,8 @@ mod tests {
 
     #[test]
     fn repeated_signal_declarations_merge() {
-        let first = Signal::new("a", false);
-        let second = Signal::new("b", 0_u32);
+        let first = signal(false);
+        let second = signal(0_u32);
 
         let mut attributes = Attributes::new();
         (&first, &second).write(&mut attributes);
@@ -288,8 +217,17 @@ mod tests {
         let rendered = attributes.render();
 
         assert_eq!(rendered.matches("data-signals").count(), 1);
-        assert!(rendered.contains("&quot;a&quot;:false"));
-        assert!(rendered.contains("&quot;b&quot;:0"));
+        assert!(rendered.contains(&format!("&quot;{}&quot;:false", first.name())));
+        assert!(rendered.contains(&format!("&quot;{}&quot;:0", second.name())));
+    }
+
+    /// Two declarations on one line are still two signals, because a call site
+    /// is a column as well as a line.
+    #[test]
+    fn signals_declared_side_by_side_get_different_names() {
+        let (first, second) = (signal(false), signal(false));
+
+        assert_ne!(first.name(), second.name());
     }
 
     #[test]
@@ -299,14 +237,5 @@ mod tests {
         attributes.set("data-show", "$.b");
 
         assert_eq!(attributes.render(), " data-show=\"$.b\"");
-    }
-
-    #[test]
-    fn an_inferred_default_never_overwrites_a_declared_value() {
-        let mut scope = signals! { fav: true };
-        scope.default_null(&["fav", "gone"]);
-
-        assert_eq!(scope.0["fav"], serde_json::json!(true));
-        assert_eq!(scope.0["gone"], Value::Null);
     }
 }
