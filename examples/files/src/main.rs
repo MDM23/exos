@@ -140,7 +140,9 @@ async fn index() -> Page {
                  Open a second tab."
             </p>
 
-            // One scope over the bar and the list, so they share the selection.
+            // The selection is declared here because this is the markup it
+            // belongs to. Being a model, it lands on the document, so the
+            // handler below reaches it with Effect::set from wherever it sits.
             <section {&selection}>
                 <label class="controls">
                     <input

@@ -121,6 +121,11 @@
     // Resolution walks up and takes the nearest scope that actually declares
     // the name, so an inner scope shadows an outer one and anything undeclared
     // is global. That is lexical scoping with the DOM as the tree.
+    //
+    // A model's fields are declared on the document instead, wherever the
+    // element that declares them sits, because a handler writes them with
+    // Effect::set and that resolves from the root. They are the names that
+    // exist to be reachable from off the page; everything else is a row's own.
 
     const scopes = new WeakMap(); // element -> scope id
     const initialized = new WeakSet();
@@ -322,9 +327,26 @@
     };
 
     const BINDING_SELECTOR = Object.keys(BINDINGS)
-        .concat("data-signals")
+        .concat("data-signals", "data-signals-root")
         .map((name) => `[${name}]`)
         .join(",");
+
+    // Declares, and never overwrites, so a morph that re-delivers the same
+    // markup does not reset live state, and a name a second row declares is
+    // the one the first row already put there.
+    function declare(el, attribute, key) {
+        const declared = el.getAttribute(attribute);
+        if (!declared) return;
+
+        try {
+            for (const [name, value] of Object.entries(JSON.parse(declared))) {
+                const slot = key(name);
+                if (!store.has(slot)) write(slot, value);
+            }
+        } catch (error) {
+            console.error(`[exos] bad ${attribute}:`, declared, error);
+        }
+    }
 
     function bind(el) {
         if (initialized.has(el)) return;
@@ -332,23 +354,14 @@
 
         const effects = [];
 
-        // data-signals='{"open": false}' declares, and never overwrites, so a
-        // morph that re-delivers the same markup does not reset live state.
-        // The element becomes the scope those names belong to.
-        const declared = el.getAttribute("data-signals");
+        // data-signals='{"open": false}' belongs to this element, which
+        // becomes the scope those names live in.
+        declare(el, "data-signals", (name) => `${scopeOf(el)}/${name}`);
 
-        if (declared) {
-            try {
-                const scope = scopeOf(el);
-
-                for (const [name, value] of Object.entries(JSON.parse(declared))) {
-                    const key = `${scope}/${name}`;
-                    if (!store.has(key)) write(key, value);
-                }
-            } catch (error) {
-                console.error("[exos] bad data-signals:", declared, error);
-            }
-        }
+        // data-signals-root='{"s1f4c20a9": ""}' belongs to the document. A
+        // model's fields are declared this way wherever they appear, so that
+        // the signal a template binds is the one Effect::set writes.
+        declare(el, "data-signals-root", (name) => name);
 
         for (const [attribute, make] of Object.entries(BINDINGS)) {
             const source = el.getAttribute(attribute);
@@ -362,7 +375,9 @@
         initialized.delete(el);
 
         // The element is gone, so its scope's signals are unreachable and
-        // would otherwise sit in the store forever.
+        // would otherwise sit in the store forever. What it declared on the
+        // document stays: those names belong to the page, and the row that
+        // happened to carry the declaration is not what they were about.
         const scope = scopes.get(el);
 
         if (scope) {
@@ -921,7 +936,9 @@
 
     window.exos = {
         // The global signal namespace. Reads and writes here resolve from the
-        // document root, so they see only unscoped signals.
+        // document root, so they see what `data-signals-root` declared and
+        // nothing an element holds. That is what an effect's `signals` step
+        // writes, and why a model's fields are declared on the document.
         //
         // A plugin writing a signal a template will read must use `setIn`: the
         // template's expression resolves against its own element, and a name

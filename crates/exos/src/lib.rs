@@ -52,7 +52,7 @@ pub use crate::{
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
     scope::{Scope, detached, scope, with_scope},
-    signal::{Field, Signal, signal},
+    signal::{Field, Placement, Signal, signal},
 };
 
 #[doc(inline)]

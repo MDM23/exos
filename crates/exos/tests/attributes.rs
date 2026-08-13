@@ -1,6 +1,7 @@
 //! Attribute blocks and the typed handlers that hang on them.
 
 use exos::{Js, bind, class, on_click, show, signal, text, view, when};
+use serde::{Deserialize, Serialize};
 
 #[test]
 fn a_signal_handle_declares_itself_on_its_element() {
@@ -12,6 +13,33 @@ fn a_signal_handle_declares_itself_on_its_element() {
         format!(
             "<li id=\"row\" data-signals=\"{{&quot;{}&quot;:false}}\"></li>",
             gone.name()
+        )
+    );
+}
+
+/// A model's fields are the ones something off the page names, so they are
+/// declared on the document however deep the element that carries them sits.
+/// Otherwise a handler's `Effect::set` would write a different signal of the
+/// same name and the page would not move.
+#[test]
+fn a_model_handle_declares_itself_on_the_document() {
+    #[exos::model]
+    #[derive(Debug, Default, Deserialize, Serialize)]
+    struct Draft {
+        title: String,
+    }
+
+    let draft = Draft::signals();
+    let gone = signal(false);
+    let markup = view! { <li id="row" {(&draft, &gone)}></li> };
+
+    assert_eq!(
+        markup.as_str(),
+        format!(
+            "<li id=\"row\" data-signals=\"{{&quot;{}&quot;:false}}\" \
+             data-signals-root=\"{{&quot;{}&quot;:&quot;&quot;}}\"></li>",
+            gone.name(),
+            draft.title.name()
         )
     );
 }

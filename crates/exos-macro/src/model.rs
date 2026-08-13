@@ -82,6 +82,11 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
                                 .get(#labels)
                                 .cloned()
                                 .unwrap_or(::exos::serde_json::Value::Null),
+                            // On the document, not on whichever element
+                            // declares the handle: a handler answers with
+                            // Effect::set, which the client applies against
+                            // the document root.
+                            ::exos::Placement::Document,
                         ),
                     )*
                 }
@@ -228,6 +233,16 @@ mod tests {
         assert!(expanded.contains(&format!("with_value (\"{name}\"")));
         assert!(expanded.contains(&format!("quote_js (\"{name}\")")));
         assert!(!expanded.contains("quote_js (\"sku\")"));
+    }
+
+    /// A handler answers with `Effect::set`, which the client applies against
+    /// the document, so a field declared into an element's scope would be a
+    /// different signal of the same name.
+    #[test]
+    fn a_field_is_declared_on_the_document_rather_than_on_an_element() {
+        let expanded = expand_ok("struct Draft { sku: String }");
+
+        assert!(expanded.contains(":: exos :: Placement :: Document"));
     }
 
     /// The table the extractor renames through on the way back in. Without it

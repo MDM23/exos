@@ -274,6 +274,27 @@ compiling. `selection.` autocompletes.
 Two models with a field of the same name are two signals, which also means
 nesting one scope inside another cannot silently shadow.
 
+A model's fields are declared on the **document**, wherever the element holding
+the handle happens to sit. That follows from what they are for: a handler
+answers with `Effect::set`, the client applies it against the document root,
+and a field declared into an element's scope would be a different signal of the
+same name. So put the handle wherever the markup it belongs to is, and the
+write still lands:
+
+```rust
+view! {
+    <form {&draft} {on_submit(|_| add::post(draft))}>
+        <input {bind(&draft.title)}>
+    </form>
+}
+```
+
+The two kinds render as two attributes, `data-signals` for the element's own
+and `data-signals-root` for the document's, so which is which is visible in the
+markup rather than being a rule to remember. A `signal` handle is not reachable
+from a handler at all, and a debug build says so rather than writing a signal
+nothing reads.
+
 Anything `Serialize + Deserialize` can be a signal: `bool`, numbers, `String`,
 `Vec<T>`, and nested models.
 
@@ -545,9 +566,10 @@ effects as it computes them.
 
 `set` takes a handle, so the name and the type come from wherever the template
 got them and no string has to agree with anything. The client resolves that
-name from the document root, which means a signal declared inside a scope is
-not reachable from a handler at all. That is the same rule a plugin follows,
-and it is the reason the writable ones are model fields.
+name from the document root, which is exactly where a `#[model]` field is
+declared and is not where a `signal` handle lives, so model fields are the
+writable ones. Handing this a `signal` handle is a mistake the types cannot
+catch, and a debug build asserts rather than writing a signal nothing reads.
 
 ### Why `Page` is still its own type
 

@@ -3,11 +3,17 @@
 //! One type, so adding a capability later changes no signature.
 //!
 //! ```
-//! # use exos::{Effect, Markup, signal};
+//! # use exos::{Effect, Markup};
+//! # use serde::{Deserialize, Serialize};
+//! #[exos::model]
+//! #[derive(Debug, Default, Deserialize, Serialize)]
+//! struct Selection {
+//!     picked: Vec<u32>,
+//! }
+//!
 //! # fn file_list() -> Markup { Markup::default() }
-//! # let picked = signal(Vec::<u32>::new());
 //! let effect = Effect::patch(file_list())
-//!     .and_set(&picked, Vec::new())
+//!     .and_set(&Selection::signals().picked, Vec::new())
 //!     .focus("#file-list");
 //!
 //! assert_eq!(effect.steps().len(), 3);
@@ -29,7 +35,7 @@ use axum::{
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::{Markup, Signal};
+use crate::{Markup, Placement, Signal};
 
 /// One instruction for the client.
 #[derive(Clone, Debug, PartialEq)]
@@ -140,14 +146,27 @@ impl Effect {
     /// The handle carries both the name and the type, so there is no string to
     /// keep in step with the template. In practice that means a `#[model]`
     /// field: those are named per field, so the handle a handler builds names
-    /// the same signal the template declared, where a [`signal`](crate::signal)
-    /// handle would be named after this call site and reach nothing.
+    /// the same signal the template declared, and they are declared on the
+    /// document, which is where the client applies this.
     ///
-    /// The client resolves the name from the document root, so a signal
-    /// declared inside a scope is not reachable from here either. That is the
-    /// same rule a plugin follows.
+    /// A [`signal`](crate::signal) handle belongs to the element that declared
+    /// it and is not reachable from here. Nothing about the types says so, so
+    /// a debug build asserts rather than writing a signal nothing reads; see
+    /// [`Placement`].
+    ///
+    /// # Panics
+    ///
+    /// In debug builds, if `signal` is not declared on the document.
     #[must_use]
     pub fn and_set<T: Serialize>(mut self, signal: &Signal<T>, value: T) -> Self {
+        debug_assert_eq!(
+            signal.placement(),
+            Placement::Document,
+            "this signal belongs to the element that declared it, so a write from here \
+             would reach a different signal of the same name; only a #[model] field is \
+             reachable from a handler"
+        );
+
         let value = serde_json::to_value(&value).unwrap_or(Value::Null);
 
         // Consecutive writes are one merge, which keeps `Object.assign` on the
@@ -271,9 +290,15 @@ mod tests {
     use super::*;
     use crate::signal;
 
+    /// A handle placed the way `#[model]` places one, which is the only kind
+    /// a handler can write.
+    fn field<T>(name: &str, initial: serde_json::Value) -> Signal<T> {
+        Signal::with_value(name, initial, Placement::Document)
+    }
+
     #[test]
     fn steps_keep_the_order_they_were_added_in() {
-        let stream = Effect::set(&signal(0_u32), 1)
+        let stream = Effect::set(&field("count", Value::from(0)), 1)
             .and_patch(Markup(String::from("<li id=\"x\"></li>")))
             .focus("#x")
             .to_stream();
@@ -287,7 +312,7 @@ mod tests {
 
     #[test]
     fn a_write_is_keyed_by_the_handles_name() {
-        let picked = signal(Vec::<u32>::new());
+        let picked: Signal<Vec<u32>> = field("picked", Value::from(Vec::<u32>::new()));
         let effect = Effect::set(&picked, vec![1, 2]);
 
         assert_eq!(
@@ -296,11 +321,20 @@ mod tests {
         );
     }
 
+    /// A signal belonging to the element that declared it is not reachable
+    /// from a handler at all, and saying so beats writing one nothing reads.
+    #[test]
+    #[should_panic(expected = "belongs to the element that declared it")]
+    #[cfg(debug_assertions)]
+    fn writing_an_element_signal_says_it_cannot_work() {
+        drop(Effect::set(&signal(false), true));
+    }
+
     /// One event rather than three, and the client assigns once.
     #[test]
     fn consecutive_writes_merge_into_one_step() {
-        let picked = signal(Vec::<u32>::new());
-        let fail = signal(false);
+        let picked: Signal<Vec<u32>> = field("picked", Value::from(Vec::<u32>::new()));
+        let fail = field("fail", Value::from(false));
 
         let effect = Effect::set(&picked, Vec::new()).and_set(&fail, true);
 
@@ -311,8 +345,8 @@ mod tests {
     /// Merging must not reorder anything: a write after a patch stays after it.
     #[test]
     fn a_step_between_two_writes_keeps_them_apart() {
-        let picked = signal(Vec::<u32>::new());
-        let fail = signal(false);
+        let picked: Signal<Vec<u32>> = field("picked", Value::from(Vec::<u32>::new()));
+        let fail = field("fail", Value::from(false));
 
         let effect = Effect::set(&picked, Vec::new())
             .and_patch(Markup(String::from("<li id=\"x\"></li>")))

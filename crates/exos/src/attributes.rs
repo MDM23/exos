@@ -8,7 +8,7 @@
 
 use serde_json::{Map, Value};
 
-use crate::{Js, Signal, escape_into, js::record, quote_js};
+use crate::{Js, Signal, escape_into, js::record, quote_js, signal::Placement};
 
 mod handler;
 mod helper;
@@ -27,6 +27,12 @@ pub use crate::attributes::{
 pub struct Attributes {
     classes: Vec<String>,
     signals: Map<String, Value>,
+    /// Declarations that belong to the document rather than to this element,
+    /// which is every `#[model]` field. Two attributes rather than one flag
+    /// inside the JSON, because the client has to be able to tell them apart
+    /// before it parses anything, and because a reader looking at the markup
+    /// can see which is which.
+    document: Map<String, Value>,
     /// Everything else. A later write wins, which is how a reader expects two
     /// settings of the same attribute to resolve.
     other: Vec<(String, String)>,
@@ -47,6 +53,15 @@ impl Attributes {
     /// Declares one signal on this element's scope.
     pub fn signal(&mut self, name: impl Into<String>, initial: Value) {
         self.signals.insert(name.into(), initial);
+    }
+
+    /// Declares one signal on the document, from this element.
+    ///
+    /// What a `#[model]` field needs, so that a handler writing it with
+    /// [`Effect::set`](crate::Effect::set) reaches the same signal the
+    /// template bound.
+    pub fn document_signal(&mut self, name: impl Into<String>, initial: Value) {
+        self.document.insert(name.into(), initial);
     }
 
     /// Sets one attribute, replacing any previous value.
@@ -88,6 +103,12 @@ impl Attributes {
         if !self.signals.is_empty() {
             out.push_str(" data-signals=\"");
             escape_into(&Value::Object(self.signals.clone()).to_string(), &mut out);
+            out.push('"');
+        }
+
+        if !self.document.is_empty() {
+            out.push_str(" data-signals-root=\"");
+            escape_into(&Value::Object(self.document.clone()).to_string(), &mut out);
             out.push('"');
         }
 
@@ -137,7 +158,10 @@ pub trait IntoAttributes {
 
 impl<T> IntoAttributes for &Signal<T> {
     fn write(self, attributes: &mut Attributes) {
-        attributes.signal(self.name(), self.initial().clone());
+        match self.placement() {
+            Placement::Element => attributes.signal(self.name(), self.initial().clone()),
+            Placement::Document => attributes.document_signal(self.name(), self.initial().clone()),
+        }
     }
 }
 
@@ -219,6 +243,21 @@ mod tests {
         assert_eq!(rendered.matches("data-signals").count(), 1);
         assert!(rendered.contains(&format!("&quot;{}&quot;:false", first.name())));
         assert!(rendered.contains(&format!("&quot;{}&quot;:0", second.name())));
+    }
+
+    /// Two attributes rather than one, because the client has to know which
+    /// names belong to this element and which to the page before it parses
+    /// either.
+    #[test]
+    fn a_document_signal_is_declared_apart_from_an_element_one() {
+        let mut attributes = Attributes::new();
+        attributes.signal("mine", Value::Bool(false));
+        attributes.document_signal("shared", Value::from(""));
+
+        let rendered = attributes.render();
+
+        assert!(rendered.contains("data-signals=\"{&quot;mine&quot;:false}\""));
+        assert!(rendered.contains("data-signals-root=\"{&quot;shared&quot;:&quot;&quot;}\""));
     }
 
     /// Two declarations on one line are still two signals, because a call site

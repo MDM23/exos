@@ -33,6 +33,24 @@
 //!   which is a contract; the signal name is not, and they are two different
 //!   strings in the generated call.
 //!
+//! # Where a signal lives
+//!
+//! The two kinds are declared into two different places, and that follows
+//! from what their names are for.
+//!
+//! A signal from [`signal`] belongs to the element that declares it. A hundred
+//! rows share one name and hold a hundred values, which is the whole point,
+//! and nothing off the page can reach one.
+//!
+//! A `#[model]` field belongs to the document, wherever the element that
+//! declares it happens to sit. It has to: a handler answers with
+//! [`Effect::set`](crate::Effect::set), and the client applies that against
+//! the document root, so a field declared into an element's scope would be a
+//! different signal of the same name and the write would reach nothing. Being
+//! reachable from the server is what a model field is for, so it is what the
+//! handle declares rather than something a template has to arrange by putting
+//! the declaration on `<html>`.
+//!
 //! The exception is a name some other language owns, such as the sortable
 //! plugin's `_order`. Those are written in JavaScript, so they reach a
 //! template as a raw expression and [`view!`](crate::view) declares them where
@@ -45,20 +63,37 @@ use serde_json::Value;
 
 use crate::{IntoJs, Js, emit};
 
+/// Where a signal's name is resolved from.
+///
+/// Not something a template chooses. Each kind of handle declares the only
+/// placement that makes sense for it; see the module docs.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum Placement {
+    /// The element that declares it, so repeating a name down a list is what
+    /// gives every row its own value.
+    Element,
+    /// The document, so a handler can write it with
+    /// [`Effect::set`](crate::Effect::set) wherever it was declared.
+    Document,
+}
+
 /// A piece of client state.
 ///
-/// The handle carries the type and the name. Names resolve against the DOM
-/// scope the signal is declared on, so a hundred rows can each hold their own
-/// without colliding, and nothing has to invent `gone_3`.
+/// The handle carries the type, the name and where the name lives. A signal
+/// from [`signal`] resolves against the DOM scope it is declared on, so a
+/// hundred rows can each hold their own without colliding and nothing has to
+/// invent `gone_3`; a `#[model]` field resolves against the document.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Signal<T> {
     name: String,
     initial: Value,
+    placement: Placement,
     marker: PhantomData<fn() -> T>,
 }
 
 impl<T> Signal<T> {
-    /// A signal with a starting value, under a name the caller chooses.
+    /// A signal on the element that declares it, under a name the caller
+    /// chooses.
     ///
     /// Private, because a name is a contract and the two things entitled to
     /// one build it themselves; see the module docs. `initial` is taken by
@@ -68,23 +103,30 @@ impl<T> Signal<T> {
         T: Serialize,
     {
         let initial = serde_json::to_value(&initial).unwrap_or(Value::Null);
-        Self::with_value(name, initial)
+        Self::with_value(name, initial, Placement::Element)
     }
 
     /// A signal whose starting value is already serialized.
     ///
-    /// `#[model]` uses this: it has the model's `Default` as one JSON object
-    /// and splits it per field, so it never needs `T: Serialize` for each
-    /// field on its own. Public only because that expansion lands in another
-    /// crate.
+    /// `#[model]` uses this with [`Placement::Document`]: it has the model's
+    /// `Default` as one JSON object and splits it per field, so it never needs
+    /// `T: Serialize` for each field on its own. Public only because that
+    /// expansion lands in another crate.
     #[doc(hidden)]
     #[must_use]
-    pub fn with_value(name: impl Into<String>, initial: Value) -> Self {
+    pub fn with_value(name: impl Into<String>, initial: Value, placement: Placement) -> Self {
         Self {
             name: name.into(),
             initial,
+            placement,
             marker: PhantomData,
         }
+    }
+
+    /// Where this signal's name is resolved from.
+    #[must_use]
+    pub const fn placement(&self) -> Placement {
+        self.placement
     }
 
     /// The name this signal is declared under.
