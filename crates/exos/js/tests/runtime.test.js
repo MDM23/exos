@@ -4,43 +4,11 @@
 // side is checked by the crate's own tests, which assert what is rendered; the
 // bugs that got through were all on this side of the boundary, in scoping,
 // morphing and the two of them meeting.
-//
-// A test boots a page the way a browser would: a DOM, the runtime evaluated
-// into it, and then the public surface driven from outside.
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
 import { test } from "node:test";
-import { fileURLToPath } from "node:url";
 
-import { JSDOM } from "jsdom";
-
-const RUNTIME = readFileSync(
-    join(dirname(fileURLToPath(import.meta.url)), "..", "runtime.js"),
-    "utf8",
-);
-
-/** A page with the runtime loaded and the markup already bound. */
-function boot(body) {
-    const dom = new JSDOM(`<!DOCTYPE html><html><body>${body}</body></html>`, {
-        runScripts: "outside-only",
-        url: "http://localhost/",
-    });
-
-    const { window } = dom;
-
-    // One the runtime reads while it is still loading and jsdom does not
-    // provide, and one jsdom provides only to refuse.
-    window.crypto.randomUUID ??= () => "00000000-0000-4000-8000-000000000000";
-    window.scrollTo = () => {};
-
-    window.eval(RUNTIME);
-    return window;
-}
-
-/** Effects are scheduled on a microtask, so nothing is on the page until they run. */
-const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
+import { boot, settled } from "./harness.js";
 
 /** One row, declaring a signal and binding a class to it. */
 const row = (id = "row") =>
