@@ -95,6 +95,26 @@ batch action, optimistic updates, drag to reorder, live presence.
 fragment per filter and editing a row is client state from the double click to
 the save.
 
+## Working on exos
+
+Every tool comes from the flake, so there is nothing to install and nothing to
+keep in step:
+
+```bash
+nix develop          # or direnv allow, which the .envrc already sets up
+cargo test --workspace
+npm test             # the client runtime, in jsdom
+```
+
+The Rust suite covers what the server renders. `npm test` covers the runtime
+that keeps it alive in the browser, which is the half `cargo test` cannot
+reach, and the reason it exists is that every bug that got past review lived
+there. Node is a dev dependency of this repository and of nothing built with
+it; an application still needs no bundler and no npm.
+
+CI runs both, plus `cargo clippy` over every target, `cargo audit` against the
+lockfile, and a build with the oldest supported compiler.
+
 ## Status
 
 Early. The shape is settled and the pieces work together, but this has not
