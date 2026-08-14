@@ -59,6 +59,10 @@
               ];
             })
 
+            # Every dependency is a decision, and one made months ago is the
+            # kind that gets an advisory published against it.
+            pkgs.cargo-audit
+
             # For the client runtime's tests, and for nothing else. Applications
             # built with exos need no node, which is what `asset!` is for; the
             # runtime is 1500 lines of JavaScript and testing it needs a DOM.

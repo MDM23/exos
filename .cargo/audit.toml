@@ -1,0 +1,15 @@
+# What `cargo audit` is allowed to pass over. Every entry carries a reason and
+# a way out, because a check with a silent exception is not a check. Kept here
+# rather than as a flag in CI, so a local run and a pipeline run agree.
+
+[advisories]
+ignore = [
+  # rkyv 0.7 arrives through lightningcss's `bundler` feature, by way of
+  # parcel_sourcemap, and the bundler is the whole reason exos-build depends on
+  # lightningcss at all. The advisory is about reading a hostile rkyv archive.
+  # Nothing here reads one: the bundler runs at compile time over the
+  # stylesheets in your own crate, and sourcemaps cross that boundary as JSON.
+  # lightningcss has no release on rkyv >= 0.8.17 yet, and this goes when it
+  # does.
+  "RUSTSEC-2026-0235",
+]

@@ -74,6 +74,19 @@ jobs:
       - name: Test
         run: nix develop --command npm test
 
+  audit:
+    name: Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+
+      # Against the lockfile, so what is checked is what is built. Anything
+      # this passes over is in .cargo/audit.toml with its reason, which is also
+      # what makes a local run and this one agree.
+      - name: Audit
+        run: nix develop --command cargo audit
+
   msrv:
     name: MSRV
     runs-on: ubuntu-latest
