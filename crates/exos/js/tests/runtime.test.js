@@ -180,6 +180,162 @@ test("a keyed reorder moves rows rather than rebuilding them", () => {
     assert.equal(window.document.getElementById("list").firstElementChild.id, "two");
 });
 
+// The morph is hand-rolled and staying that way, so the invariants it holds up
+// are written down here rather than borrowed from somebody else's test suite.
+// Everything below is a property the runtime promises: identity survives,
+// bindings outrank the markup that lands on them, and the server's word is
+// final for anything no binding owns.
+
+test("an element that opted out is left alone", () => {
+    const window = boot(
+        `<div id="host"><div id="keep" data-preserve><span>original</span></div></div>`,
+    );
+
+    const keep = window.document.getElementById("keep");
+
+    window.exos.applyPatch(
+        `<div id="host"><div id="keep" data-preserve><span>replaced</span></div></div>`,
+    );
+
+    assert.equal(keep.textContent, "original", "a media player or an open <details> is not touched");
+});
+
+test("an attribute the server dropped is removed", () => {
+    const window = boot(`<div id="host"><p id="note" class="a" title="old">x</p></div>`);
+
+    window.exos.applyPatch(`<div id="host"><p id="note" class="b">x</p></div>`);
+
+    const note = window.document.getElementById("note");
+
+    assert.equal(note.getAttribute("class"), "b", "a changed attribute follows the server");
+    assert.ok(!note.hasAttribute("title"), "and one the server stopped sending is gone");
+});
+
+// The other half of the rule the bound control above proves. Preservation is
+// earned by a binding owning the value, not by the element being a field, or a
+// patch could never correct one the server has the last word on.
+test("a control with no binding takes the value the server sent", async () => {
+    const window = boot(`<form id="form"><input id="field" value="server"></form>`);
+
+    const field = window.document.getElementById("field");
+    field.value = "typed by hand";
+
+    window.exos.applyPatch(`<form id="form"><input id="field" value="server"></form>`);
+    await settled();
+
+    assert.equal(field.value, "server");
+});
+
+// Properties drift from their attributes the moment somebody clicks, and the
+// attribute sync alone would never notice: both sides still read `checked`.
+test("a checkbox follows the markup rather than the property it drifted to", async () => {
+    const window = boot(`<form id="form"><input id="box" type="checkbox" checked></form>`);
+
+    const box = window.document.getElementById("box");
+    box.checked = false;
+
+    window.exos.applyPatch(`<form id="form"><input id="box" type="checkbox" checked></form>`);
+    await settled();
+
+    assert.equal(box.checked, true);
+});
+
+// Deliberately not awaited. The observer would rebind this a microtask later
+// anyway, so settling first would pass whether or not the morph did its own
+// binding. Binding is synchronous because a caller that patches and then reads
+// has no microtask to wait for, and that is the promise being pinned here.
+test("an element whose tag changed is replaced and its bindings rebuilt", () => {
+    const declare = `data-signals='{"on":true}' data-class='{"lit": $.on}'`;
+    const window = boot(`<div id="host"><span id="slot" ${declare}>x</span></div>`);
+
+    window.exos.applyPatch(`<div id="host"><button id="slot" ${declare}>x</button></div>`);
+
+    const slot = window.document.getElementById("slot");
+
+    assert.equal(slot.tagName, "BUTTON");
+    assert.ok(slot.classList.contains("lit"), "bound by the morph, not by the observer later");
+});
+
+// Replacing the node instead would drop a selection or an IME composition
+// sitting in it, which is the same class of loss as rebuilding an element.
+test("changed text updates the node rather than replacing it", () => {
+    const window = boot(`<p id="note">before</p>`);
+
+    const note = window.document.getElementById("note");
+    const text = note.firstChild;
+
+    window.exos.applyPatch(`<p id="note">after</p>`);
+
+    assert.equal(note.firstChild, text, "the same text node");
+    assert.equal(note.textContent, "after");
+});
+
+test("an unkeyed element in the same slot is updated rather than rebuilt", () => {
+    const window = boot(`<div id="host"><p class="a">one</p></div>`);
+
+    const paragraph = window.document.querySelector("#host p");
+
+    window.exos.applyPatch(`<div id="host"><p class="b">two</p></div>`);
+
+    assert.equal(window.document.querySelector("#host p"), paragraph, "the same element");
+    assert.equal(paragraph.className, "b");
+    assert.equal(paragraph.textContent, "two");
+});
+
+// One fragment can legitimately be on the page twice, and those copies share an
+// id because they are the same fragment. Updating only the first leaves the
+// rest stale, which is why the patch looks them all up.
+test("a patch updates every copy of a fragment that appears twice", () => {
+    const window = boot(`<div><p id="twin">before</p><p id="twin">before</p></div>`);
+
+    window.exos.applyPatch(`<p id="twin">after</p>`);
+
+    const copies = [...window.document.querySelectorAll('[id="twin"]')];
+
+    assert.equal(copies.length, 2);
+    assert.ok(copies.every((copy) => copy.textContent === "after"));
+});
+
+// A move arrives as a removal followed by an insertion, so cleaning up on every
+// removal would dispose effects that never stopped being valid.
+test("a row that moved keeps the bindings it had", async () => {
+    const window = boot(`<ul id="list">${row("one")}${row("two")}</ul>`);
+
+    window.exos.setIn(window.document.querySelector("#one .hit"), "open", true);
+    await settled();
+
+    window.exos.applyPatch(`<ul id="list">${row("two")}${row("one")}</ul>`);
+    await settled();
+
+    const one = window.document.getElementById("one");
+    assert.ok(one.classList.contains("open"), "a move is not a removal");
+
+    window.exos.setIn(one.querySelector(".hit"), "open", false);
+    await settled();
+
+    assert.ok(!one.classList.contains("open"), "and the binding still answers afterwards");
+});
+
+test("a row dropped from a list takes only its own signals with it", async () => {
+    const window = boot(`<ul id="list">${row("one")}${row("two")}</ul>`);
+
+    window.exos.setIn(window.document.querySelector("#one .hit"), "open", true);
+    window.exos.setIn(window.document.querySelector("#two .hit"), "open", true);
+    await settled();
+
+    assert.equal(Object.keys(window.exos.signals).length, 2, "one scope per row");
+
+    window.exos.applyPatch(`<ul id="list">${row("two")}</ul>`);
+    await settled();
+
+    assert.equal(window.document.getElementById("one"), null, "the dropped row is gone");
+    assert.equal(Object.keys(window.exos.signals).length, 1, "and so is its scope, but no other");
+    assert.ok(
+        window.document.getElementById("two").classList.contains("open"),
+        "the survivor kept what it was holding",
+    );
+});
+
 /** One live fragment, as the server renders it: a name and the proof of it. */
 const live = (id = "presence-1") => `<exos-live id="${id}" data-token="token-for-${id}"></exos-live>`;
 
