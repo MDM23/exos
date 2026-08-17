@@ -339,6 +339,16 @@ test("a row dropped from a list takes only its own signals with it", async () =>
 /** One live fragment, as the server renders it: a name and the proof of it. */
 const live = (id = "presence-1") => `<exos-live id="${id}" data-token="token-for-${id}"></exos-live>`;
 
+/** A whole document, the way a fetch of a URL answers with one. */
+const served = (body) =>
+    `<!DOCTYPE html><html><head><title>exos</title></head><body>${body}</body></html>`;
+
+/** The connections a tab claimed, in order, ignoring whatever else it fetched. */
+const claimed = (window) =>
+    window.transport.requests
+        .filter((request) => request.url === "/_exos/subscribe")
+        .map((request) => request.body.connection);
+
 test("a page with no live fragments opens no stream", () => {
     const window = boot(`<p>nothing live here</p>`);
 
@@ -375,10 +385,7 @@ test("a reconnect subscribes again under the new id", async () => {
     stream.emit("connection", "second");
     await settled();
 
-    assert.deepEqual(
-        window.transport.requests.map((request) => request.body.connection),
-        ["first", "second"],
-    );
+    assert.deepEqual(claimed(window), ["first", "second"]);
 });
 
 test("a connection the server has forgotten is dropped and reopened", async () => {
@@ -396,5 +403,119 @@ test("a connection the server has forgotten is dropped and reopened", async () =
     window.transport.streams[1].emit("connection", "fresh");
     await settled();
 
-    assert.equal(window.transport.requests.at(-1).body.connection, "fresh");
+    assert.equal(claimed(window).at(-1), "fresh");
+});
+
+test("the stream carries every step, not only the ones a patch uses", async () => {
+    const window = boot(`${live()}<input id="field">`);
+    const [stream] = window.transport.streams;
+
+    assert.deepEqual(
+        [...stream.handlers.keys()].sort(),
+        // The eight an Effect can be made of, plus the greeting that is not one.
+        [
+            "connection", "focus", "navigate", "page",
+            "patch", "reload", "remove", "scroll", "signals",
+        ],
+    );
+
+    stream.emit("focus", "#field");
+    await settled();
+
+    assert.equal(window.document.activeElement.id, "field", "and an out of band one lands");
+});
+
+// The gap: EventSource reconnected on its own, the server had forgotten the
+// connection, and whatever was published while it was gone reached nobody. The
+// page renders every fragment it is showing, so fetching it back repairs all of
+// them at once.
+test("a reconnect fetches the page back to repair what the gap lost", async () => {
+    const window = boot(`<main>${live()}<p id="count">1</p></main>`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    // Published while nothing was listening.
+    window.transport.responses.body = served(`<main>${live()}<p id="count">2</p></main>`);
+
+    stream.emit("connection", "second");
+    await settled();
+
+    assert.equal(window.document.getElementById("count").textContent, "2");
+});
+
+test("the first connection repairs nothing, because nothing was missed", async () => {
+    const window = boot(live());
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    assert.deepEqual(
+        window.transport.requests.map((request) => request.url),
+        ["/_exos/subscribe"],
+        "the document arrived a moment ago, so there is no gap behind it",
+    );
+});
+
+// The detail that separates a repair from a navigation. A navigation is a
+// different page saying what its signals start as; a repair is this page
+// arriving again, and re-seeding it would empty a field on every hiccup.
+test("a repair keeps what the viewer is holding, where a navigation would not", async () => {
+    const form =
+        `<main data-signals-root='{"draft":""}'>` +
+        `<input data-bind="draft" data-bind-kind="string">${live()}</main>`;
+
+    const window = boot(form);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    const field = window.document.querySelector("input");
+    field.value = "half typed";
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await settled();
+
+    window.transport.responses.body = served(form);
+    stream.emit("connection", "second");
+    await settled();
+
+    assert.equal(window.exos.signals.draft, "half typed", "a dropped stream is not a new page");
+    assert.equal(window.document.querySelector("input").value, "half typed");
+});
+
+test("a repair that lands after the tab moved on is dropped", async () => {
+    const window = boot(`<main>${live()}<p id="count">1</p></main>`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    window.transport.responses.body = served(`<main>${live()}<p id="count">2</p></main>`);
+
+    stream.emit("connection", "second");
+    // Gone before the repair's fetch came back. Whatever it holds describes the
+    // page that was left, and that page's arithmetic is no longer this tab's.
+    window.history.pushState(null, "", "/elsewhere");
+    await settled();
+
+    assert.equal(window.document.getElementById("count").textContent, "1");
+});
+
+test("a repair leaves the page alone when the fetch does not answer with one", async () => {
+    const window = boot(`<main>${live()}<p id="count">1</p></main>`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    window.transport.responses.status = 404;
+    window.transport.responses.body = served(`<h1>not found</h1>`);
+
+    stream.emit("connection", "second");
+    await settled();
+
+    assert.equal(window.document.getElementById("count").textContent, "1");
 });

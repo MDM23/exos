@@ -926,6 +926,7 @@
     // topics it watches.
 
     let connection = null;
+    let greeted = false;
     let source = null;
     let subscribed = "";
     let syncPending = false;
@@ -935,7 +936,17 @@
 
         source = new EventSource("/_exos/live");
 
-        for (const step of ["navigate", "page", "patch", "remove", "signals"]) {
+        // Every step there is, and not the five a patch burst happens to use.
+        // The stream and a handler's reply carry the same `Effect` through the
+        // same parser, so a runtime that delivered half the vocabulary one way
+        // round would make where an effect came from something an application
+        // had to learn rather than read. A focus or a scroll from a background
+        // job is rude, but it is rude in the way whoever sent it chose, and
+        // answering that choice with silence is the worse surprise.
+        for (const step of [
+            "focus", "navigate", "page", "patch",
+            "reload", "remove", "scroll", "signals",
+        ]) {
             source.addEventListener(step, (ev) => apply(step, ev.data));
         }
 
@@ -949,7 +960,61 @@
             connection = ev.data;
             subscribed = "";
             syncSubscriptions();
+
+            // A second name means this tab was dropped and the server forgot
+            // it, so something may have been published into the gap. The first
+            // name has no gap behind it: the document arrived a moment ago.
+            if (greeted) repair();
+            greeted = true;
         });
+    }
+
+    // What a reconnect lost, fetched back.
+    //
+    // EventSource reconnects on its own, and the server forgets a connection
+    // when its stream drops, so anything published in between reached nobody.
+    // A fragment that changed during the gap stays wrong until the next publish
+    // of it, which may never come.
+    //
+    // The server cannot repair that alone. A topic is a hash of a name and its
+    // arguments, and nothing can re-invoke the function from it. The client can,
+    // because the page it is on renders every fragment it is showing, so one
+    // fetch of the current URL brings all of them back at once.
+    //
+    // It morphs without re-seeding, which is the whole difference between this
+    // and a navigation. A navigation is a different page saying what its signals
+    // start as; a repair is the same page arriving again, and re-seeding it
+    // would empty the field somebody is typing into every time their connection
+    // hiccuped. Nothing is announced either, because a repair is not a round
+    // trip anybody waited for.
+    async function repair() {
+        const url = location.href;
+
+        try {
+            const response = await fetch(url, { headers: { "X-Exos-Navigate": "true" } });
+
+            // Only a page repairs a page. A 404 or an error page carries no
+            // fragments to restore, and morphing one in would turn a hiccup
+            // into a lost document.
+            if (!response.ok) return;
+
+            const next = new DOMParser().parseFromString(await response.text(), "text/html");
+
+            // The tab may have gone somewhere else while this was in flight. A
+            // navigation fetches the page it lands on, so it has already
+            // repaired whatever the gap cost; laying the page it left over the
+            // page it is on would be the worse bug of the two.
+            if (location.href !== url) return;
+
+            morph(document.body, next.body);
+            if (next.title) document.title = next.title;
+        } catch (error) {
+            // Quietly, and without the fallback to a full load that a
+            // navigation makes. The stream has only just come back and the
+            // network may still be unsteady; a stale fragment until the next
+            // reconnect is the smaller failure.
+            console.error("[exos] could not repair after a reconnect:", error);
+        }
     }
 
     // Coalesced: a patch that replaces fifty rows should produce one request

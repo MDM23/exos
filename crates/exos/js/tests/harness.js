@@ -50,9 +50,15 @@ function transports(window) {
     const streams = [];
     const requests = [];
 
-    // What the server answers a subscription with, so a test can be the server
-    // that has forgotten this connection.
-    const responses = { status: 204 };
+    // What the server answers with, so a test can be the server that has
+    // forgotten this connection, or the one whose page changed while nobody
+    // was listening.
+    //
+    // A body of `null` means the page as it stands. A reconnect repairs by
+    // fetching the URL it is already on, and the ordinary answer to that is the
+    // document the tab already has, so a test only says what came back when the
+    // point of the test is that something did.
+    const responses = { body: null, status: 204 };
 
     window.EventSource = class EventSource {
         constructor(url) {
@@ -82,7 +88,15 @@ function transports(window) {
             body: options.body === undefined ? null : JSON.parse(options.body),
         });
 
-        return Promise.resolve({ status: responses.status, text: () => Promise.resolve("") });
+        return Promise.resolve({
+            ok: responses.status < 400,
+            status: responses.status,
+            text: () =>
+                Promise.resolve(
+                    responses.body ??
+                        `<!DOCTYPE html>${window.document.documentElement.outerHTML}`,
+                ),
+        });
     };
 
     return { requests, responses, streams };

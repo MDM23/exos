@@ -16,7 +16,8 @@ and is async and fallible. See that document's stage 5 for the consequences.
 
 The smaller items it names in passing, the missing step names, the reconnect
 gap and the topic index, have moved to [loose ends](loose-ends.md), because
-none of them should wait for audiences to exist.
+none of them should wait for audiences to exist. Two of the three are now done,
+and the third is the one nothing has felt yet.
 
 ## What it is for
 
@@ -196,10 +197,11 @@ is ordered, and nothing should be made to be.
 
 ### Client changes
 
-The runtime listens for five of the eight step names on the stream, which is
-fine while it only carries patches and becomes arbitrary once it carries
-effects. That is a [loose end](loose-ends.md) rather than part of this design,
-and it should be closed before this stage rather than by it.
+None, which is the point of having closed it first. The runtime used to listen
+for five of the eight step names, which was fine while the stream only carried
+patches and would have become arbitrary once it carried effects. It registers
+all eight now, as a [loose end](loose-ends.md) rather than as part of this
+design, so every step this stage can send already has somewhere to land.
 
 ## Stage 4: things that are not state
 
@@ -295,10 +297,15 @@ Three ways a push is lost, none of them fixable by trying harder.
   forgotten the connection, and the client re-subscribes. Anything published in
   between is gone.
 
-The third one is already a bug for live fragments and directed effects only
-make it visible, so it is tracked as a [loose end](loose-ends.md) and should be
-fixed there. The cheap repair is on the client and does not need any of this
-document.
+The third one was already a bug for live fragments, so it was fixed as a [loose
+end](loose-ends.md) rather than here: a reconnect re-fetches the current URL and
+morphs it in, and every fragment on screen comes back at once.
+
+That repair is worth reading as a statement of the difference this whole
+document is about. It works because a fragment is state and a page can render it
+again. A directed effect sent into the gap has no fragment to re-render from and
+stays lost, which is not a hole in the repair but the reason for the rule above
+it.
 
 The expensive fix is to make topics re-renderable: `#[exos::live]` registers a
 renderer by name through `inventory`, the wrapper element carries its signed

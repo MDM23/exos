@@ -10,47 +10,55 @@ is built as far as the session, the second not at all. This one describes work
 on the parts that are finished, which is why the entries are short: the thinking
 is already done and what is left is the doing.
 
-Ordered by what would break if it stayed undone, not by effort.
+Ordered by what would break if it stayed undone, not by effort. A finished entry
+keeps its place rather than moving or leaving, because what it decided is worth
+as much as what it fixed.
 
-## The reconnect gap leaves fragments stale
+## The reconnect gap is repaired from the client
 
-`EventSource` reconnects on its own, the server has forgotten the connection,
-and the client re-subscribes. Anything published in between is gone, and a
-fragment that changed during the gap stays wrong until the next publish, which
-may be never. That is a bug in what is shipped today rather than a limitation
-of something planned.
+**Done**, in [runtime.js](../../crates/exos/js/runtime.js). `EventSource`
+reconnects on its own, the server has forgotten the connection, and the client
+re-subscribes. Anything published in between was gone, and a fragment that
+changed during the gap stayed wrong until the next publish, which might be
+never.
 
-The server cannot repair it alone. A topic is a hash of a name and its
+The server cannot repair that alone. A topic is a hash of a name and its
 arguments, and nothing can re-invoke the function from it, which is the same
-wall [directed effects](directed-effects.md) hits in its stage 5.
+wall [directed effects](directed-effects.md) hits in its stage 5. So the repair
+is the client's: a greeting that is not the first means the connection behind it
+was dropped, and one fetch of the current URL brings back everything
+state-backed on the page at once.
 
-The cheap fix is on the client: on a reopen that *follows a drop*, rather than
-on the first open, re-fetch the current URL and morph. One call to
-`navigate(location.href, false)` repairs everything state-backed in one
-request.
+Four rules came out of writing it, and each is pinned by a test.
 
-The detail to get right: a navigation re-seeds the signals the arriving
-document declares, because a page says what its own state starts as. A repair
-is the same page arriving again rather than a different one, so it has to morph
-*without* re-seeding, or a dropped connection empties the field somebody is
-typing into.
+- **It morphs without re-seeding.** A navigation is a different page saying what
+  its signals start as; a repair is the same page arriving again. Seeding it
+  would empty the field somebody is typing into every time their connection
+  hiccuped.
+- **The first greeting repairs nothing.** The document arrived a moment ago, so
+  there is no gap behind it.
+- **A repair that lands after the tab moved on is dropped.** The URL is captured
+  before the fetch and checked after it. A navigation fetches the page it lands
+  on, so it has already repaired whatever the gap cost, and laying the page the
+  tab left over the page it is on would be the worse bug of the two.
+- **Only a page repairs a page.** A response that is not `ok` is left where it
+  is, and a failed fetch is logged rather than falling back to a full load the
+  way a navigation does. Neither a 404 nor an unsteady network should turn a
+  hiccup into a lost document.
 
-## The stream carries five of the eight steps
+## The stream carries all eight steps
 
-[runtime.js](../../crates/exos/js/runtime.js) registers listeners for
-`navigate`, `page`, `patch`, `remove` and `signals`. `focus`, `reload` and
-`scroll` are missing.
+**Done.** [runtime.js](../../crates/exos/js/runtime.js) registered listeners for
+`navigate`, `page`, `patch`, `remove` and `signals` only, while `apply` already
+knew how to run all eight, so a `focus`, a `reload` or a `scroll` pushed down
+the stream arrived and hit nothing.
 
-That is invisible while the stream only carries patches and becomes arbitrary
-the moment it carries effects, which is what [directed
+That was invisible while the stream only carried patches and would have become
+arbitrary the moment it carries effects, which is what [directed
 effects](directed-effects.md) makes it do. `focus` and `scroll` from a
 background job are rude, but they are rude in exactly the way an application
 chooses, and a framework that refuses to deliver them is a surprise that shows
 up as silence.
-
-So: register all eight, or make the exclusion deliberate and say why in the
-comment next to the list. Either is fine and the present state, which is
-neither, is not.
 
 ## Publishing scans every connection
 
@@ -119,14 +127,14 @@ never the obstacle: idiomorph is Zero-Clause BSD.
 
 jsdom implements neither `EventSource` nor `fetch`, so until the harness grew
 both, the whole of `openStream` and `syncSubscriptions` ran in no test at all.
-The handshake and the 410 path have coverage now. What still does not:
+The handshake, the 410 path, the step vocabulary and all three rules of the
+reconnect repair have coverage now. What still does not:
 
 - a patch arriving for a fragment on screen, and none arriving for one that is
   not, which is the entire point of the topic model and is checked nowhere
 - the coalescing that makes a drag silent, which
   [runtime.js](../../crates/exos/js/runtime.js) explains at length and nothing
   checks
-- the reconnect repair above, once it exists
 
 The README says the reason `npm test` exists is that every bug that got past
 review lived in the client. This is the corner of the client that reasoning
