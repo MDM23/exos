@@ -122,8 +122,10 @@ carried a real application yet. Known gaps, roughly in priority order:
 
 - **Live tokens are not bound to a viewer.** `Topic::token` is HMAC-SHA256 under
   the key `exos::keys` configures, so it proves this server rendered the
-  fragment. It does not prove *this* viewer was served it, which needs a session
-  to bind the tag to.
+  fragment. It does not prove *this* viewer was served it. The session id to
+  bind the tag to now exists; what is left is that `publish` renders a fragment
+  outside any request, so where the token comes from there has to be settled
+  first.
 - **No form validation API.** The `Effect` shape is right for it, errors as
   signals reaching only the requester, but the way rules are expressed is not
   designed.
@@ -134,14 +136,17 @@ carried a real application yet. Known gaps, roughly in priority order:
   `unsafe-eval` blocks. A precompiled mode is the answer.
 - **Morphing is hand-rolled.** It keys on id and preserves input state, but
   [idiomorph](https://github.com/bigskysoftware/idiomorph) is better tested.
-- **No CSRF handling.** Actions are same-origin `fetch` with a custom header,
-  which is a start and not a policy.
+- **No CSRF token.** `SameSite=Lax` on the session cookie, the `X-Exos` header
+  and JSON-only bodies are three defences rather than one, which is a policy and
+  is written down in the guide. It leaks for a handler that accepts a
+  form-encoded body, and that is when a token should be built.
 
 Where each of those is going is written down in [docs/roadmap](docs/roadmap):
 [sessions and identity](docs/roadmap/sessions-and-identity.md) is the one most
-of the others wait on, [directed effects](docs/roadmap/directed-effects.md) is
-what it unlocks, and [loose ends](docs/roadmap/loose-ends.md) collects the
-smaller work that waits for nothing.
+of the others wait on and now names the browser, though not yet the viewer,
+[directed effects](docs/roadmap/directed-effects.md) is what the rest of it
+unlocks, and [loose ends](docs/roadmap/loose-ends.md) collects the smaller work
+that waits for nothing.
 
 ## License
 

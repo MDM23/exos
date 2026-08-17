@@ -3,11 +3,16 @@
 Pushing an `Effect` to a person, rather than a patch to a screen region.
 
 Status: design. Nothing that is particular to directed effects is implemented,
-though two things this document asked for have since been built for their own
-reasons: the request scope of stage 2, and the server-minted connection id of
-stage 1. It still depends on an identity system exos does not have, planned in
-[sessions and identity](sessions-and-identity.md), and much of this document is
-about what that system has to be for the rest to hold together.
+though three things this document asked for have since been built for their own
+reasons: the request scope of stage 2, the server-minted connection id of stage
+1, and the session name those two were the groundwork for. What is still missing
+is the last link, stage 1's resolver, which turns that name into a set of
+audiences; [sessions and identity](sessions-and-identity.md) carries it as its
+own stage 5 and it is now the next thing either document needs.
+
+One correction to what follows: the resolver sketched below takes a session and
+reads it. exos holds no session contents, only the name, so it takes the name
+and is async and fallible. See that document's stage 5 for the consequences.
 
 The smaller items it names in passing, the missing step names, the reconnect
 gap and the topic index, have moved to [loose ends](loose-ends.md), because
@@ -100,7 +105,7 @@ impl exos::Audience for Viewer {
     const NAME: &'static str = "viewer";
 }
 
-exos::identify(|session| match session.get::<Principal>() {
+exos::identify(async |id| match data::<Sessions>().viewer(&id).await {
     Ok(Some(who)) => Audiences::of(Viewer(who.id)).and(Team(who.team)),
     _ => Audiences::none(),
 });
@@ -116,10 +121,11 @@ Returning a set rather than one value is deliberate. It costs nothing and it is
 the difference between addressing a user and addressing every admin, everyone
 on a team, or every tab in a workspace.
 
-The resolver is a pure function of what the session already holds, because the
-framework loads it once on the stream's `GET`. It is neither async nor fallible
-for that reason, and an application that wants a lookup per connection should
-do it when it writes the session instead.
+This paragraph used to say the resolver was a pure function of what the session
+already held, and therefore neither async nor fallible. That was true of a
+framework that held session contents, and exos holds only the name, so the
+resolver does the lookup and is both. It runs once per connection rather than
+per request, which is what makes that affordable.
 
 Three consequences to build in from the start:
 

@@ -116,6 +116,10 @@ pub fn app() -> Router {
         })
         .merge(crate::asset_routes(asset_sets()))
         .merge(crate::live::routes())
+        // Inside the scope, which it reads, and outside everything else: the
+        // stream needs the name as much as a handler does, and an asset request
+        // that carries the cookie costs a header lookup and nothing more.
+        .layer(axum::middleware::from_fn(crate::session::layer))
         // Last, so that it wraps the merges above rather than only the routes
         // discovered before it: the stream and the assets are requests too.
         .layer(axum::middleware::from_fn(crate::scope::layer))

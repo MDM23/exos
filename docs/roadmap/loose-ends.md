@@ -5,9 +5,10 @@ is big enough to argue with itself for a document.
 
 Status: open unless an entry says otherwise. The two design documents,
 [sessions and identity](sessions-and-identity.md) and [directed
-effects](directed-effects.md), describe systems that do not exist yet. This one
-describes work on the system that does, which is why the entries are short: the
-thinking is already done and what is left is the doing.
+effects](directed-effects.md), describe systems that are unfinished: the first
+is built as far as the session, the second not at all. This one describes work
+on the parts that are finished, which is why the entries are short: the thinking
+is already done and what is left is the doing.
 
 Ordered by what would break if it stayed undone, not by effort.
 

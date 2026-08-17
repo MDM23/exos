@@ -17,7 +17,6 @@
 //! or, once a connection carries identity, receiving another viewer's. An
 //! unguessable id makes that a matter of arithmetic rather than of trust.
 
-use core::fmt::Write as _;
 use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
@@ -40,7 +39,7 @@ use serde::Deserialize;
 use tokio::sync::broadcast;
 use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 
-use crate::{Step, live::Topic};
+use crate::{Step, hex, live::Topic};
 
 /// Where the stream and the subscription endpoint are mounted.
 const STREAM: &str = "/_exos/live";
@@ -128,12 +127,7 @@ fn mint() -> String {
 
     getrandom::fill(&mut bytes).expect("the operating system provides entropy for a connection id");
 
-    bytes
-        .iter()
-        .fold(String::with_capacity(bytes.len() * 2), |mut id, byte| {
-            write!(id, "{byte:02x}").expect("writing to a String cannot fail");
-            id
-        })
+    hex::encode(&bytes)
 }
 
 /// Registers a connection under a fresh id, with the receiver its response

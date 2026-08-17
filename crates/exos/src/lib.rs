@@ -27,6 +27,7 @@ mod attributes;
 mod context;
 mod discover;
 mod effect;
+mod hex;
 mod js;
 mod keys;
 mod live;
@@ -34,6 +35,7 @@ mod model;
 mod render;
 mod response;
 mod scope;
+mod session;
 mod signal;
 
 pub use crate::{
@@ -55,6 +57,7 @@ pub use crate::{
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
     scope::{Scope, detached, scope, with_scope},
+    session::{Id, Session, session},
     signal::{Field, Placement, Signal, signal},
 };
 

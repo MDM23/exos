@@ -2,12 +2,16 @@
 
 Somewhere to put who this is, and a way to reach them.
 
-Status: partly built, and out of order. Stage 1 is done, and so is the key
-material stage 6 asks for; the session itself, which is what everything else
-waits on, is not. Each stage below says where it stands.
-[Directed effects](directed-effects.md) depends on all of it, and so does form
-validation, localization, and the fix for the live token that the README lists
-first among known gaps.
+Status: mostly built, and narrower than it was drawn. Stages 1 to 4 are done and
+so is the key material stage 6 asks for. exos names the browser and carries the
+name in a cookie; what a name *means* turned out to belong to the application,
+and [stage 3](#stage-3-and-no-store-at-all) is the argument for that, made after
+a session store was built and then taken out again.
+
+What is left is the two stages that reach outwards: identity on the stream,
+which [directed effects](directed-effects.md) waits on entirely, and binding the
+live token, which is the README's first listed gap and turned out to be harder
+than stage 6 thought. Each stage below says where it stands.
 
 ## Three questions, one mechanism
 
@@ -33,10 +37,12 @@ in scope and never will be.
 - **No permission model.** No roles, no policies, no `can()`. Authorization
   happens at the call site, in ordinary Rust, where it can be read.
 - **No "remember me" or device management UI.**
+- **No session store**, which is the one this document argued itself into. See
+  [stage 3](#stage-3-and-no-store-at-all).
 
-What exos owns is narrow: a cookie, a request scope, a place to keep typed
-values across requests, and the mapping from that to who a live stream belongs
-to.
+What exos owns is narrower than this section originally allowed for: an opaque
+name, the cookie that carries it, a request scope to put whatever the name
+resolves to, and the mapping from that name to who a live stream belongs to.
 
 ## Stage 1: a request scope
 
@@ -54,113 +60,165 @@ panics: `#[exos::live]` renders through `detached`, so a fragment cannot read
 the request in either of the two places it renders, and its arguments stay its
 whole input.
 
-What is left for the session is only what goes *in* the scope.
-`Scope::get` already answers with an `Option` for exactly that reason: nothing
-written yet is what anonymous will look like.
+This stage turned out to carry more of the design than it looks. `Scope::get`
+answered with an `Option` because nothing written yet is what anonymous looks
+like, and that is still exactly where a viewer goes. What stage 3 eventually
+concluded is that the scope is not a stepping stone towards a session store: it
+*is* the session, for everything except the name.
 
-## Stage 2: the session
+## Stage 2: the name
 
-**Not built, and next.** Everything below this line waits on it, and so does
-the whole of [directed effects](directed-effects.md).
-
-An opaque random id in a cookie, and the contents in a store.
+**Built**, in [session.rs](../../crates/exos/src/session.rs), and it is less
+than this stage originally asked for. An opaque random id in a cookie, and
+nothing else:
 
 ```text
-Set-Cookie: exos=<128 random bits, base64url>;
-            HttpOnly; SameSite=Lax; Secure; Path=/
+Set-Cookie: exos=<128 random bits, as hex>;
+            HttpOnly; Max-Age=34560000; Path=/; SameSite=Lax; Secure
 ```
-
-**Not signed data in the cookie.** The store is the authority, so there is
-nothing to forge and no key to rotate, and revocation is a delete rather than
-a deny-list. Stateless cookie sessions trade that away for not having a store,
-which is the wrong trade here: sign-out has to be able to reach a stream that
-is already open, and a token nobody can revoke cannot do it.
-
-**Lazy.** No cookie until something is written. A crawler, a health check, or
-an anonymous read gets no `Set-Cookie` and costs no store round trip. The
-first write materialises an id and the layer appends the header on the way
-out. One edge worth knowing: a session materialised *during* a stream cannot
-set a cookie, because those headers went out when the stream opened. Streams
-should read the session, never write it.
-
-**Typed contents, keyed by type**, which is what `provide` and `data` already
-do, and this is the same idea with a narrower lifetime:
 
 ```rust
-#[derive(Deserialize, Serialize)]
-struct Principal {
-    id: u32,
-    team: u32,
-}
-
 let session = exos::session();
 
-session.set(&Principal { id: 7, team: 3 })?;
-let who: Option<Principal> = session.get()?;
+session.id()     // Option<Id>: the name it arrived with, if any
+session.start()  // Id: the name, minting one if there is none
+session.rotate() // Id: a new name, whatever it was called before
+session.end()    // no name, and the cookie goes back
 ```
 
-There is deliberately no `exos::viewer()`. Who the user is belongs to the
-application, so it is ordinary session data under the application's own type,
-and exos never grows an opinion about its shape. Anonymous is
-`session().get::<Principal>()? == None`, which is a value rather than a case
-the framework invented.
+This stage used to specify typed contents keyed by type, `session.set(&value)?`
+and `session.get()?`, with a store behind them. That was built and then removed
+before it shipped; [stage 3](#stage-3-and-no-store-at-all) records why. What
+remains is the half with no choices in it.
 
-## Stage 3: buy the store, own the scope
+Four things came out differently from the sketch this stage started as.
 
-**Not built.** It is the same piece of work as stage 2 and is separated only
-because the decision it records is about a dependency rather than about a
-design.
+**Hex, not base64url.** A live token, a connection id and a session id are the
+same kind of thing, and there were already two hand-rolled hex encoders in the
+tree when this needed a third. One [hex](../../crates/exos/src/hex.rs) module
+now serves all three. The extra characters in the cookie buy not having a second
+encoding, and not writing a decoder for it.
 
-`tower-sessions` already does the cookie, the lazy materialisation, the store
-trait, and the layer. [rust.md](../../.claude/rules/rust.md) says to prefer a
-small well-maintained crate over writing it, and this is that situation: none
-of the machinery above is where exos is interesting, and all of it is where
-session bugs live.
+**`Max-Age`, which the sketch left out, and a long one.** It is four hundred
+days, the longest browsers accept. That is not a session lifetime and is set
+that way so it cannot be mistaken for one: exos does not know when an
+application's record expires, and a cookie running out first would sign somebody
+out while their record was still good. The other direction is harmless, because
+a name nothing is stored under is simply anonymous.
 
-Two conditions on taking it.
+**Not signed data in the cookie**, which the original argument still holds for.
+The application's store is the authority, so there is nothing in the cookie to
+forge and no key to rotate, and revocation is a delete. Stateless cookie
+sessions trade that away for not having a store, and sign-out has to be able to
+reach a stream that is already open.
 
-- **It gets wrapped, not re-exported.** It is still pre-1.0, and a public
-  dependency below 1.0 makes every one of its releases a major version of
-  exos. `exos::Session` is exos's own type with exos's own methods, and what
-  is behind it is an implementation detail that can be replaced.
-- **Its `Session` never appears in a handler signature.** The layer puts it in
-  the task-local; nothing extracts it. That is the whole point of stage 1, and
-  it is also what keeps the wrapping honest, since a type nobody names is a
-  type that can change.
+**`start` and `rotate` are different calls.** `start` is idempotent and is what
+an anonymous cart wants; `rotate` always answers with a name nothing has seen
+and is what a sign-in wants. `id` never mints, so a page that only looks costs
+no cookie, which is the whole of the laziness this stage asked for.
 
-Ship a memory store for development and tests, the way the example already
-seeds `Files` and `Presence` in memory. Redis, Postgres and the rest are the
-application's to bring, and the trait is the seam.
+## Stage 3: and no store at all
+
+**Decided, against what this stage used to say, and recorded here so the
+question is not reopened without new information.**
+
+It used to say to take `tower-sessions`: the cookie, the lazy materialisation,
+the store trait and the layer are not where exos is interesting, and are where
+session bugs live. Then it said exos should own an equivalent, on the grounds
+that almost nothing of that crate survived the conditions attached to taking it.
+Both of those were answers to the wrong question. The right one is whether exos
+should hold a session's *contents* at all, and it should not.
+
+**The deciding argument is about awaiting.** Resolving a name to a user is a
+database call. In an application it happens in a handler, where awaiting is
+legal, and the result goes in the [request scope](#stage-1-a-request-scope),
+which every view underneath reads synchronously. That is the scope doing the
+job it already exists for.
+
+A framework holding the contents cannot do that. `session()` has to answer
+synchronously, because a [`view!`](../guide.md#templates-are-html) fragment is
+a plain function and cannot await, so the layer has to load before the handler
+runs, and every request carrying a cookie pays for a session whether or not it
+uses one. That concession was written into this document for exactly one
+release of it. Handing back a name costs nothing and puts the round trip where
+the application decides it goes.
+
+Four things follow, and each of them was a known defect in the store version.
+
+- **No key derived from `type_name`.** Keying values by the compiler's name for
+  their type meant moving a type between modules silently emptied it for
+  everybody holding a session. That existed only because exos was storing typed
+  values.
+- **No blind writes.** `SessionStore::save` wrote a record whole with no
+  version, so two actions in flight from one tab lost a key. An application's
+  table has whatever concurrency answer it already uses.
+- **No expiry policy.** exos had picked fourteen days and a refresh-at-halfway
+  rule, both invented. An application expires its own rows.
+- **No error type.** `id`, `start`, `rotate` and `end` cannot fail, so
+  `SessionError` went with the store. A boundary that makes a whole error enum
+  unnecessary is usually the right boundary.
+
+What it costs is the store ecosystem and a little repetition. Nobody will write
+a Redis store for exos, because there is nothing to write one against; instead
+every application writes the same handful of lines resolving a name and putting
+the result in the scope. The obvious answer is a single hook rather than a trait
+(see [stage 5](#stage-5-identity-on-the-stream), which needs the same thing),
+and it is worth building when something wants it rather than now.
+
+The general shape of the decision is worth keeping: **the narrow version is the
+reversible one.** Shipping the store would have made `Record`, the expiry policy
+and the `type_name` keying public API with two known defects in them. Shipping
+the name keeps every one of those questions open, and a typed store can still
+land later as an additive layer on top. The other order does not work.
 
 ## Stage 4: signing in and out
 
-**Not built.**
+**Built.**
 
 ```rust
 #[exos::post("/session")]
 async fn sign_in(Json(form): Json<Credentials>) -> Result<Effect, Error> {
     let user = data::<Users>().authenticate(&form).await?;
     let session = exos::session();
+    let sessions = data::<Sessions>();
 
-    // A new id, or the one an attacker planted before sign-in still works.
-    session.rotate()?;
-    session.set(&Principal { id: user.id, team: user.team })?;
+    // Read before rotating, because rotating replaces it: an anonymous visit
+    // may have left something under the old name worth moving or dropping.
+    let previous = session.id();
+    let id = session.rotate();
+
+    sessions.bind(&id, user.id).await?;
+
+    if let Some(previous) = previous {
+        sessions.forget(&previous).await?;
+    }
 
     Ok(Effect::reload())
 }
 ```
 
-`rotate` is the fixation defence and cannot be defaulted, because only the
-application knows which request is the privilege change. Making it a separate
-call means it can be forgotten, so `set` on a session that has no principal
-yet is a reasonable place to do it automatically. Worth deciding when it is
-written; the safe version is to rotate whenever the principal type is written.
+`rotate` stays exos's, which is the one part of a session's contents leaving
+that was worth arguing about. Two reasons it does: it is a cookie operation, and
+forgetting it is silent. It is still an explicit call, because only the
+application knows which request is the privilege change, and this stage used to
+wonder whether a write could imply it. It cannot. exos no longer sees any writes
+at all, and even when it did it could not tell a principal from a shopping cart,
+so implying it would have rotated on a cart and invalidated the live tokens of
+anonymous visitors for nothing.
+
+`rotate` lost its `?` and gained a return value. It replaces a name and hands
+back the new one, which is what the very next line needs, and nothing about that
+can fail. `end` is the other end of it and is exos's half of signing out;
+deleting whatever the application stored is the application's half, and it has
+to happen, because a name the browser stopped sending is not a name nobody else
+has.
 
 Two consequences reach further than this handler, and both are why sign-in
 answers with a `reload` rather than a patch.
 
-- **Rotation invalidates every live token**, once stage 6 binds them to the
-  session id. A fragment still on screen would silently stop updating.
+- **Rotation will invalidate every live token**, once stage 6 binds them to the
+  session id. A fragment still on screen would silently stop updating. It does
+  not yet, because that binding does not exist.
 - **A stream's identity is captured when it opens.** The runtime morphs the
   body on navigation without reopening the `EventSource`, so a tab that signs
   in as somebody else keeps the previous audience until the stream drops. That
@@ -171,32 +229,47 @@ A `reload` closes both by dropping the document. A `reconnect` step that drops
 and reopens the stream in place would close both without the flash, and is the
 better answer once something needs it.
 
-Signing out everywhere, rather than here, needs an index from principal to
-session ids: a store concern, and cheap if the store is asked for it up front
-rather than retrofitted. Reaching the tabs afterwards is a directed effect to
-that audience, which is the first thing the two documents share.
+Signing out everywhere, rather than here, needs an index from user to session
+names. That is now plainly the application's, and it gets it for free if its
+sessions table is keyed the obvious way. Reaching the tabs afterwards is a
+directed effect to that audience, which is the first thing the two documents
+share.
 
 ## Stage 5: identity on the stream
 
-**Not built**, though the connection it would hang identity on is now the
-server's to name: the id is minted server-side and sent as the stream's first
-event, rather than invented by the client and trusted.
+**Not built, and next.** Both of its preconditions now are. The connection it
+hangs identity on is the server's to name, since the id is minted server-side
+and sent as the stream's first event rather than invented by the client and
+trusted. And the stream's `GET` runs inside the session layer, which was the
+reason to mount that layer around `/_exos/live` rather than only around the
+handlers.
 
-With sessions in place, the resolver [directed
-effects](directed-effects.md) asks for stops being a lookup and becomes a pure
-function of what the session already holds:
+The resolver [directed effects](directed-effects.md) asks for takes the name and
+answers with the audiences it stands for:
 
 ```rust
-exos::identify(|session| match session.get::<Principal>() {
+exos::identify(async |id| match data::<Sessions>().viewer(&id).await {
     Ok(Some(who)) => Audiences::of(Viewer(who.id)).and(Team(who.team)),
     _ => Audiences::none(),
 });
 ```
 
-The framework does the loading, once, on the stream's `GET`. The application
-says only what its own data means. That is a better shape than the sketch in
-the other document, which had the resolver resolving a cookie itself, and it
-is the payoff for doing sessions first.
+**This is async, where the plan said it would be sync**, and stage 3 is why: the
+framework no longer holds anything to make it a pure function of. It runs once
+per connection, on the stream's `GET`, which is cheap enough that this is a
+smaller change than it looks. It has to become fallible too, and the answer to
+a resolver that fails is almost certainly to refuse the stream rather than open
+one with no audiences, since the second is a silent version of the first.
+
+Worth noticing what this hook is: an async function from a session name to
+something the request needs. So is the six lines every application will write
+to put a viewer in the scope. If exos ever grows the one, it should be the same
+one, serving the handler and the stream from a single place rather than asking
+for the same lookup twice in two shapes. That is the shape to reach for when
+something wants it, and it is not a store trait.
+
+The other precondition is in place: the stream's `GET` runs inside the session
+layer, which is why that layer wraps `/_exos/live` and not only the handlers.
 
 ## Stage 6: keys
 
@@ -226,15 +299,46 @@ token = HMAC-SHA256(subkey("live-token"), topic_id || session_id)[..16]
 
 Verification at `/_exos/subscribe` gains the session id, which it has, because
 the request carries the cookie. Three things follow. Rendering a live fragment
-becomes a session write, so an anonymous visitor served one gets a cookie.
-Rotation invalidates outstanding subscriptions, which is stage 4's `reload`.
-And caching does not suffer, because [`Page`](../../crates/exos/src/response.rs)
-already answers `no-cache, private`.
+calls `session().start()`, so an anonymous visitor served one gets a name, which
+is now a cookie and nothing else and therefore genuinely free. Rotation
+invalidates outstanding subscriptions, which is stage 4's `reload`. And caching
+does not suffer, because [`Page`](../../crates/exos/src/response.rs) already
+answers `no-cache, private`.
 
-It is a small change to
-[`Topic::token`](../../crates/exos/src/live.rs) and its verifier, and it cannot
-be made until there is a session id to put in it. That is the whole argument
-for doing stage 2 next.
+This used to say it was a small change to
+[`Topic::token`](../../crates/exos/src/live.rs) and its verifier, waiting only
+on a session id to put in it. The session id now exists and the change is not
+small, because of something neither document had noticed.
+
+**`publish` renders a fragment outside any request.** It calls
+[`Fragment::to_markup`](../../crates/exos/src/live.rs), which writes the
+`data-token` attribute into the patch it pushes, and it is called from
+background jobs and from handlers acting on somebody else's behalf. There is no
+session there to bind a token to, and `session()` panics outside a request by
+design. So a token that depends on the viewer cannot be produced on the publish
+path at all, and the patch that arrives would carry a token for the wrong
+session or for none.
+
+Three ways out, in the order they are worth thinking about.
+
+- **The morph preserves `data-token`.** A published patch keeps whatever token
+  the element already carries, on the grounds that the subscription it proves
+  was granted at render time and a patch is not a new grant. Cheapest, and it
+  makes the client's morph responsible for a security property, which is
+  precisely the sort of thing the [loose ends](loose-ends.md) entry on morphing
+  says is expensive to move into a callback.
+- **`publish` sends the markup without the wrapper**, and the client patches the
+  contents of `<exos-live>` rather than replacing it. Arguably more correct
+  anyway: the wrapper is the subscription, the fragment is the content, and a
+  patch has never had a reason to restate the former.
+- **A per-connection token.** The subscription is already checked against a
+  connection the server named, so the tag could bind to the connection id rather
+  than to the session, which is a thing the publish path also does not have but
+  the subscribe path does.
+
+The second looks right and is a change to the wire format, the client and
+`to_markup` together. It should be decided before it is written, and it is the
+reason this stage is still open rather than an afternoon's work.
 
 ## Stage 7: CSRF, which is mostly already handled
 
@@ -250,63 +354,70 @@ between an attacker's page and a state change.
 - **JSON bodies.** A cross-origin HTML form can only send the three
   form-safe content types, and `Json<T>` refuses all of them.
 
-Together that is a policy rather than the start of one, and it is worth
-writing down in the guide as the reason exos ships no token. The gap is real
-but narrow: a handler that accepts a form-encoded body steps outside all three
-at once. The answer is a token derived from the session id, rendered by a
-helper into the form, and it should be built when the first form handler
-exists rather than before.
+Together that is a policy rather than the start of one, and the first two legs
+of it now hold: the session cookie is `SameSite=Lax`, and the guide says all
+three under [cross-site requests](../guide.md#cross-site-requests) as the reason
+exos ships no token. The gap is real but narrow: a handler that accepts a
+form-encoded body steps outside all three at once. The answer is a token derived
+from the session id, rendered by a helper into the form, and it should be built
+when the first form handler exists rather than before.
 
-## What it costs
+## What it cost
 
-What is left to pay, now that stages 1 and 6's keys are in and cost what they
-said they would:
+Almost nothing, which is the point of the shape it ended up as.
 
-- **A store round trip per request that reads the session.** Lazy loading is
-  what keeps it off the requests that do not, and the layer must therefore
-  load on first read rather than eagerly on the way in.
-- **`tower-sessions` and the tower stack behind it.** `tower` is currently a
-  dev-dependency only. The two crypto dependencies this section used to
-  forecast are already paid for.
-- **The store becomes a hard dependency of running the application.** In
-  memory it is not, and the moment it is Redis, a session store outage is a
-  sign-in outage. Worth stating, not worth avoiding.
+- **No new dependencies**, where this section used to forecast `tower-sessions`
+  and the tower stack behind it. `tower` is still a dev-dependency only, and the
+  crypto was already paid for by stage 6.
+- **No store round trip anywhere in exos**, and no store. Reading a cookie
+  header is the whole of what a request that carries a name pays for.
+- **Every application writes the same handful of lines**, resolving a name and
+  putting the result in the scope. That is the price of the boundary and the
+  thing to watch: if it turns into more than a handful, or if it and stage 5's
+  resolver want the same lookup in two shapes, that is the signal to build the
+  hook stage 5 describes.
 
 ## Testing
 
 The task-local is the better half of this for tests, and it already works.
 `provide` is process-global and its module docs warn that parallel tests
-interfere; a request scope is per task, so two tests can hold different
-sessions at once without arranging anything.
+interfere; a request scope is per task, so two tests can hold different sessions
+at once without arranging anything.
 
-`with_scope` is the helper, and it shipped with stage 1:
+The open question here was whether the session needs a seeding helper of its
+own. It does not, and now it obviously does not: what a test wants to seed is
+the *viewer*, which is application data in the scope, and `with_scope` already
+does that. `session()` under `with_scope` mints and rotates exactly as it would
+in a request, for the tests that care about the name itself.
 
 ```rust
 exos::with_scope(|| {
-    exos::scope().set(Principal { id: 7, team: 3 });
+    exos::scope().set(Viewer { id: 7, team: 3 });
     assert_eq!(badge().into_string(), "<span class=\"badge\">2</span>");
 });
 ```
 
-Whether the session wants a second helper that seeds it specifically, rather
-than callers reaching for `scope().set`, is worth deciding when there is a
-session to seed. The argument for one is that a test should not have to know
-which type the session is kept under.
-
 ## Open questions
 
-- **Concurrent writes clobber.** Two actions in flight from one tab each load
-  the session and each save it whole, and one loses a key. Per-key writes, or
-  a compare-and-swap on a version, and this is the sort of thing a store trait
-  has to decide before it has implementors.
-- **Cached principal or a lookup per request.** Keeping the principal in the
-  session means a revoked role stays live until sign-out; looking it up means
-  a query on every request. Probably: keep an id in the session, let the
-  application decide what to load from it, and do not pretend to know.
-- **Idle timeout, absolute lifetime, or both.** Both, with the absolute one
-  off by default.
-- **Multi-instance.** Swapping the store fixes sessions across instances and
-  does nothing for the connection registry, which is a process-local
-  `HashMap`. A directed effect only reaches the tabs connected to the instance
-  that sent it. That belongs to [directed
-  effects](directed-effects.md) and needs a bus, not a session store.
+Three of these used to be here and are gone, because they were questions about
+a store: concurrent writes clobbering, whether the key should be `type_name`,
+and what the expiry policy should be. An application answers all three with
+whatever its database already does.
+
+- **Cached viewer or a lookup per request.** Resolving the name on every request
+  is a query per request; caching what it resolved to means a revoked role stays
+  live. This is now plainly the application's call, which is the right place for
+  it, and the guide should probably say so rather than leaving it unmentioned.
+- **A resolver hook.** Named in [stage 5](#stage-5-identity-on-the-stream): one
+  async function from a name to something the request needs, serving both the
+  handler and the stream. Worth building when something wants it, and worth not
+  building before, because guessing its shape is how the store happened.
+- **Persisting across a browser restart is the browser's business now.** The
+  cookie asks for four hundred days, so exos imposes no ceiling. Whether a
+  session survives is decided by the application's record, which is the answer
+  "remember me" wanted anyway.
+- **Multi-instance.** Sessions are the application's, so they cross instances if
+  its database does. That leaves the connection registry, which is a
+  process-local `HashMap`, so a directed effect only reaches the tabs connected
+  to the instance that sent it. That belongs to [directed
+  effects](directed-effects.md) and needs a bus.

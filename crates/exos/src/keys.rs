@@ -21,12 +21,13 @@
 //! agree, and a deploy invalidates every token in flight. The warning is there
 //! because the failure mode is otherwise silent until it isn't.
 
-use core::fmt::Write as _;
 use std::sync::OnceLock;
 
 use hmac::{Hmac, Mac as _};
 use sha2::{Digest as _, Sha256};
 use subtle::ConstantTimeEq as _;
+
+use crate::hex;
 
 /// How much of the MAC a tag carries.
 ///
@@ -122,14 +123,7 @@ fn configured() -> &'static Keys {
 
 /// Signs `message` under `label`, as hex.
 pub(crate) fn tag(label: &str, message: &[u8]) -> String {
-    let mac = configured().sign(label, message);
-    let mut out = String::with_capacity(TAG_BYTES * 2);
-
-    for byte in &mac[..TAG_BYTES] {
-        write!(out, "{byte:02x}").expect("writing to a String cannot fail");
-    }
-
-    out
+    hex::encode(&configured().sign(label, message)[..TAG_BYTES])
 }
 
 /// Whether `candidate` is the tag for `message` under `label`.

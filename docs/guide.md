@@ -195,6 +195,182 @@ Tests use `exos::with_scope`, which runs a closure in a scope of its own. Being
 per task rather than process-global, two tests can hold different scopes at
 once, which `provide` cannot do.
 
+## Sessions
+
+exos names the browser on the other end. What the name means is yours.
+
+```rust
+let session = exos::session();
+
+session.id()     // Option<Id>: the name it arrived with, if any
+session.start()  // Id: the name, minting one if there is none
+session.rotate() // Id: a new name, whatever it was called before
+session.end()    // no name, and the cookie goes back
+```
+
+That is the whole of it. There is no session store, nothing to configure,
+nothing that can fail, and no `exos::viewer`.
+
+### Why it stops there
+
+Because the next step needs to await, and the step after that cannot.
+
+Resolving a name to a user is a database call, and it belongs in a handler,
+where awaiting one is legal. What comes out goes in the [request
+scope](#per-request), and every view underneath reads it synchronously, which
+is the job the scope already exists for:
+
+```rust
+#[exos::get("/")]
+async fn index() -> Page {
+    if let Some(id) = exos::session().id() {
+        if let Some(viewer) = data::<Sessions>().viewer(&id).await? {
+            exos::scope().set(viewer);
+        }
+    }
+
+    layout("Home", "/", view! { { header() } { body() } })
+}
+```
+
+A framework that held the contents instead would have to load them *before* the
+handler ran, because a `view!` fragment is a plain function and cannot await.
+Every request carrying a cookie would then pay for a session whether or not it
+used one. Handing back a name costs nothing and puts the round trip where you
+decide it goes.
+
+You also keep everything that comes with owning the table: an index, a join
+against `users`, a device column, a last-seen column, your own expiry job, and
+your own answer to two requests writing at once. None of that fits through a
+trait exos invented.
+
+### Signing in and out
+
+```rust
+#[exos::post("/session")]
+async fn sign_in(Json(form): Json<Credentials>) -> Result<Effect, Error> {
+    let user = data::<Users>().authenticate(&form).await?;
+    let session = exos::session();
+    let sessions = data::<Sessions>();
+
+    // Read before rotating, because rotating replaces it: an anonymous visit
+    // may have left a cart under the old name worth moving or dropping.
+    let previous = session.id();
+    let id = session.rotate();
+
+    sessions.bind(&id, user.id).await?;
+
+    if let Some(previous) = previous {
+        sessions.forget(&previous).await?;
+    }
+
+    Ok(Effect::reload())
+}
+
+#[exos::post("/session/end")]
+async fn sign_out() -> Result<Effect, Error> {
+    let session = exos::session();
+
+    if let Some(id) = session.id() {
+        data::<Sessions>().forget(&id).await?;
+    }
+
+    session.end();
+
+    Ok(Effect::reload())
+}
+```
+
+`rotate` is the session fixation defence, and it is exos's rather than yours
+for two reasons: it is a cookie operation, and forgetting it is silent. Call it
+at every privilege change. It always answers with a name, because the call site
+that rotates is about to need one.
+
+`end` is exos's half of signing out. Deleting what you stored is yours, and you
+should, because a name the browser has stopped sending is not a name nobody
+else has.
+
+Both answer with a `reload` rather than a patch. Navigation morphs the body
+without reopening the `EventSource`, so a tab that signs in as somebody else
+keeps whatever the stream was opened as, and dropping the document is what
+closes that.
+
+### Sessions without a user
+
+`start` mints a name for a visitor who has not signed in, which is what an
+anonymous cart or a checkout timer wants:
+
+```rust
+#[exos::post("/cart/add")]
+async fn add(Json(item): Json<Item>) -> Result<Effect, Error> {
+    data::<Carts>().add(&exos::session().start(), item).await?;
+    /* ... */
+}
+```
+
+It is idempotent, so a visitor who already has a name keeps it. `id` never
+mints, so a page that only looks costs no cookie.
+
+### What is in the cookie
+
+A name, and nothing else:
+
+```text
+Set-Cookie: exos=<128 random bits, as hex>;
+            HttpOnly; Max-Age=34560000; Path=/; SameSite=Lax; Secure
+```
+
+**The `Max-Age` is not the session's lifetime.** It is four hundred days,
+which is as long as browsers will accept, deliberately, so that the cookie is
+never the thing that ends a session. What a name still means is decided by what
+you keep under it, and a cookie naming something you have forgotten is simply
+anonymous and costs one lookup. A cookie running out first would sign somebody
+out while your record was still perfectly good, and exos has no way to know
+when that is.
+
+`Secure` is not configurable. Every browser treats `localhost` and `127.0.0.1`
+as a secure context, so `cargo run` is unaffected.
+
+Nothing is sent until something asks for a name, and a browser that already has
+the cookie is not sent it again. So an anonymous read, a crawler and a health
+check all leave the response untouched.
+
+### Cross-site requests
+
+exos ships no CSRF token, and the reason is that three things already stand
+between an attacker's page and a state change.
+
+- **`SameSite=Lax`** on the session cookie means a cross-site `POST` carries no
+  session at all.
+- **A custom header.** The runtime sends `X-Exos` on every request. A
+  cross-origin request cannot set one without a preflight, and a preflight
+  needs CORS you never turned on.
+- **JSON bodies.** A cross-origin HTML form can only send the three form-safe
+  content types, and `Json<T>` refuses all of them.
+
+The gap is real but narrow: a handler accepting a form-encoded body steps
+outside all three at once. Do not write one, or bring your own token until exos
+has an opinion about them.
+
+### Where it cannot be reached
+
+`session()` is built on the request scope and inherits both of its rules.
+Outside a request, asking panics. Inside a live fragment, asking panics: a
+fragment renders again from whatever publishes it, so its arguments are its
+whole input and the viewer is not one of them.
+
+Under `with_scope` there is no layer, and `session()` mints and rotates exactly
+as it would in a request, then goes away with the scope. So a test that needs a
+signed-in viewer seeds its own table and the scope, and never has to start a
+server:
+
+```rust
+exos::with_scope(|| {
+    exos::scope().set(Viewer { id: 7, team: 3 });
+    assert_eq!(badge().into_string(), "<span class=\"badge\">2</span>");
+});
+```
+
 ## Routes
 
 ```rust
@@ -720,8 +896,9 @@ invalidate every token in flight.
 What the token proves is that this server rendered this topic, which is not yet
 that *this viewer* was served it. Anywhere an id and token escape a page
 together, by a screenshot or a shared browser profile, the holder can
-subscribe. Binding the tag to a session id is what closes that, and needs a
-session to bind to.
+subscribe. Binding the tag to a session id is what closes that. The session to
+bind it to now exists, and the binding itself does not; see
+[the roadmap](roadmap/sessions-and-identity.md).
 
 ## What exos does not do
 
