@@ -137,6 +137,12 @@ carried a real application yet. Known gaps, roughly in priority order:
 - **No CSRF handling.** Actions are same-origin `fetch` with a custom header,
   which is a start and not a policy.
 
+Where each of those is going is written down in [docs/roadmap](docs/roadmap):
+[sessions and identity](docs/roadmap/sessions-and-identity.md) is the one most
+of the others wait on, [directed effects](docs/roadmap/directed-effects.md) is
+what it unlocks, and [loose ends](docs/roadmap/loose-ends.md) collects the
+smaller work that waits for nothing.
+
 ## License
 
 [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
