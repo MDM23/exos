@@ -23,15 +23,69 @@ export function boot(body, ...plugins) {
 
     const { window } = dom;
 
-    // One the runtime reads while it is still loading and jsdom does not
-    // provide, and one jsdom provides only to refuse.
-    window.crypto.randomUUID ??= () => "00000000-0000-4000-8000-000000000000";
+    // One jsdom provides only to refuse.
     window.scrollTo = () => {};
+
+    // Installed before the runtime is evaluated, because a page that arrives
+    // with a live fragment already in it opens its stream on the last line of
+    // the runtime rather than waiting for a mutation.
+    window.transport = transports(window);
 
     window.eval(read("runtime"));
     for (const plugin of plugins) window.eval(read(plugin));
 
     return window;
+}
+
+/**
+ * The two transports the live stream needs and jsdom does not implement.
+ *
+ * This is the one place a client test knows more than a plugin does, and it
+ * earns that by being the only way to reach `openStream` and
+ * `syncSubscriptions` at all. Both record what the runtime did rather than
+ * asserting anything about it, so a test reads the traffic the way a network
+ * tab would.
+ */
+function transports(window) {
+    const streams = [];
+    const requests = [];
+
+    // What the server answers a subscription with, so a test can be the server
+    // that has forgotten this connection.
+    const responses = { status: 204 };
+
+    window.EventSource = class EventSource {
+        constructor(url) {
+            this.url = url;
+            this.closed = false;
+            this.handlers = new Map();
+            streams.push(this);
+        }
+
+        addEventListener(name, handler) {
+            this.handlers.set(name, handler);
+        }
+
+        close() {
+            this.closed = true;
+        }
+
+        /** Pushes one named event, the way the wire delivers it. */
+        emit(name, data) {
+            this.handlers.get(name)?.({ data });
+        }
+    };
+
+    window.fetch = (url, options = {}) => {
+        requests.push({
+            url,
+            body: options.body === undefined ? null : JSON.parse(options.body),
+        });
+
+        return Promise.resolve({ status: responses.status, text: () => Promise.resolve("") });
+    };
+
+    return { requests, responses, streams };
 }
 
 /** Effects are scheduled on a microtask, so nothing is on the page until they run. */

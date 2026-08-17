@@ -919,8 +919,13 @@
     // on the element and hands them straight back, which is also why there is
     // no authorization to do here: the token is the proof, and it could only
     // have come from being served the fragment.
+    //
+    // It does not name the connection either. The server mints that and says it
+    // in the stream's first event, because an id the client picks is an id
+    // another client can guess, and naming a connection is what replaces the
+    // topics it watches.
 
-    const CONNECTION = crypto.randomUUID();
+    let connection = null;
     let source = null;
     let subscribed = "";
     let syncPending = false;
@@ -928,16 +933,20 @@
     function openStream() {
         if (source) return;
 
-        source = new EventSource(`/_exos/live?connection=${CONNECTION}`);
+        source = new EventSource("/_exos/live");
 
         for (const step of ["navigate", "page", "patch", "remove", "signals"]) {
             source.addEventListener(step, (ev) => apply(step, ev.data));
         }
 
-        // EventSource reconnects on its own, but the server forgets the
-        // connection when the stream drops, so the subscription has to be
-        // re-sent once it is back.
-        source.addEventListener("open", () => {
+        // Both the introduction and the cue to subscribe. EventSource
+        // reconnects on its own and the server forgets the connection when the
+        // stream drops, so a reconnect is a new connection with a new id and
+        // the subscription has to be re-sent under it. That makes this the only
+        // place a subscription can start from: `open` fires before the greeting
+        // arrives, when there is still nothing to subscribe with.
+        source.addEventListener("connection", (ev) => {
+            connection = ev.data;
             subscribed = "";
             syncSubscriptions();
         });
@@ -961,6 +970,11 @@
 
         openStream();
 
+        // The id arrives on the stream, so a mutation landing before it has
+        // nothing to subscribe with. The greeting syncs when it does, and it
+        // reads the DOM again rather than replaying whatever was pending here.
+        if (!connection) return;
+
         // A set, not a list. The server keeps these in a hash set, so neither
         // the order the fragments sit in the document nor the same fragment
         // appearing twice on the page changes what this connection watches, and
@@ -981,12 +995,13 @@
             const response = await fetch("/_exos/subscribe", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ connection: CONNECTION, topics }),
+                body: JSON.stringify({ connection, topics }),
             });
 
             // The server forgot us, so the stream is stale: drop it and let
-            // EventSource open a fresh one.
+            // EventSource open a fresh one, which arrives with an id of its own.
             if (response.status === 410) {
+                connection = null;
                 subscribed = "";
                 source?.close();
                 source = null;

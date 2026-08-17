@@ -179,3 +179,66 @@ test("a keyed reorder moves rows rather than rebuilding them", () => {
     assert.equal(window.document.getElementById("one"), one);
     assert.equal(window.document.getElementById("list").firstElementChild.id, "two");
 });
+
+/** One live fragment, as the server renders it: a name and the proof of it. */
+const live = (id = "presence-1") => `<exos-live id="${id}" data-token="token-for-${id}"></exos-live>`;
+
+test("a page with no live fragments opens no stream", () => {
+    const window = boot(`<p>nothing live here</p>`);
+
+    assert.equal(window.transport.streams.length, 0);
+});
+
+test("a tab subscribes with the id the server gave it", async () => {
+    const window = boot(live());
+    const [stream] = window.transport.streams;
+
+    assert.equal(stream.url, "/_exos/live", "the client does not name the connection");
+    assert.equal(window.transport.requests.length, 0, "and cannot subscribe before it is named");
+
+    stream.emit("connection", "5f4dcc3b5aa765d61d8327deb882cf99");
+    await settled();
+
+    const [request] = window.transport.requests;
+
+    assert.equal(request.url, "/_exos/subscribe");
+    assert.equal(request.body.connection, "5f4dcc3b5aa765d61d8327deb882cf99");
+    assert.deepEqual(request.body.topics, [["presence-1", "token-for-presence-1"]]);
+});
+
+test("a reconnect subscribes again under the new id", async () => {
+    const window = boot(live());
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    // EventSource reconnected on its own, and the server named what is a new
+    // connection with the same tab behind it. The topics have to be re-sent,
+    // because the server forgot them along with the old connection.
+    stream.emit("connection", "second");
+    await settled();
+
+    assert.deepEqual(
+        window.transport.requests.map((request) => request.body.connection),
+        ["first", "second"],
+    );
+});
+
+test("a connection the server has forgotten is dropped and reopened", async () => {
+    const window = boot(live());
+    const [stale] = window.transport.streams;
+
+    window.transport.responses.status = 410;
+    stale.emit("connection", "forgotten");
+    await settled();
+
+    assert.ok(stale.closed, "the stream that cannot subscribe is closed");
+    assert.equal(window.transport.streams.length, 2, "and a fresh one takes its place");
+
+    window.transport.responses.status = 204;
+    window.transport.streams[1].emit("connection", "fresh");
+    await settled();
+
+    assert.equal(window.transport.requests.at(-1).body.connection, "fresh");
+});

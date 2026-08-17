@@ -671,6 +671,13 @@ everything, and the client re-derives its visible set from the DOM after every
 mutation, so a fragment that scrolls in subscribes and one a patch removed
 unsubscribes.
 
+The tab does not name its own connection. The server mints an unguessable id
+when the stream opens and sends it as the first event, and the tab reports its
+visible set under that. An id a client could choose is one another client could
+guess, and naming a connection is what replaces the set of topics it watches.
+A reconnect is a new connection with a new id, which is why the client
+re-reports its topics every time the stream comes back.
+
 ### The invariant
 
 A topic must completely determine its content: the same topic means the same
