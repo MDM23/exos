@@ -2,7 +2,9 @@
 
 Somewhere to put who this is, and a way to reach them.
 
-Status: design. Nothing here is implemented.
+Status: partly built, and out of order. Stage 1 is done, and so is the key
+material stage 6 asks for; the session itself, which is what everything else
+waits on, is not. Each stage below says where it stands.
 [Directed effects](directed-effects.md) depends on all of it, and so does form
 validation, localization, and the fix for the live token that the README lists
 first among known gaps.
@@ -38,44 +40,28 @@ to.
 
 ## Stage 1: a request scope
 
-`data` in [context.rs](../../crates/exos/src/context.rs) is process-global and
-argues for itself on ergonomics: a view three levels deep should reach the
-database handle without every caller above it accepting and forwarding one.
-The same argument applies to the current request, and the same answer works,
-except that the value changes per request rather than per process.
+**Built**, in [scope.rs](../../crates/exos/src/scope.rs). `exos::scope()`
+answers with a per-request store keyed by type, `with_scope` gives a test one
+without a server in front of it, and a layer in `app()` wraps everything, so
+the stream and the asset routes are inside it too.
 
-A task-local, set by a layer in `app()`. The alternative, an axum extractor,
-does not fit for one specific reason: **a `view!` fragment is a plain
-function, not a handler.** It cannot extract anything, and making it able to
-would mean threading a parameter through every template in the application,
-which is exactly the cost `data` exists to avoid.
+Both rules the design asked for are enforced rather than documented, and the
+two failures say different things. Outside a request, asking panics, because a
+background job reading the session is a mistake made once rather than a
+condition every caller handles, and `None` would quietly render the logged-out
+view of something and then publish it. Inside a live fragment, asking also
+panics: `#[exos::live]` renders through `detached`, so a fragment cannot read
+the request in either of the two places it renders, and its arguments stay its
+whole input.
 
-Two rules fall out, both of them worth building in rather than documenting.
-
-**Outside a request there is no scope, and asking is a panic.** Not `None`.
-This mirrors what `data` already does for an unprovided type, for the same
-reason: a background job reading the session is a programming mistake made
-once, not a condition every caller should handle. `None` would quietly render
-the logged-out view of something and then publish it.
-
-**A live fragment must never see it.** The body of `#[exos::live]` renders
-twice, inline during a request and again from whatever publishes it, so a
-fragment reading the session would produce different HTML in the two places
-and break the topic invariant. The macro already wraps the body in a closure:
-
-```rust
-let __markup: ::exos::Markup = (move || #body)();
-```
-
-Wrapping that call in a scope mask makes `session()` panic inside a fragment
-always, during a request as much as outside one, and turns a rule that is
-currently a paragraph in the docs into a compile-and-run failure at the exact
-spot. A fragment's arguments are its whole input, and this is what says so.
-
-The cost is one tokio feature: `task_local!` needs `rt`, and the `exos` crate
-currently takes `sync` and `time`.
+What is left for the session is only what goes *in* the scope.
+`Scope::get` already answers with an `Option` for exactly that reason: nothing
+written yet is what anonymous will look like.
 
 ## Stage 2: the session
+
+**Not built, and next.** Everything below this line waits on it, and so does
+the whole of [directed effects](directed-effects.md).
 
 An opaque random id in a cookie, and the contents in a store.
 
@@ -121,6 +107,10 @@ the framework invented.
 
 ## Stage 3: buy the store, own the scope
 
+**Not built.** It is the same piece of work as stage 2 and is separated only
+because the decision it records is about a dependency rather than about a
+design.
+
 `tower-sessions` already does the cookie, the lazy materialisation, the store
 trait, and the layer. [rust.md](../../.claude/rules/rust.md) says to prefer a
 small well-maintained crate over writing it, and this is that situation: none
@@ -143,6 +133,8 @@ seeds `Files` and `Presence` in memory. Redis, Postgres and the rest are the
 application's to bring, and the trait is the seam.
 
 ## Stage 4: signing in and out
+
+**Not built.**
 
 ```rust
 #[exos::post("/session")]
@@ -186,6 +178,10 @@ that audience, which is the first thing the two documents share.
 
 ## Stage 5: identity on the stream
 
+**Not built**, though the connection it would hang identity on is now the
+server's to name: the id is minted server-side and sent as the stream's first
+event, rather than invented by the client and trusted.
+
 With sessions in place, the resolver [directed
 effects](directed-effects.md) asks for stops being a lookup and becomes a pure
 function of what the session already holds:
@@ -204,24 +200,25 @@ is the payoff for doing sessions first.
 
 ## Stage 6: keys
 
-`live.rs` mints a process secret at startup and says why in a comment: a
-restart drops every stream anyway, so no token outlives the process. Sessions
-break that. A session that dies on deploy is not a session, and two instances
-behind a load balancer never agree.
-
-So: one configured key, and everything that needs one derives a subkey from it
-by label, so `live-token`, `csrf` and anything later are independent and none
-of them is the key itself.
+**The key material is built**, in [keys.rs](../../crates/exos/src/keys.rs), and
+was taken out of order because the live token needed it before sessions
+existed. There is one configured key, everything derives a subkey from it by
+label, and `live-token` and `csrf` are already independent of one another
+without `csrf` existing yet:
 
 ```rust
 exos::keys(Keys::from_secret(std::env::var("EXOS_SECRET")?));
 ```
 
-Unconfigured, keep exactly today's behaviour, a per-process random, and say so
-loudly at startup. It is right for `cargo run` and wrong for everything else,
-and the failure mode without a warning is a deploy that logs everybody out.
+Unconfigured, it mints a per-process random and says so on stderr, which is
+right for `cargo run` and wrong for everything else. The dependency cost landed
+as predicted: `hmac`, `subtle` and `getrandom`, with `sha2` already in the
+workspace for content hashing.
 
-That closes the README's first gap:
+**What is not built is the binding**, which is the half that closes the
+README's first gap. Today a token is the MAC of the topic id alone, so it
+proves this server rendered the fragment and not that this viewer was served
+it. The message gains the session id:
 
 ```text
 token = HMAC-SHA256(subkey("live-token"), topic_id || session_id)[..16]
@@ -234,15 +231,16 @@ Rotation invalidates outstanding subscriptions, which is stage 4's `reload`.
 And caching does not suffer, because [`Page`](../../crates/exos/src/response.rs)
 already answers `no-cache, private`.
 
-The dependency cost is real and small: `sha2` is already in the workspace for
-content hashing in `exos-build`, so this adds `hmac` and a CSPRNG to `exos`
-itself.
+It is a small change to
+[`Topic::token`](../../crates/exos/src/live.rs) and its verifier, and it cannot
+be made until there is a session id to put in it. That is the whole argument
+for doing stage 2 next.
 
 ## Stage 7: CSRF, which is mostly already handled
 
-The README lists this as a gap, and the analysis is better than the entry
-suggests. Three things already stand between an attacker's page and a state
-change.
+**Not built, and mostly should not be.** The README lists this as a gap, and
+the analysis is better than the entry suggests. Three things already stand
+between an attacker's page and a state change.
 
 - **`SameSite=Lax`** on the session cookie means a cross-site `POST` carries
   no session at all.
@@ -261,28 +259,39 @@ exists rather than before.
 
 ## What it costs
 
+What is left to pay, now that stages 1 and 6's keys are in and cost what they
+said they would:
+
 - **A store round trip per request that reads the session.** Lazy loading is
   what keeps it off the requests that do not, and the layer must therefore
   load on first read rather than eagerly on the way in.
-- **Two dependencies in `exos`**, plus `tower-sessions` and the tower stack
-  behind it. `tower` is currently a dev-dependency only.
-- **A task-local on every request**, which is nothing, and one tokio feature.
+- **`tower-sessions` and the tower stack behind it.** `tower` is currently a
+  dev-dependency only. The two crypto dependencies this section used to
+  forecast are already paid for.
 - **The store becomes a hard dependency of running the application.** In
   memory it is not, and the moment it is Redis, a session store outage is a
   sign-in outage. Worth stating, not worth avoiding.
 
 ## Testing
 
-The task-local is the better half of this for tests. `provide` is
-process-global and the module docs already warn that parallel tests interfere;
-a request scope is per task, so two tests can run different sessions at once
-without arranging anything. That wants a helper:
+The task-local is the better half of this for tests, and it already works.
+`provide` is process-global and its module docs warn that parallel tests
+interfere; a request scope is per task, so two tests can hold different
+sessions at once without arranging anything.
+
+`with_scope` is the helper, and it shipped with stage 1:
 
 ```rust
-exos::test::with_session(Principal { id: 7, team: 3 }, || {
-    assert_eq!(badge().as_str(), "<span class=\"badge\">2</span>");
+exos::with_scope(|| {
+    exos::scope().set(Principal { id: 7, team: 3 });
+    assert_eq!(badge().into_string(), "<span class=\"badge\">2</span>");
 });
 ```
+
+Whether the session wants a second helper that seeds it specifically, rather
+than callers reaching for `scope().set`, is worth deciding when there is a
+session to seed. The argument for one is that a test should not have to know
+which type the session is kept under.
 
 ## Open questions
 

@@ -2,10 +2,16 @@
 
 Pushing an `Effect` to a person, rather than a patch to a screen region.
 
-Status: design. Nothing here is implemented. It depends on an identity system
-exos does not have, planned in
+Status: design. Nothing that is particular to directed effects is implemented,
+though two things this document asked for have since been built for their own
+reasons: the request scope of stage 2, and the server-minted connection id of
+stage 1. It still depends on an identity system exos does not have, planned in
 [sessions and identity](sessions-and-identity.md), and much of this document is
 about what that system has to be for the rest to hold together.
+
+The smaller items it names in passing, the missing step names, the reconnect
+gap and the topic index, have moved to [loose ends](loose-ends.md), because
+none of them should wait for audiences to exist.
 
 ## What it is for
 
@@ -46,7 +52,7 @@ everybody who can subscribe, and that set has one member. The guide already
 names this as the escape hatch, and it is the right one.
 
 What is actually broken about it today is the proof. A token is derived from
-the topic id and a process secret, so it proves *somebody* was served the
+the topic id and a configured key, so it proves *somebody* was served the
 fragment, not that *this viewer* was. Anywhere a topic id and token escape a
 page, by a screenshot, a copied DOM, a log line, a shared browser profile, the
 holder can subscribe to another user's notifications and keep receiving them
@@ -123,12 +129,13 @@ Three consequences to build in from the start:
   the same kind of string. One field is client-claimed and token-proved; the
   other is server-derived and unforgeable. Merging them would make the
   distinction depend on a token check nobody can see from the type.
-- **The connection id should be minted by the server.** Today the client
-  generates a UUID and `/_exos/subscribe` trusts it, so guessing one lets an
-  attacker overwrite another tab's subscriptions. Unguessable in practice, and
-  still the wrong shape once connections carry identity. Mint it on the server,
-  send it as the first event on the stream, and have the client use what it was
-  given.
+- **The connection id is minted by the server.** *Built.* The client used to
+  generate a UUID that `/_exos/subscribe` trusted, so guessing one let an
+  attacker overwrite another tab's subscriptions. The server now mints it, sends
+  it as the stream's first event, and the client subscribes with what it was
+  given. That was worth doing on its own and it is also the precondition for
+  this stage: a connection that carries identity cannot be named by whoever
+  asks.
 - **Identity is captured at connect and never refreshed.** That is a leak on a
   session change: the runtime morphs the body on navigation without reopening
   the `EventSource`, so a tab that logs in as somebody else keeps the previous
@@ -139,13 +146,12 @@ Three consequences to build in from the start:
 
 ## Stage 2: the request scope
 
-Rendering `notification_count(id)` three components deep should not mean
-threading a user id through every caller above it. That is the same argument
-[context.rs](../../crates/exos/src/context.rs) makes for `data`, and the same
-answer applies, except per request rather than per process. It is a task-local
-set by a layer, and it belongs to
-[sessions and identity](sessions-and-identity.md), which needs it first and
-where it is designed.
+**Built**, in [scope.rs](../../crates/exos/src/scope.rs), because
+[sessions and identity](sessions-and-identity.md) needed it first. Rendering
+`notification_count(id)` three components deep does not mean threading a user
+id through every caller above it: it is a task-local set by a layer, on the
+same argument [context.rs](../../crates/exos/src/context.rs) makes for `data`,
+except per request rather than per process.
 
 One decision that belongs here rather than there: whether `#[exos::live]`
 should fold the current viewer into a topic automatically, so that a per-user
@@ -184,18 +190,10 @@ is ordered, and nothing should be made to be.
 
 ### Client changes
 
-The runtime listens for five step names on the stream:
-
-```js
-for (const step of ["navigate", "page", "patch", "remove", "signals"]) {
-```
-
-`focus`, `reload` and `scroll` are missing, which is fine while the stream only
-carries patches and becomes arbitrary once it carries effects. Either register
-all of them or make the exclusion deliberate and say why in the comment.
-`focus` and `scroll` from a background job are rude, but they are rude in
-exactly the way an application chooses; a framework refusing to deliver them is
-a surprise, and one that shows up as silence.
+The runtime listens for five of the eight step names on the stream, which is
+fine while it only carries patches and becomes arbitrary once it carries
+effects. That is a [loose end](loose-ends.md) rather than part of this design,
+and it should be closed before this stage rather than by it.
 
 ## Stage 4: things that are not state
 
@@ -291,22 +289,10 @@ Three ways a push is lost, none of them fixable by trying harder.
   forgotten the connection, and the client re-subscribes. Anything published in
   between is gone.
 
-The third one is already a bug for live fragments and directed effects make it
-visible: a fragment that changed during the gap stays stale until the next
-publish, which may be never. The server cannot repair it on its own, because a
-topic is a hash of a name and its arguments and nothing can re-invoke the
-function from it.
-
-The cheap fix is on the client. On a reopen that follows a drop, rather than on
-the first open, re-fetch the current URL and morph, which is one call to
-`navigate(location.href, false)` and repairs everything state-backed in one
-request.
-
-One detail to get right when writing it: a navigation re-seeds the signals the
-arriving document declares, because a page says what its own state starts as. A
-repair is the same page arriving again rather than a different one, so it has
-to morph without re-seeding, or a dropped connection would empty the field
-somebody is typing into.
+The third one is already a bug for live fragments and directed effects only
+make it visible, so it is tracked as a [loose end](loose-ends.md) and should be
+fixed there. The cheap repair is on the client and does not need any of this
+document.
 
 The expensive fix is to make topics re-renderable: `#[exos::live]` registers a
 renderer by name through `inventory`, the wrapper element carries its signed
@@ -323,11 +309,9 @@ At presence volumes that is invisible. One send per notification against
 thousands of connections is a different shape, and directed effects will be the
 first thing to feel it.
 
-The fix is an index from topic to connection ids, maintained on subscribe and
-on close, so both `publish` and `send` become a lookup rather than a scan. Two
-constraints on whoever writes it: `await_holding_lock` is on, so the send path
-stays synchronous, which `broadcast::Sender::send` allows; and the index has to
-be dropped in `close` or it outlives the connections it names.
+The fix is an index from topic to connection ids, which is a [loose
+end](loose-ends.md) with the constraints written down. Nothing here needs it to
+land first; this is just the feature that will make it worth doing.
 
 ## The notification centre, end to end
 
