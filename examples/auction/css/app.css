@@ -1,0 +1,301 @@
+@import "tokens.css";
+
+/* -------------------------------------------------------------------------- */
+/*                                 THE PAGE                                   */
+/* -------------------------------------------------------------------------- */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding-bottom: 6rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+.shell {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 0 var(--space-m);
+}
+
+h1 {
+  margin: var(--space-l) 0 var(--space-s);
+  font-size: 1.75rem;
+}
+
+h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.lede {
+  margin: 0 0 var(--space-l);
+  color: var(--text-subtle);
+  max-width: 38rem;
+}
+
+.info {
+  margin-top: var(--space-l);
+  color: var(--text-faint);
+  font-size: 0.875rem;
+}
+
+/* The default blue belongs to no palette in particular, least of all this
+   one. Links in the body read as this document's accent. */
+main a {
+  color: var(--accent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+
+main a:hover {
+  text-decoration-thickness: 2px;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               THE NAVIGATION                               */
+/* -------------------------------------------------------------------------- */
+
+.site-nav {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.site-nav .shell {
+  display: flex;
+  gap: var(--space-m);
+  padding-block: var(--space-s);
+}
+
+.site-nav a {
+  padding: var(--space-xs) 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-subtle);
+  text-decoration: none;
+}
+
+.site-nav a[aria-current="page"] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 WHO YOU ARE                                */
+/* -------------------------------------------------------------------------- */
+
+.who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-s) var(--space-m);
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: var(--space-m);
+  padding: var(--space-s) var(--space-m);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: 0.9375rem;
+}
+
+.who .hint {
+  color: var(--text-faint);
+}
+
+.claim {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  align-items: baseline;
+  color: var(--text-subtle);
+}
+
+.badge {
+  margin-left: var(--space-xs);
+  padding: 0 var(--space-xs);
+  border-radius: var(--radius-s);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  THE LOTS                                  */
+/* -------------------------------------------------------------------------- */
+
+.lots {
+  display: grid;
+  gap: var(--space-m);
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+}
+
+.lot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  padding: var(--space-m);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.lot[data-closed="true"] {
+  border-style: dashed;
+  color: var(--closed);
+}
+
+.price {
+  margin: var(--space-xs) 0 0;
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.standing {
+  margin: 0 0 var(--space-s);
+  color: var(--text-subtle);
+  font-size: 0.875rem;
+}
+
+.lot[data-closed="true"] .standing {
+  color: var(--closed);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  CONTROLS                                  */
+/* -------------------------------------------------------------------------- */
+
+.bid {
+  margin-top: auto;
+  padding: var(--space-s) var(--space-m);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-s);
+  background: var(--accent);
+  color: light-dark(#ffffff, #17161a);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.bid:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.bid:disabled {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--closed);
+  cursor: not-allowed;
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.hammer {
+  margin-top: var(--space-l);
+  padding: var(--space-m);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+.hammer p {
+  margin: var(--space-xs) 0 var(--space-m);
+  color: var(--text-subtle);
+  font-size: 0.875rem;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  THE TOAST                                 */
+/* -------------------------------------------------------------------------- */
+
+/* The runtime's `show` toggles the `hidden` attribute, and an author `display`
+   beats the user agent's `[hidden] { display: none }` whatever the
+   specificity, because the author origin wins. So a rule that sets `display`
+   on something bound to `show` has to say the hidden case itself. */
+
+.toast {
+  position: fixed;
+  inset-block-end: var(--space-m);
+  inset-inline: var(--space-m);
+  display: flex;
+  gap: var(--space-m);
+  align-items: baseline;
+  justify-content: space-between;
+  max-width: 30rem;
+  margin-inline: auto;
+  padding: var(--space-s) var(--space-m);
+  border: 1px solid var(--note);
+  border-radius: var(--radius);
+  background: var(--note-bg);
+  box-shadow: var(--shadow);
+
+  /* Where it sits once it has arrived. `allow-discrete` is what lets the
+     transition run at all, since the element goes from `display: none` and a
+     discrete property would otherwise flip with no in-between. */
+  opacity: 1;
+  translate: 0 0;
+  transition:
+    opacity 180ms ease,
+    translate 180ms ease,
+    display 180ms allow-discrete;
+}
+
+/* Where it comes in from. */
+@starting-style {
+  .toast {
+    opacity: 0;
+    translate: 0 1.5rem;
+  }
+}
+
+.toast[hidden] {
+  display: none;
+  opacity: 0;
+  translate: 0 1.5rem;
+}
+
+/* Which way a message went, written by a signal rather than rendered, so the
+   server never has to know what a toast currently says. */
+
+.toast {
+  --note: var(--accent);
+  --note-bg: var(--surface);
+}
+
+.toast[data-note="good"] {
+  --note: var(--good);
+  --note-bg: var(--good-subtle);
+}
+
+.toast[data-note="warn"] {
+  --note: var(--warn);
+  --note-bg: var(--warn-subtle);
+}
+
+.dismiss {
+  padding: 0 var(--space-xs);
+  border: 0;
+  background: none;
+  color: var(--note);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: none;
+  }
+}

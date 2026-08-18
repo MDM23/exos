@@ -6,8 +6,9 @@ server renders the HTML and a small runtime keeps it alive in the browser.
 One binary. Just `cargo run`. No bundler, no npm, no build step.
 
 ```bash
-cargo run -p files    # then open http://localhost:3000, twice
-cargo run -p todos    # the classic list, on the same address
+cargo run -p files      # then open http://localhost:3000, twice
+cargo run -p todos      # the classic list, on the same address
+cargo run -p auction    # a sale room, best with a private window open too
 ```
 
 ## What it looks like
@@ -93,7 +94,10 @@ The [guide](docs/guide.md) walks through the whole surface.
 batch action, optimistic updates, drag to reorder, live presence.
 [`examples/todos`](examples/todos) is TodoMVC, where the list is a live
 fragment per filter and editing a row is client state from the double click to
-the save.
+the save. [`examples/auction`](examples/auction) is about who anybody is: a
+price is state and is published to everyone watching, being outbid is an event
+and is sent to one person wherever they are. Reload it and the price is still
+there while the message is not, which is the whole difference in one gesture.
 
 ## Working on exos
 

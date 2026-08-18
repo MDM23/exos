@@ -1065,4 +1065,17 @@ escape and blur to the save; and a list that renders nothing at all when it is
 empty, decided by an ordinary `if` on the server. Run it with
 `cargo run -p todos`, also twice.
 
+[`examples/auction`](../examples/auction) is the one about *who*. A sale room
+where the price of a lot is state, published to every tab watching it, and
+being outbid is an event, sent to one person on every tab they have open and
+on whatever page they happen to be reading. It covers the whole identity
+surface: a resolver turning a session name into audiences, a guest who has
+claimed no account and is addressable as the name in their cookie anyway,
+claiming one as a rotation that carries the lots you were winning across, a
+role as an audience covering several people at once, `connected` choosing
+between a push and an email, and the auctioneer closing a lot, which tells a
+winner who asked for nothing. Run it with `cargo run -p auction`, in two
+ordinary tabs and one private window, and then reload: the price is still
+there and the message is not.
+
 [`Markup`]: https://docs.rs/exos/latest/exos/struct.Markup.html

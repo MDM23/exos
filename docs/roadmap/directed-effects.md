@@ -430,6 +430,12 @@ it safe, and `send` is what the remaining line needed. What the example still
 leans on is the toast being a `#[model]`, which is stage 4's open question and
 the one thing here that is not settled.
 
+[`examples/auction`](../../examples/auction) is this design with a room around
+it. The shape it puts on screen is the one worth borrowing: a lot's price is a
+fragment and a bid publishes it, while being outbid is sent, and the difference
+is visible rather than argued, because reloading brings the price back and not
+the message.
+
 ## Open questions
 
 - **Naming.** *Answered: `send`.* That it says little is the argument for it.
