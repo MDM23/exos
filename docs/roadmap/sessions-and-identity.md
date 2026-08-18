@@ -2,16 +2,15 @@
 
 Somewhere to put who this is, and a way to reach them.
 
-Status: mostly built, and narrower than it was drawn. Stages 1 to 4 are done and
+Status: mostly built, and narrower than it was drawn. Stages 1 to 5 are done and
 so is the key material stage 6 asks for. exos names the browser and carries the
 name in a cookie; what a name *means* turned out to belong to the application,
 and [stage 3](#stage-3-and-no-store-at-all) is the argument for that, made after
 a session store was built and then taken out again.
 
-What is left is the two stages that reach outwards: identity on the stream,
-which [directed effects](directed-effects.md) waits on entirely, and binding the
-live token, which is the README's first listed gap and turned out to be harder
-than stage 6 thought. Each stage below says where it stands.
+What is left is binding the live token, which is the README's first listed gap
+and turned out to be harder than stage 6 thought. Each stage below says where it
+stands.
 
 ## Three questions, one mechanism
 
@@ -237,29 +236,65 @@ share.
 
 ## Stage 5: identity on the stream
 
-**Not built, and next.** Both of its preconditions now are. The connection it
-hangs identity on is the server's to name, since the id is minted server-side
-and sent as the stream's first event rather than invented by the client and
-trusted. And the stream's `GET` runs inside the session layer, which was the
-reason to mount that layer around `/_exos/live` rather than only around the
-handlers.
+**Built**, in [identity.rs](../../crates/exos/src/identity.rs). Both of its
+preconditions were already in place. The connection it hangs identity on is the
+server's to name, since the id is minted server-side and sent as the stream's
+first event rather than invented by the client and trusted. And the stream's
+`GET` runs inside the session layer, which was the reason to mount that layer
+around `/_exos/live` rather than only around the handlers.
 
-The resolver [directed effects](directed-effects.md) asks for takes the name and
-answers with the audiences it stands for:
+The resolver [directed effects](directed-effects.md) asked for takes the name
+and answers with the audiences it stands for:
 
 ```rust
-exos::identify(async |id| match data::<Sessions>().viewer(&id).await {
-    Ok(Some(who)) => Audiences::of(Viewer(who.id)).and(Team(who.team)),
-    _ => Audiences::none(),
+exos::identify(async |name| {
+    let Some(name) = name else {
+        return Ok(Audiences::none());
+    };
+
+    Ok(match data::<Sessions>().viewer(&name).await? {
+        Some(who) => Audiences::of(&Viewer(who.id)).and(&Team(who.team)),
+        None => Audiences::none(),
+    })
 });
 ```
 
-**This is async, where the plan said it would be sync**, and stage 3 is why: the
-framework no longer holds anything to make it a pure function of. It runs once
-per connection, on the stream's `GET`, which is cheap enough that this is a
-smaller change than it looks. It has to become fallible too, and the answer to
-a resolver that fails is almost certainly to refuse the stream rather than open
-one with no audiences, since the second is a silent version of the first.
+**It is async, where the plan originally said it would be sync**, and stage 3 is
+why: the framework no longer holds anything to make it a pure function of. It
+runs once per connection, on the stream's `GET`, which is what makes that
+affordable. It is fallible for the same reason, and a resolver that fails
+refuses the stream, exactly as this stage guessed it would have to: opening one
+with no audiences is the silent version of the same failure, and `EventSource`
+retries on its own, so refusing costs a delay rather than a tab.
+
+Four things came out differently from the sketch.
+
+**The name arrives as an `Option`, and anonymous is not a case exos decides.**
+The sketch took an `Id`, which quietly assumed exos would short-circuit a
+connection with no name. It should not. A stream cannot start a session, since
+its response headers go out when it opens and there is no second chance at the
+cookie, so a nameless connection is a real state rather than one to design
+away. Handing it to the resolver is also what makes the open question below
+about anonymous visitors fall out rather than become a feature: a name with
+nobody behind it can be addressed as itself, which is what a queue position or
+a checkout timer wants.
+
+**Audiences are taken by reference**, `Audiences::of(&Viewer(id))`, which the
+sketch wrote without the `&`. That matches `publish(&fragment)` and the `send`
+the other document sketches, and it keeps `needless_pass_by_value` quiet
+without an exception.
+
+**An audience reduces to the same key a topic does**, through `Topic::new`, so
+there is one rule for how a name and its arguments become a key rather than two
+that could drift. That an audience and a topic could in principle spell the
+same string is harmless, because they are matched against separate sets, and
+keeping those apart is the whole security property. A test claims an audience
+key as a topic, with a valid token for it, and checks that the connection ends
+up watching a topic and being nobody.
+
+**`connected` came with it**, from [directed effects](directed-effects.md)
+stage 3, because a field nothing can read is not a built feature. It is the
+minimum that makes an audience observable, and `send` is still that document's.
 
 Worth noticing what this hook is: an async function from a session name to
 something the request needs. So is the six lines every application will write
@@ -267,9 +302,6 @@ to put a viewer in the scope. If exos ever grows the one, it should be the same
 one, serving the handler and the stream from a single place rather than asking
 for the same lookup twice in two shapes. That is the shape to reach for when
 something wants it, and it is not a store trait.
-
-The other precondition is in place: the stream's `GET` runs inside the session
-layer, which is why that layer wraps `/_exos/live` and not only the handlers.
 
 ## Stage 6: keys
 
@@ -374,8 +406,9 @@ Almost nothing, which is the point of the shape it ended up as.
 - **Every application writes the same handful of lines**, resolving a name and
   putting the result in the scope. That is the price of the boundary and the
   thing to watch: if it turns into more than a handful, or if it and stage 5's
-  resolver want the same lookup in two shapes, that is the signal to build the
-  hook stage 5 describes.
+  resolver want the same lookup in two shapes, that is the signal to build one
+  hook for both. Stage 5 shipped the stream's half of that as `identify`,
+  which is what makes the question answerable now rather than guessable.
 
 ## Testing
 
@@ -408,10 +441,14 @@ whatever its database already does.
   is a query per request; caching what it resolved to means a revoked role stays
   live. This is now plainly the application's call, which is the right place for
   it, and the guide should probably say so rather than leaving it unmentioned.
-- **A resolver hook.** Named in [stage 5](#stage-5-identity-on-the-stream): one
-  async function from a name to something the request needs, serving both the
-  handler and the stream. Worth building when something wants it, and worth not
-  building before, because guessing its shape is how the store happened.
+- **One resolver hook, or two.** [Stage 5](#stage-5-identity-on-the-stream)
+  built half of it: `identify` is an async function from a name to what the
+  *stream* needs. The handler half is still the six lines every application
+  writes into the scope. Whether they should become one hook is now a question with a
+  concrete shape in front of it rather than a guess, which is the right time to
+  leave it open a little longer: the two want different answers out of one
+  lookup, audiences on one side and a viewer in the scope on the other, and
+  collapsing them before something has written both is how the store happened.
 - **Persisting across a browser restart is the browser's business now.** The
   cookie asks for four hundred days, so exos imposes no ceiling. Whether a
   session survives is decided by the application's record, which is the answer

@@ -900,6 +900,81 @@ subscribe. Binding the tag to a session id is what closes that. The session to
 bind it to now exists, and the binding itself does not; see
 [the roadmap](roadmap/sessions-and-identity.md).
 
+### Who a stream belongs to
+
+A subscription says what a tab is showing. It cannot say who the tab is, and
+some things are addressed to a person rather than to a region of a screen: a
+notification, an alert, a nudge meant for one viewer's tabs and nobody else's.
+
+An audience is that other half, and it is an ordinary `Hash` type with a name:
+
+```rust
+#[derive(Hash)]
+struct Viewer(u32);
+
+impl exos::Audience for Viewer {
+    const NAME: &'static str = "viewer";
+}
+```
+
+exos works out which ones a connection is in once, when the stream opens. An
+`EventSource` is opened with an ordinary `GET`, so it arrives carrying the
+session cookie, and that is the one place identity can be established without
+inventing a second channel:
+
+```rust
+exos::identify(async |name| {
+    let Some(name) = name else {
+        return Ok(Audiences::none());
+    };
+
+    Ok(match data::<Sessions>().viewer(&name).await? {
+        Some(who) => Audiences::of(&Viewer(who.id)).and(&Team(who.team)),
+        None => Audiences::none(),
+    })
+});
+```
+
+`identify` goes once, before serving, and an application that never calls it
+has no audiences and pays for none. Answering with a set rather than one value
+costs nothing and is the whole difference between addressing a user and
+addressing every admin, everyone on a team, or every tab in a workspace.
+
+The name arrives as an `Option` because a stream cannot start a session: its
+response headers went out when it opened, so there would be no cookie to set.
+What a name exos has never heard of stands for is the application's answer
+rather than exos's, which is what lets a logged-out visitor still be addressed
+by a queue position or a checkout timer.
+
+Three rules are built in rather than asked for.
+
+**The client can never name an audience.** Topics are client-claimed and
+token-proved; audiences are server-derived and live in a set of their own on
+the connection. A tab reporting a topic that spells an audience exactly is
+still watching a topic and is still nobody.
+
+**A resolver that fails refuses the stream**, rather than opening one with no
+audiences, which is the same failure with none of the noise. `EventSource`
+retries on its own, so a database that blinked costs a delay rather than a tab.
+
+**Identity is captured when the stream opens and never refreshed.** The runtime
+morphs the body on navigation without reopening the stream, so a tab that signs
+in as somebody else keeps the audiences it had until the stream drops. That is
+why sign-in answers with `Effect::reload()`, which drops the document and the
+stream with it.
+
+What there is to do with an audience today is ask whether anybody is there:
+
+```rust
+if exos::connected(&Viewer(user)) { /* push */ } else { /* email */ }
+```
+
+That is a hint and not a guarantee, since the last tab can close between the
+answer and whatever is done about it. The honest shape is to persist first and
+treat reaching somebody as an accelerator. Sending an `Effect` to an audience
+is the next piece and does not exist yet; see
+[the roadmap](roadmap/directed-effects.md).
+
 ## What exos does not do
 
 Knowing the edges is more useful than a feature list.

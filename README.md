@@ -143,10 +143,11 @@ carried a real application yet. Known gaps, roughly in priority order:
 
 Where each of those is going is written down in [docs/roadmap](docs/roadmap):
 [sessions and identity](docs/roadmap/sessions-and-identity.md) is the one most
-of the others wait on and now names the browser, though not yet the viewer,
-[directed effects](docs/roadmap/directed-effects.md) is what the rest of it
-unlocks, and [loose ends](docs/roadmap/loose-ends.md) collects the smaller work
-that waits for nothing.
+of the others wait on and now names both the browser and, on a live stream, who
+it belongs to, [directed effects](docs/roadmap/directed-effects.md) is what the
+rest of it unlocks and now needs only the sending, and [loose
+ends](docs/roadmap/loose-ends.md) collects the smaller work that waits for
+nothing.
 
 ## License
 

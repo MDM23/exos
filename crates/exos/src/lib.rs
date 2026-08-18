@@ -28,6 +28,7 @@ mod context;
 mod discover;
 mod effect;
 mod hex;
+mod identity;
 mod js;
 mod keys;
 mod live;
@@ -48,11 +49,12 @@ pub use crate::{
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry, app},
     effect::{Effect, Step},
+    identity::{Audience, Audiences, Resolution, identify},
     js::{
         IntoJs, IntoPayload, Js, append, attr_now, call, emit, focus_now, quote_js, record, when,
     },
     keys::{Keys, keys},
-    live::{Fragment, Topic, connection_count, publish},
+    live::{Fragment, Topic, connected, connection_count, publish},
     model::{Model, ModelFields, ModelRejection, to_wire},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,

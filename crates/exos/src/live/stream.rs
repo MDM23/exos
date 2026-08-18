@@ -14,8 +14,20 @@
 //! The server does, and it says so in the stream's first event. A client that
 //! chose its own id could name somebody else's connection and replace the
 //! topics that connection watches, which is a tab silently losing its updates
-//! or, once a connection carries identity, receiving another viewer's. An
+//! or, since a connection now carries identity, receiving another viewer's. An
 //! unguessable id makes that a matter of arithmetic rather than of trust.
+//!
+//! # Two sets, and only one of them is the client's
+//!
+//! A connection holds what it watches and who it is, and they never meet. The
+//! topics are client-claimed and token-proved, replaced wholesale by every
+//! `/_exos/subscribe`. The [audiences](crate::identity) are server-derived,
+//! written once when the stream opens, and nothing a client sends can reach
+//! them.
+//!
+//! They hold the same kind of string, which is the reason to keep them in
+//! separate fields rather than one: merged, whether a key was proved or derived
+//! would depend on a check nobody can see from the type.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -29,7 +41,7 @@ use axum::{
     Json, Router,
     http::StatusCode,
     response::{
-        IntoResponse,
+        IntoResponse, Response,
         sse::{Event, KeepAlive, Sse},
     },
     routing::{get, post},
@@ -39,7 +51,11 @@ use serde::Deserialize;
 use tokio::sync::broadcast;
 use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 
-use crate::{Step, hex, live::Topic};
+use crate::{
+    Step, hex,
+    identity::{self, Audience},
+    live::Topic,
+};
 
 /// Where the stream and the subscription endpoint are mounted.
 const STREAM: &str = "/_exos/live";
@@ -58,8 +74,13 @@ const HELLO: &str = "connection";
 /// live feed should skip ahead rather than stall the publisher.
 const CAPACITY: usize = 64;
 
-/// A live connection: its outbound channel and the topics it watches.
+/// A live connection: its outbound channel, who it is, and what it watches.
 struct Connection {
+    /// Who the server decided this connection belongs to when it opened.
+    ///
+    /// Never written again, and never from a client request. The module docs
+    /// say why this is its own field rather than part of `topics`.
+    audiences: HashSet<String>,
     sender: broadcast::Sender<Event>,
     topics: HashSet<String>,
 }
@@ -83,6 +104,35 @@ pub fn connection_count() -> usize {
         .lock()
         .expect("the registry lock is never held across a panic")
         .len()
+}
+
+/// Whether any open stream belongs to `audience`.
+///
+/// The question a sender asks before choosing between a push and an email. It
+/// is a hint and never a guarantee: the last tab can close between the answer
+/// and whatever is done about it, so the honest use is to persist first and
+/// treat reaching somebody as an accelerator.
+///
+/// ```
+/// # use exos::{Audience, connected};
+/// # #[derive(Hash)]
+/// # struct Viewer(u32);
+/// # impl Audience for Viewer { const NAME: &'static str = "viewer"; }
+/// assert!(!connected(&Viewer(7)), "nobody has opened a stream");
+/// ```
+///
+/// # Panics
+///
+/// If the registry lock was poisoned; see [`connection_count`].
+#[must_use]
+pub fn connected<A: Audience>(audience: &A) -> bool {
+    let key = identity::key(audience);
+
+    connections()
+        .lock()
+        .expect("the registry lock is never held across a panic")
+        .values()
+        .any(|connection| connection.audiences.contains(&key))
 }
 
 /// Re-renders nothing, since the caller already did, and sends the fragment to
@@ -132,7 +182,10 @@ fn mint() -> String {
 
 /// Registers a connection under a fresh id, with the receiver its response
 /// drains.
-fn open() -> (String, broadcast::Receiver<Event>) {
+///
+/// The audiences arrive here rather than being written afterwards, so there is
+/// no moment where a connection is reachable and does not yet know who it is.
+fn open(audiences: HashSet<String>) -> (String, broadcast::Receiver<Event>) {
     let id = mint();
     let (sender, receiver) = broadcast::channel(CAPACITY);
 
@@ -142,6 +195,7 @@ fn open() -> (String, broadcast::Receiver<Event>) {
         .insert(
             id.clone(),
             Connection {
+                audiences,
                 sender,
                 topics: HashSet::new(),
             },
@@ -190,8 +244,27 @@ async fn subscribe(Json(request): Json<Subscription>) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-async fn stream() -> impl IntoResponse {
-    let (id, receiver) = open();
+/// Opens the one stream a tab has, having first settled who it belongs to.
+///
+/// The identity is resolved before the connection is registered, which is what
+/// makes a stream that carries no identity impossible rather than merely
+/// unlikely. Reading the session is all this does with it: a stream must never
+/// *start* one, because its response headers go out here and there would be no
+/// second chance to set the cookie.
+async fn stream() -> Response {
+    let audiences = match identity::resolve(crate::session().id()).await {
+        Ok(audiences) => audiences.into_keys(),
+        Err(error) => {
+            // Refusing is the loud version of what opening anyway would do
+            // silently. `EventSource` retries on its own, so a resolver that
+            // fails because a database blinked costs a delay rather than a tab.
+            eprintln!("exos: a stream was refused because identifying it failed: {error}");
+
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+
+    let (id, receiver) = open(audiences);
 
     let events = BroadcastStream::new(receiver)
         // A lagged tab skips ahead rather than stalling the publisher; the
@@ -204,6 +277,7 @@ async fn stream() -> impl IntoResponse {
         events,
     })
     .keep_alive(KeepAlive::default())
+    .into_response()
 }
 
 /// A stream that introduces its connection and then deregisters it when the
@@ -259,11 +333,23 @@ mod tests {
 
     use super::*;
 
+    /// The routes with the layers [`app`](crate::app) puts around them.
+    ///
+    /// The stream reads the session, which lives in the request scope, so the
+    /// bare router is not a thing that can answer. Mounting the same two layers
+    /// here means these tests exercise the composition rather than a handler
+    /// lifted out of it.
+    fn served() -> Router {
+        routes()
+            .layer(axum::middleware::from_fn(crate::session::layer))
+            .layer(axum::middleware::from_fn(crate::scope::layer))
+    }
+
     /// Opens a real stream through the router and reads what it says first,
     /// which is the wire format the client parses rather than a stand-in for
     /// it. The body is handed back because dropping it closes the connection.
     async fn greeted() -> (String, Body) {
-        let response = routes()
+        let response = served()
             .oneshot(
                 Request::builder()
                     .uri(STREAM)
@@ -338,7 +424,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscribing_keeps_only_the_topics_it_can_prove() {
-        let (id, _receiver) = open();
+        let (id, _receiver) = open(HashSet::new());
 
         let real = Topic::new("presence", &(42_u32,));
         let forged = Topic::new("presence", &(43_u32,));
@@ -375,5 +461,88 @@ mod tests {
         .await;
 
         assert_eq!(status, StatusCode::GONE);
+    }
+
+    // ---- who a connection is ------------------------------------------------
+
+    /// The registry is process-global and these run in parallel, so each test
+    /// below owns a number nothing else uses. That is the discipline
+    /// [`provide`](crate::provide) asks of its callers, for the same reason.
+    #[derive(Hash)]
+    struct Viewer(u32);
+
+    impl Audience for Viewer {
+        const NAME: &'static str = "viewer";
+    }
+
+    #[tokio::test]
+    async fn a_connection_is_addressable_as_whoever_opened_it() {
+        let (_id, _receiver) = open(identity::Audiences::of(&Viewer(1)).into_keys());
+
+        assert!(connected(&Viewer(1)));
+        assert!(!connected(&Viewer(2)), "and as nobody else");
+    }
+
+    /// The whole reason the two sets are separate fields. A tab can say what it
+    /// is displaying, and saying it in the shape of an audience key must not be
+    /// a way to become somebody: the topic is proved, the audience is derived,
+    /// and nothing arriving from a client reaches the second.
+    #[tokio::test]
+    async fn a_client_cannot_talk_its_way_into_an_audience() {
+        let (id, _receiver) = open(HashSet::new());
+
+        // The exact string the server would have written had it decided this
+        // connection was viewer 3, handed back as a topic with a real token.
+        let claimed = identity::key(&Viewer(3));
+        let topic = Topic::from_raw(&claimed);
+
+        let status = subscribe(Json(Subscription {
+            connection: id.clone(),
+            topics: vec![(claimed.clone(), topic.token())],
+        }))
+        .await;
+
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert!(!connected(&Viewer(3)));
+
+        let registry = connections().lock().expect("the lock is not poisoned");
+        let connection = registry.get(&id).expect("the connection is open");
+
+        assert!(connection.topics.contains(&claimed), "it is watching it");
+        assert!(connection.audiences.is_empty(), "and is still nobody");
+    }
+
+    /// Identity lasts exactly as long as the stream carrying it, which is what
+    /// makes `connected` a hint about now rather than a record of who has ever
+    /// visited.
+    #[tokio::test]
+    async fn nobody_is_connected_once_the_stream_is_gone() {
+        let audiences = identity::Audiences::of(&Viewer(4)).into_keys();
+
+        {
+            let (id, _receiver) = open(audiences);
+            assert!(connected(&Viewer(4)));
+
+            close(&id);
+        }
+
+        assert!(!connected(&Viewer(4)));
+    }
+
+    /// An application that never calls `identify` gets a stream that works and
+    /// an identity that is empty, rather than a refusal or a warning.
+    #[tokio::test]
+    async fn a_stream_opens_with_no_resolver_configured() {
+        let (id, _body) = greeted().await;
+
+        let registry = connections().lock().expect("the lock is not poisoned");
+
+        assert!(
+            registry
+                .get(&id)
+                .expect("the connection is open")
+                .audiences
+                .is_empty()
+        );
     }
 }

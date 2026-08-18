@@ -2,17 +2,20 @@
 
 Pushing an `Effect` to a person, rather than a patch to a screen region.
 
-Status: design. Nothing that is particular to directed effects is implemented,
-though three things this document asked for have since been built for their own
-reasons: the request scope of stage 2, the server-minted connection id of stage
-1, and the session name those two were the groundwork for. What is still missing
-is the last link, stage 1's resolver, which turns that name into a set of
-audiences; [sessions and identity](sessions-and-identity.md) carries it as its
-own stage 5 and it is now the next thing either document needs.
+Status: half built. Stage 1 is done, which was the link everything here waited
+on: a connection now carries who it is, resolved from the session name when the
+stream opens, and `connected` came with it so an audience is something a program
+can observe rather than a field nothing reads. Stage 2 was already done. What is
+left is stage 3 onwards, which is the sending itself, and it now waits on
+nothing.
 
-One correction to what follows: the resolver sketched below takes a session and
-reads it. exos holds no session contents, only the name, so it takes the name
-and is async and fallible. See that document's stage 5 for the consequences.
+Two corrections to what follows, both recorded rather than edited away. The
+resolver sketched below takes a session and reads it; exos holds no session
+contents, only the name, so it takes the name and is async and fallible. And it
+takes an `Option` of that name, because a stream cannot start a session and a
+nameless connection is therefore a real state rather than one to design away.
+See [sessions and identity](sessions-and-identity.md) stage 5 for what the built
+version looks like.
 
 The smaller items it names in passing, the missing step names, the reconnect
 gap and the topic index, have moved to [loose ends](loose-ends.md), because
@@ -95,8 +98,9 @@ user's action.
 
 ## Stage 1: identity on the connection
 
-The stream is opened with an ordinary `GET`, so it carries cookies. That is the
-one place identity can be established without inventing a second channel.
+**Built**, in [identity.rs](../../crates/exos/src/identity.rs). The stream is
+opened with an ordinary `GET`, so it carries cookies. That is the one place
+identity can be established without inventing a second channel.
 
 ```rust
 #[derive(Hash)]
@@ -106,17 +110,29 @@ impl exos::Audience for Viewer {
     const NAME: &'static str = "viewer";
 }
 
-exos::identify(async |id| match data::<Sessions>().viewer(&id).await {
-    Ok(Some(who)) => Audiences::of(Viewer(who.id)).and(Team(who.team)),
-    _ => Audiences::none(),
+exos::identify(async |name| {
+    let Some(name) = name else {
+        return Ok(Audiences::none());
+    };
+
+    Ok(match data::<Sessions>().viewer(&name).await? {
+        Some(who) => Audiences::of(&Viewer(who.id)).and(&Team(who.team)),
+        None => Audiences::none(),
+    })
 });
 ```
 
 `Audience` is a trait, not a string and not a macro. An implementor is any
 `Hash` type, and `Topic::new(Self::NAME, self)` reduces it to the same shape a
-fragment topic has, which is what lets one registry and one match loop serve
-both. A `#[derive(Audience)]` filling in `NAME` from the type name is obvious
-sugar and can come later.
+fragment topic has, which is what keeps one rule for how a name and its
+arguments become a key. A `#[derive(Audience)]` filling in `NAME` from the type
+name is obvious sugar and can come later.
+
+That reuse turned out to buy less than this paragraph expected. It said one
+registry and one match loop would serve both, and the first of the consequences
+below is the reason they cannot: the sets are deliberately separate, so what is
+shared is the arithmetic and not the loop. Two keys that spell the same string
+are harmless precisely because of that separation.
 
 Returning a set rather than one value is deliberate. It costs nothing and it is
 the difference between addressing a user and addressing every admin, everyone
@@ -126,16 +142,21 @@ This paragraph used to say the resolver was a pure function of what the session
 already held, and therefore neither async nor fallible. That was true of a
 framework that held session contents, and exos holds only the name, so the
 resolver does the lookup and is both. It runs once per connection rather than
-per request, which is what makes that affordable.
+per request, which is what makes that affordable. A resolver that fails refuses
+the stream, on the argument that opening one with no audiences is the silent
+version of the same failure.
 
-Three consequences to build in from the start:
+Three consequences, all built in from the start as this stage asked:
 
-- **The client can never name an audience.** Audiences live in their own set on
-  the `Connection`, written only by the server at connect. They must not share
-  the `topics` set that `/_exos/subscribe` overwrites, even though both hold
-  the same kind of string. One field is client-claimed and token-proved; the
-  other is server-derived and unforgeable. Merging them would make the
-  distinction depend on a token check nobody can see from the type.
+- **The client can never name an audience.** *Built.* Audiences live in their
+  own set on the `Connection`, written only by the server at connect. They do
+  not share the `topics` set that `/_exos/subscribe` overwrites, even though
+  both hold the same kind of string. One field is client-claimed and
+  token-proved; the other is server-derived and unforgeable. Merging them would
+  make the distinction depend on a token check nobody can see from the type. A
+  test hands `/_exos/subscribe` an audience key as a topic, with a valid token
+  for it, and checks that the connection ends up watching a topic and being
+  nobody.
 - **The connection id is minted by the server.** *Built.* The client used to
   generate a UUID that `/_exos/subscribe` trusted, so guessing one let an
   attacker overwrite another tab's subscriptions. The server now mints it, sends
@@ -143,13 +164,14 @@ Three consequences to build in from the start:
   given. That was worth doing on its own and it is also the precondition for
   this stage: a connection that carries identity cannot be named by whoever
   asks.
-- **Identity is captured at connect and never refreshed.** That is a leak on a
-  session change: the runtime morphs the body on navigation without reopening
-  the `EventSource`, so a tab that logs in as somebody else keeps the previous
-  audience. Either sign-in and sign-out answer with `Effect::reload()`, which
-  drops the stream, or the stream gains a `reconnect` step that closes and
-  reopens it without a document load. The second is better and either must be
-  documented as a rule, not left to be discovered.
+- **Identity is captured at connect and never refreshed.** Still true, and now
+  it matters. The runtime morphs the body on navigation without reopening the
+  `EventSource`, so a tab that logs in as somebody else keeps the previous
+  audience. `Effect::reload()` at sign-in drops the stream and closes it, and
+  the guide now says so as a rule rather than leaving it to be discovered. A
+  `reconnect` step that closes and reopens the stream without a document load
+  is still the better answer, and is now a thing to build rather than a thing to
+  choose between.
 
 ## Stage 2: the request scope
 
@@ -186,9 +208,14 @@ framing was that the server figures out who is connected:
 if exos::connected(&Viewer(user)) { /* push */ } else { /* email */ }
 ```
 
-That answer is a race by nature, so it is a hint, not a guarantee. The honest
-version of it is the rule in [stage 5](#stage-5-when-nobody-is-listening):
-persist first, push second.
+**`connected` is built**, and came with stage 1 rather than waiting for this
+stage, because an audience nothing can read is not a feature that shipped. That
+answer is a race by nature, so it is a hint, not a guarantee. The honest version
+of it is the rule in [stage 5](#stage-5-when-nobody-is-listening): persist
+first, push second.
+
+What is left here is `send` itself, which is the fan-out and the question of
+what an `Effect` becomes on the way down. Nothing blocks it.
 
 What is guaranteed is order, per connection. A connection has one channel and
 sends happen under the registry lock, so a `publish` followed by a `send`
@@ -372,11 +399,14 @@ what the remaining line needs.
 - **Every tab, or one?** A toast in six tabs is six toasts. Delivering to the
   focused tab needs the client to report focus, which is state the server does
   not otherwise keep. Deliver to all and let the page decide, at least first.
-- **Anonymous visitors.** An empty audience set is the obvious answer, and a
-  session-scoped audience for logged-out users is a real use (a queue position,
-  a checkout timer). It should fall out of the resolver rather than be a case.
-- **Should `Audience` be sealed?** No, applications implement it. That makes
-  `NAME` collisions their problem, which the derive would solve for them.
+- **Anonymous visitors.** *Answered, and it fell out of the resolver as hoped.*
+  The name reaches the resolver as an `Option`, so a logged-out visitor with a
+  name can be addressed as that name, which is the queue position and the
+  checkout timer, and a visitor with no name at all resolves to an empty set.
+  Neither is a case in exos.
+- **Should `Audience` be sealed?** *Answered: no.* Applications implement it,
+  which is what makes a `NAME` collision theirs to avoid, and the derive would
+  solve it for them.
 - **Rate limiting.** Nothing here stops a job from sending a thousand effects
   to one connection and pushing everything else out of a 64-slot channel.
 - **More than one instance.** The registry is a process-local `HashMap`, so a
