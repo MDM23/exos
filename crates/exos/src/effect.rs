@@ -66,13 +66,20 @@ pub enum Step {
 
 impl Step {
     /// The event name and payload this step is sent as.
+    ///
+    /// A step with nothing to say still has to say something. A server-sent
+    /// event carrying no `data` field at all is not dispatched by a browser,
+    /// so it would arrive down the wire and hit no listener, and the only step
+    /// that is all name and no payload would silently do nothing on the one
+    /// path that frames it strictly. It repeats its own name, which is the
+    /// payload that cannot be mistaken for a value.
     fn frame(&self) -> (&'static str, String) {
         match self {
             Self::Focus(selector) => ("focus", selector.clone()),
             Self::Navigate(url) => ("navigate", url.clone()),
             Self::Page(markup) => ("page", markup.as_str().to_owned()),
             Self::Patch(markup) => ("patch", markup.as_str().to_owned()),
-            Self::Reload => ("reload", String::new()),
+            Self::Reload => ("reload", String::from("reload")),
             Self::Remove(selector) => ("remove", selector.clone()),
             Self::Scroll(selector) => ("scroll", selector.clone()),
             Self::Signals(value) => ("signals", value.to_string()),
@@ -369,5 +376,60 @@ mod tests {
     fn nothing_to_do_is_an_empty_body() {
         assert_eq!(Effect::none().to_stream(), "");
         assert!(Effect::none().steps().is_empty());
+    }
+
+    /// A browser does not dispatch a server-sent event that carries no `data`
+    /// field, so a step with nothing of its own to say says its own name.
+    ///
+    /// `reload` is the only one, and it was therefore the only step this could
+    /// go wrong for. Sent down the live stream it arrived and hit no listener
+    /// at all, while the same step in a handler's reply worked, because the
+    /// two paths spelled an empty payload differently.
+    #[test]
+    fn a_step_with_no_payload_of_its_own_still_carries_one() {
+        let (event, data) = Step::Reload.frame();
+
+        assert_eq!(event, "reload");
+        assert!(!data.is_empty(), "an empty one would not be dispatched");
+
+        assert_eq!(
+            Effect::reload().to_stream(),
+            "event: reload\ndata: reload\n\n"
+        );
+    }
+
+    /// The bytes an [`Sse`](sse::Sse) response puts on the wire for one step,
+    /// which is the only way to read an [`Event`](sse::Event) back.
+    async fn streamed(step: Step) -> String {
+        let events =
+            tokio_stream::iter([Ok::<_, core::convert::Infallible>(sse::Event::from(step))]);
+
+        let bytes = axum::body::to_bytes(
+            sse::Sse::new(events).into_response().into_body(),
+            usize::MAX,
+        )
+        .await
+        .expect("the body is readable");
+
+        String::from_utf8(bytes.to_vec()).expect("an event is text")
+    }
+
+    /// One wire format, which is the whole reason the client has one parser
+    /// and the action path and the live path are the same code. The two
+    /// drifted once, over exactly the step above.
+    #[tokio::test]
+    async fn a_reply_and_the_stream_frame_a_step_identically() {
+        for step in [
+            Step::Reload,
+            Step::Scroll(String::from("#x")),
+            Step::Patch(Markup(String::from("<p id=\"x\">hi</p>"))),
+            Step::Signals(serde_json::json!({ "a": 1 })),
+        ] {
+            assert_eq!(
+                Effect::none().push(step.clone()).to_stream(),
+                streamed(step.clone()).await,
+                "{step:?} is framed two ways"
+            );
+        }
     }
 }
