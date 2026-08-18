@@ -745,8 +745,43 @@ morph re-applies them afterwards rather than leaving the incoming markup's
 version in place. Server-owned state that a patch should win is markup, and a
 speculative write is how you paint it early.
 
-Signals are for state the server does not own: a row pending deletion, a modal,
-a draft input, a selection.
+Signals are for state the server does not own: a modal, a draft input, a
+selection.
+
+**A speculative hide is not quite that, and the difference bites.** A row that a
+click took off the page is client state right up until the server refuses, and
+then it has to come back. An element's own
+[`signal`](#most-signals-have-no-name) cannot do that, for two reasons that
+compound: its declaration is applied when
+the element is inserted and never again, so a patch re-renders the row and
+leaves the signal holding exactly what it held, and a handler cannot clear it
+either, because `Effect::set` only reaches a signal that lives on the document.
+The row stays hidden until a reload.
+
+So anything a reply may have to undo goes on a `#[model]` field, where the
+handler can reach it:
+
+```rust
+#[exos::model]
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct Selection {
+    picked: Vec<u32>,
+    going: Vec<u32>,
+}
+
+// The click hides the row.
+on_click(move |_| {
+    selection.going.push(id);
+    remove::post(id);
+})
+
+// The row is shown again, and the patch decides whether there is one left.
+Effect::patch(list()).and_set(&Selection::signals().going, Vec::new())
+```
+
+The test for this is whether a *refusal* puts things back, not whether the happy
+path looks right. On success the row is gone from the markup anyway, so a hide
+that can never be undone looks perfect until the first time the server says no.
 
 ### While the server is working
 
@@ -1078,10 +1113,17 @@ Knowing the edges is more useful than a feature list.
 
 ## Reading the examples
 
-[`examples/files`](../examples/files) exercises all of it in one page:
-selection with a batch action, optimistic favourite and delete, drag to
-reorder, and live presence dots. Run it with `cargo run -p files` and open two
-tabs.
+[`examples/playlist`](../examples/playlist) is a listening room several
+browsers share, and exercises most of the surface in one page: a live fragment
+republished by a clock, so the track changes with nobody having asked;
+optimistic hearts and removals; selection with a batch action; and drag to
+reorder, deciding what plays next.
+
+What it does not have is a switch labelled "simulate a server error". The room
+will not remove what it is playing, and that one rule is enough: ask it to,
+watch the row go at once and come back, and an optimistic update that turns out
+to be wrong has shown you what it does. Run it with `cargo run -p playlist` and
+open two tabs.
 
 [`examples/todos`](../examples/todos) is TodoMVC, and covers what the first one
 does not: a live fragment per filter, because a topic has to determine its

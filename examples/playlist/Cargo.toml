@@ -1,6 +1,6 @@
 [package]
-description = "The exos example application"
-name = "files"
+description = "A shared listening room, written in exos"
+name = "playlist"
 publish = false
 edition.workspace = true
 rust-version.workspace = true
@@ -10,7 +10,6 @@ version.workspace = true
 axum.workspace = true
 exos.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]

@@ -242,6 +242,19 @@ impl<T> Signal<Vec<T>> {
 /// Where the same state is also what an action sends, use `#[model]`, which
 /// names its signals per field rather than per call site so that every
 /// `signals()` call hands back the same ones.
+///
+/// # What this cannot hold
+///
+/// State a handler may have to put back. A declaration here is applied when the
+/// element is inserted and never again, so a patch that re-renders the element
+/// leaves the signal holding whatever it held, and
+/// [`Effect::set`](crate::Effect::set) cannot reach it either, because it
+/// writes only what lives on the document.
+///
+/// That matters for exactly one shape, and it is a common one: a row hidden
+/// speculatively by a click the server can refuse. Held here it stays hidden
+/// until a reload. Held on a `#[model]` field, the reply that refuses can show
+/// it again.
 #[must_use]
 #[track_caller]
 pub fn signal<T: Serialize>(initial: T) -> Signal<T> {

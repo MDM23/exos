@@ -6,7 +6,7 @@ server renders the HTML and a small runtime keeps it alive in the browser.
 One binary. Just `cargo run`. No bundler, no npm, no build step.
 
 ```bash
-cargo run -p files      # then open http://localhost:3000, twice
+cargo run -p playlist   # then open http://localhost:3000, twice
 cargo run -p todos      # the classic list, on the same address
 cargo run -p auction    # a sale room, best with a private window open too
 ```
@@ -22,22 +22,22 @@ struct Selection {
     picked: Vec<u32>,
 }
 
-#[exos::post("/files/archive")]
-async fn archive(Model(selection): Model<Selection>) -> Effect {
-    data::<Files>().update(|files| store::archive(files, &selection.picked));
+#[exos::post("/tracks/remove")]
+async fn remove(Model(selection): Model<Selection>) -> Effect {
+    data::<Room>().update(|tracks| store::remove(tracks, &selection.picked));
 
-    publish(&file_list());
-    Effect::set(&Selection::signals().picked, Vec::new()).scroll("#file-list")
+    publish(&room());
+    Effect::set(&Selection::signals().picked, Vec::new()).scroll("#queue")
 }
 
 view! {
     <section {&selection}>
         <div class="bar" {show(selection.picked.get().any())}>
             <span {text(selection.picked.get().len())}></span>
-            <button {on_click(|_| archive::post(selection))}>"Archive"</button>
+            <button {on_click(|_| remove::post(selection))}>"Remove"</button>
         </div>
 
-        <li id="file-3">
+        <li id="track-3">
             <input type="checkbox" value="3" {bind(&selection.picked)}>
         </li>
     </section>
@@ -90,8 +90,11 @@ instead of excluding one another.
   There is no build script.
 
 The [guide](docs/guide.md) walks through the whole surface.
-[`examples/files`](examples/files) exercises it in one page: selection with a
-batch action, optimistic updates, drag to reorder, live presence.
+[`examples/playlist`](examples/playlist) is a listening room several browsers
+share: a mark travels down the queue as tracks end, hearts and removals paint
+before the server answers, and the room refuses to remove what it is playing,
+so the one correction an optimistic update needs to show is a rule rather than
+a simulation.
 [`examples/todos`](examples/todos) is TodoMVC, where the list is a live
 fragment per filter and editing a row is client state from the double click to
 the save. [`examples/auction`](examples/auction) is about who anybody is: a

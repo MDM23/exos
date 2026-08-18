@@ -4,7 +4,7 @@ members = [
   "crates/exos-build",
   "crates/exos-macro",
   "examples/auction",
-  "examples/files",
+  "examples/playlist",
   "examples/todos",
 ]
 resolver = "3"

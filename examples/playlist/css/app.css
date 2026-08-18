@@ -1,0 +1,231 @@
+@import "tokens.css";
+
+/* -------------------------------------------------------------------------- */
+/*                                  THE PAGE                                  */
+/* -------------------------------------------------------------------------- */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding-bottom: 4rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  line-height: 1.5;
+}
+
+.shell {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 0 var(--space-m);
+}
+
+h1 {
+  margin: var(--space-l) 0 var(--space-s);
+  font-size: 1.75rem;
+}
+
+.lede {
+  margin: 0 0 var(--space-l);
+  color: var(--text-subtle);
+}
+
+main a {
+  color: var(--accent);
+  text-underline-offset: 0.2em;
+}
+
+.site-nav {
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.site-nav .shell {
+  display: flex;
+  gap: var(--space-m);
+  padding-block: var(--space-s);
+}
+
+.site-nav a {
+  padding: var(--space-xs) 0;
+  border-bottom: 2px solid transparent;
+  color: var(--text-subtle);
+  text-decoration: none;
+}
+
+.site-nav a[aria-current="page"] {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               WHAT IS PLAYING                              */
+/* -------------------------------------------------------------------------- */
+
+/* The mark, not the position. Every row reserves the same width for it whether
+   or not it is the one playing, so the mark travelling down the queue moves
+   nothing but itself: no row changes size, and nothing a listener is reaching
+   for slides out from under them. */
+
+.mark {
+  flex: 0 0 1em;
+  color: var(--accent);
+  font-size: 0.75em;
+  line-height: 1;
+}
+
+.track[data-playing="true"] {
+  background: var(--accent-subtle);
+}
+
+.track[data-playing="true"] .mark::before {
+  content: "\25B6";
+}
+
+.track[data-playing="true"] .title {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.listeners {
+  margin: var(--space-s) 0 var(--space-m);
+  color: var(--text-faint);
+  font-size: 0.875rem;
+}
+
+.empty {
+  color: var(--text-faint);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  THE QUEUE                                 */
+/* -------------------------------------------------------------------------- */
+
+.queue {
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  list-style: none;
+}
+
+.track {
+  display: flex;
+  gap: var(--space-s);
+  align-items: center;
+  padding: var(--space-s) var(--space-m);
+  border-bottom: 1px solid var(--border);
+}
+
+.track:last-child {
+  border-bottom: 0;
+}
+
+/* The runtime's `show` toggles the `hidden` attribute, and an author `display`
+   beats the user agent's `[hidden] { display: none }` whatever the
+   specificity, because the author origin wins. So a rule that sets `display`
+   on something bound to `show` has to say the hidden case itself. */
+.track[hidden] {
+  display: none;
+}
+
+.name {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artist {
+  color: var(--text-faint);
+  font-size: 0.8125rem;
+}
+
+.handle {
+  color: var(--text-faint);
+  cursor: grab;
+  user-select: none;
+}
+
+/* The plugin marks what is being dragged and where it would land. */
+[data-dragging] {
+  opacity: 0.4;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  CONTROLS                                  */
+/* -------------------------------------------------------------------------- */
+
+.heart,
+.drop {
+  padding: 0 var(--space-xs);
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.heart:hover,
+.drop:hover {
+  color: var(--accent);
+}
+
+[data-hearted="true"] .heart {
+  color: var(--accent);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            SELECTION AND ANSWERS                           */
+/* -------------------------------------------------------------------------- */
+
+.bar,
+.answer {
+  display: flex;
+  gap: var(--space-s);
+  align-items: center;
+  min-height: 2rem;
+  margin-block: var(--space-m);
+  color: var(--text-subtle);
+  font-size: 0.9rem;
+}
+
+.bar[hidden],
+.answer[hidden] {
+  display: none;
+}
+
+.bar .drop {
+  padding: var(--space-xs) var(--space-s);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-s);
+  color: var(--accent);
+}
+
+.answer {
+  color: var(--accent);
+}
+
+/* An action in flight. The runtime sets aria-busy for the duration, so this
+   needs no class bookkeeping and is announced as well as shown. */
+[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+/* A round trip slow enough to notice. The runtime draws the bar and reads
+   these, so a theme sets values rather than rules. */
+:root {
+  --exos-progress-color: var(--accent);
+  --exos-progress-height: 3px;
+}
