@@ -76,6 +76,17 @@ impl Audience for Visitor {
 /// The name that stands in for a database that is not answering.
 const UNREACHABLE: &str = "ffffffffffffffffffffffffffffffff";
 
+/// exos's half of signing in, which is the rotation. What a name means is the
+/// application's; what a rotation does to the streams it renamed is exos's.
+#[exos::post("/sign-in")]
+async fn sign_in() -> StatusCode {
+    let id = exos::session().rotate();
+
+    data::<Sessions>().bind(&id, Who { id: 8, team: 80 });
+
+    StatusCode::NO_CONTENT
+}
+
 /// Wires the application up once, which is all `identify` allows.
 fn seeded() {
     static SEED: Once = Once::new();
@@ -206,6 +217,43 @@ async fn a_name_with_nobody_behind_it_is_addressable_as_itself() {
 
     drop(stream);
     assert!(!connected(&Visitor(id)));
+}
+
+/// A rotation reaches the streams the old name opened, and it has to reach
+/// them by ending them.
+///
+/// Those tabs made no request, so there is nothing to answer them with, and
+/// correcting a connection in place would carry it across the boundary
+/// rotation exists to draw: a stolen cookie with a stream open would be
+/// upgraded to the new identity instead of cut off by it.
+#[tokio::test]
+async fn rotating_a_name_ends_the_streams_that_carried_it() {
+    let id = known(Who { id: 7, team: 70 });
+
+    let stream = opened(Some(id.as_str())).await;
+    assert!(connected(&Viewer(7)));
+
+    let response = exos::app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/sign-in")
+                .header(header::COOKIE, format!("exos={id}"))
+                .body(Body::empty())
+                .expect("a valid request"),
+        )
+        .await
+        .expect("the router answers");
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    assert!(
+        !connected(&Viewer(7)),
+        "the old identity holds no stream any more"
+    );
+
+    // The response held it open until now, which is what makes the assertion
+    // above about the rotation rather than about the tab having gone away.
+    drop(stream);
 }
 
 /// Refusing is the loud version of what opening anyway would do silently: a tab

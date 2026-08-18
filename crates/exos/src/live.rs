@@ -48,7 +48,7 @@ mod stream;
 
 pub use crate::live::stream::{connected, connection_count, publish, send};
 
-pub(crate) use crate::live::stream::routes;
+pub(crate) use crate::live::stream::{disconnect, routes};
 
 // -----------------------------------------------------------------------------
 //                                    TOPICS

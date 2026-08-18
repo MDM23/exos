@@ -224,9 +224,89 @@ answers with a `reload` rather than a patch.
   is a leak, and it is the same one [directed effects](directed-effects.md)
   names in its stage 1.
 
-A `reload` closes both by dropping the document. A `reconnect` step that drops
-and reopens the stream in place would close both without the flash, and is the
-better answer once something needs it.
+A `reload` closes both by dropping the document, for the tab that asked.
+
+**What it does not close is the browser's other tabs**, and this section used
+to say a `reconnect` step would. Building
+[`examples/auction`](../../examples/auction) showed that it would not, which is
+worth writing down because the reasoning looks sound until it is tried. What
+does close them is **built**, in
+[stream.rs](../../crates/exos/src/live/stream.rs) and
+[session.rs](../../crates/exos/src/session.rs), and the rest of this stage is
+the argument that got there.
+
+A browser is one cookie and several tabs. Signing in changes the cookie for all
+of them, and only one of them made a request that can be answered. Reaching the
+rest by pushing them something down the stream, a `reload` or a `reconnect`
+alike, loses a race it cannot win: the push goes out while the response
+carrying the new cookie is still being written, so a tab that acts on it at
+once re-requests with the *old* cookie and comes back as whoever it used to be.
+Nothing prompts it a second time. The example reproduced this by hand: a reload
+carrying the previous name renders the guest again, and stays that way.
+
+The race is not about streams, so no step pushed down one can settle it. It is
+about which of two concurrent things reaches the browser first, and a mechanism
+that does not carry the cookie cannot order itself against it.
+
+**The answer is server-side and involves no client at all.** A connection now
+records the session name it opened under, and a rotation ends every connection
+carrying the name it replaced. The session layer is where it happens, because
+it already compares the arriving name against the current one to decide the
+`Set-Cookie` and is therefore already the thing that knows.
+
+**Ending them, rather than re-identifying them.** The first design was to
+re-resolve those connections and swap their audiences in place, which is
+strictly worse and was caught by asking what it does to a stolen cookie.
+Rotation is the defence against exactly that, and re-resolving would carry a
+compromised connection *across* the boundary: an attacker with a live stream on
+the old name would be upgraded to the victim's new identity and stay there,
+reading every directed effect, where today they merely go stale. Ending the
+stream is what makes rotation mean what it says.
+
+It also turned out to be the smaller change, and to fix the tabs rather than
+only their identity. There is nothing to await, so no resolver call and no
+`await_holding_lock` question. And the client needs nothing new: `EventSource`
+reconnects on its own, long past the cookie race, and a greeting that is not
+the first already makes the runtime re-fetch the page. So the other tabs come
+back correctly identified *and* showing the right markup, with no reload and no
+flash. The [reconnect repair](loose-ends.md) built for a dropped connection
+turns out to be exactly what a renamed one needs.
+
+**The wait is the server's to set, which is what makes it quick enough.** A
+browser left to itself waits about three seconds after a stream it thinks
+broke, and three seconds of a tab showing the wrong name is the whole
+complaint. Server-sent events let the stream name its own reconnection time, so
+one ended on purpose says `retry: 150` on the way out and the greeting on the
+next one puts three seconds back. Measured against a spec `EventSource`: 3041ms
+without it, ~175ms with. The impatience therefore lasts exactly one reconnect,
+and the only window where it outlives that is a server going down in the moment
+between the two.
+
+That is worth contrasting with the client-side answer, which was the obvious
+one and is not needed. A `BroadcastChannel` would let the tab that signed in
+tell its siblings directly, correctly ordered because that tab demonstrably has
+the cookie, and it would be instant rather than nearly instant. It is also a
+new step, a new client concept, cross-tab messaging to scope and a stub for the
+jsdom harness, to save a sixth of a second. Worth reaching for if something
+ever needs true immediacy; not worth reaching for first.
+
+Two things to know about it.
+
+- **A connection that opened under no name is never matched.** Every browser
+  arriving without a cookie looks identical, so treating them as a group would
+  let one visitor's sign-in end every anonymous stream in the process. That is
+  the one rule a plausible implementation gets wrong, and it has a test of its
+  own.
+- **Subscriptions survive the drop**, because the client re-sends them on the
+  new connection. That is right today, since a live token proves a topic and
+  nothing else. Once [stage 6](#stage-6-keys) binds tokens to the session id,
+  `/_exos/subscribe` will reject the stale ones by itself, which is the right
+  place for it rather than here.
+
+A `reconnect` step is still worth building, and this was never the argument for
+it. It is worth building because sign-in drops a whole document in order to
+drop one stream, and that flash is the only reason the tab that signed in has
+to be rebuilt at all.
 
 Signing out everywhere, rather than here, needs an index from user to session
 names. That is now plainly the application's, and it gets it for free if its

@@ -71,6 +71,19 @@
 //! cookie, because those headers went out when the stream opened. Streams
 //! should read the id and never start one.
 //!
+//! # A name that changes takes this browser's streams with it
+//!
+//! [`rotate`](Session::rotate) and [`end`](Session::end) close every
+//! [live](crate::live) connection that opened under the name they replaced.
+//! That is what carries a privilege change to the tabs that did not ask for
+//! it: they made no request, so there is nothing to answer them with, and a
+//! connection identified as somebody who no longer exists is exactly what
+//! rotating is supposed to prevent.
+//!
+//! A browser that never had a name is never matched. Every one of those looks
+//! the same from here, so treating them as a group would let one visitor's
+//! sign-in end the streams of every anonymous visitor at once.
+//!
 //! # Where it cannot be reached
 //!
 //! [`session`] is built on [`scope`](crate::scope) and inherits both of its
@@ -228,6 +241,30 @@ impl Session {
     ///
     /// A session that had no name gets one, because the call site that rotates
     /// is about to need one.
+    ///
+    /// # It ends this browser's open streams
+    ///
+    /// Every [live](crate::live) connection that opened under the old name is
+    /// closed when this request finishes. A browser is one cookie and many
+    /// tabs, and the tabs that did not make this request are still watching as
+    /// whoever the browser used to be; they cannot be answered, because they
+    /// asked nothing.
+    ///
+    /// Ending them is the only correct way to reach them. Re-resolving a
+    /// connection in place would carry it across the boundary this call exists
+    /// to draw, so a stolen cookie holding a stream open would be *upgraded* to
+    /// the new identity instead of cut off by it.
+    ///
+    /// No client handling is needed. `EventSource` reconnects on its own with
+    /// whatever cookie the browser holds by then, and the runtime re-fetches
+    /// the page on a greeting that is not the first, so the other tabs end up
+    /// correctly identified and showing the right markup without a reload.
+    ///
+    /// It happens in about a sixth of a second rather than the three the
+    /// browser would otherwise wait, because the stream says how long to wait
+    /// on its way out. The reconnect is expected rather than a symptom, and
+    /// every millisecond of it is a tab showing a name that is no longer this
+    /// browser's.
     #[must_use]
     pub fn rotate(&self) -> Id {
         let id = Id::random();
@@ -242,6 +279,11 @@ impl Session {
     /// exos's half of signing out. Whatever the application stored under the id
     /// is the application's to delete, and it should, because a name the
     /// browser has stopped sending is not a name nobody else has.
+    ///
+    /// This browser's open streams end too, exactly as
+    /// [`rotate`](Self::rotate) describes, and it is the case that matters
+    /// most: without it, the tabs somebody did not sign out of would go on
+    /// holding a signed-in connection until they were closed.
     pub fn end(&self) {
         self.inner().id = None;
     }
@@ -343,11 +385,38 @@ pub(crate) async fn layer(request: Request, next: Next) -> Response {
 
     let mut response = next.run(request).await;
 
+    // A name that arrived and is no longer the name leaves this browser's
+    // streams identified as somebody who no longer exists, and a stream cannot
+    // be told apart from the request that changed it: they are different
+    // connections. Ending them is what carries the change across, and the
+    // browser reopens them on its own.
+    if let Some(previous) = superseded(&state) {
+        let _ = crate::live::disconnect(&previous);
+    }
+
     if let Some(cookie) = pending(&state) {
         response.headers_mut().append(header::SET_COOKIE, cookie);
     }
 
     response
+}
+
+/// The name whose streams this request invalidated, if it invalidated any.
+///
+/// A name that arrived and is not the name any more: rotated away, or ended.
+/// A session that was merely *started* has no previous name and therefore
+/// nothing behind it, which is the case this must not treat as a rotation:
+/// every browser that arrives without a cookie arrives the same way, and
+/// there is nothing there to tell them apart by.
+fn superseded(state: &State) -> Option<Id> {
+    let inner = state
+        .0
+        .lock()
+        .expect("the session lock is never held across a panic");
+
+    let previous = inner.cookie.clone()?;
+
+    (inner.id.as_ref() != Some(&previous)).then_some(previous)
 }
 
 /// What the browser has to be told, if anything.
@@ -592,6 +661,57 @@ mod tests {
         session.end();
 
         assert!(owed(&session).is_none());
+    }
+
+    // ---- what a rotation supersedes -----------------------------------------
+
+    #[test]
+    fn rotating_supersedes_the_name_that_arrived() {
+        let arrived = Id::random();
+        let session = serving(Some(arrived.clone()));
+
+        assert!(
+            superseded(&session.0).is_none(),
+            "until something changes it"
+        );
+
+        drop(session.rotate());
+        assert_eq!(superseded(&session.0), Some(arrived));
+    }
+
+    /// Signing out supersedes a name as thoroughly as rotating does, and it is
+    /// the case that matters most: the tabs left behind are signed in.
+    #[test]
+    fn ending_supersedes_it_too() {
+        let arrived = Id::random();
+        let session = serving(Some(arrived.clone()));
+
+        session.end();
+
+        assert_eq!(superseded(&session.0), Some(arrived));
+    }
+
+    /// The one that must not count. A browser arriving with no cookie is
+    /// indistinguishable from every other browser arriving with no cookie, so
+    /// treating this as a rotation would hand one visitor's sign-in the power
+    /// to end every anonymous stream in the process.
+    #[test]
+    fn starting_a_session_supersedes_nothing() {
+        let session = serving(None);
+
+        drop(session.start());
+
+        assert!(superseded(&session.0).is_none());
+    }
+
+    #[test]
+    fn a_name_nothing_touched_supersedes_nothing() {
+        let session = serving(Some(Id::random()));
+
+        assert!(superseded(&session.0).is_none());
+
+        drop(session.start());
+        assert!(superseded(&session.0).is_none(), "starting is idempotent");
     }
 
     // ---- the cookie ---------------------------------------------------------

@@ -29,6 +29,7 @@
 //! separate fields rather than one: merged, whether a key was proved or derived
 //! would depend on a check nobody can see from the type.
 
+use core::time::Duration;
 use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
@@ -52,7 +53,7 @@ use tokio::sync::broadcast;
 use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 
 use crate::{
-    Step, hex,
+    Id, Step, hex,
     identity::{self, Audience},
     live::Topic,
 };
@@ -74,6 +75,32 @@ const HELLO: &str = "connection";
 /// live feed should skip ahead rather than stall the publisher.
 const CAPACITY: usize = 64;
 
+/// How long a browser waits before reopening a stream that dropped.
+///
+/// Sent on the greeting, so the interval is the same everywhere rather than
+/// whatever each browser happens to default to. Three seconds is roughly what
+/// they already pick, and a lost connection is usually a network that needs a
+/// moment rather than one that needs asking again immediately.
+const RETRY: Duration = Duration::from_secs(3);
+
+/// How long it waits after a stream the server ended on purpose.
+///
+/// A rotation ends a browser's streams so that they come back as whoever it is
+/// now, and every millisecond of that is a tab still showing the old name. The
+/// reconnect is expected rather than a symptom, so there is nothing to wait
+/// for: this is long enough to be a reconnect and short enough not to be seen.
+///
+/// It rides out on the last event before the channel closes, and the greeting
+/// on the new connection puts [`RETRY`] back, so the impatience lasts exactly
+/// one reconnect and a browser that later loses its network still waits.
+///
+/// The window where that is not true is a server going down in the moment
+/// between ending a stream and greeting it again: those tabs would then ask
+/// every 150ms rather than every three seconds until it came back. It is a
+/// narrow window and a handful of tabs, and the alternative is every rotation
+/// paying three seconds of showing the wrong name.
+const RETRY_WHEN_RENAMED: Duration = Duration::from_millis(150);
+
 /// A live connection: its outbound channel, who it is, and what it watches.
 struct Connection {
     /// Who the server decided this connection belongs to when it opened.
@@ -82,6 +109,14 @@ struct Connection {
     /// say why this is its own field rather than part of `topics`.
     audiences: HashSet<String>,
     sender: broadcast::Sender<Event>,
+    /// The session name this stream opened under, so that a rotation can find
+    /// it again.
+    ///
+    /// `None` is a stream opened by a browser carrying no cookie at all. It
+    /// stays `None` and is never matched by anything, because a nameless
+    /// connection belongs to no browser in particular and treating them as a
+    /// group would treat every anonymous visitor as one person.
+    session: Option<Id>,
     topics: HashSet<String>,
 }
 
@@ -274,7 +309,7 @@ fn mint() -> String {
 ///
 /// The audiences arrive here rather than being written afterwards, so there is
 /// no moment where a connection is reachable and does not yet know who it is.
-fn open(audiences: HashSet<String>) -> (String, broadcast::Receiver<Event>) {
+fn open(session: Option<Id>, audiences: HashSet<String>) -> (String, broadcast::Receiver<Event>) {
     let id = mint();
     let (sender, receiver) = broadcast::channel(CAPACITY);
 
@@ -286,11 +321,64 @@ fn open(audiences: HashSet<String>) -> (String, broadcast::Receiver<Event>) {
             Connection {
                 audiences,
                 sender,
+                session,
                 topics: HashSet::new(),
             },
         );
 
     (id, receiver)
+}
+
+/// Ends every stream that opened under `name`, and says how many.
+///
+/// What a rotation does to the browser it renamed. A session name that has
+/// been replaced or taken away leaves that browser's streams identified as
+/// somebody who no longer exists, and there is no way to correct one in place:
+/// re-resolving it would carry a connection across the boundary rotation
+/// exists to draw, so a stolen cookie with a stream open would be upgraded to
+/// the new identity rather than cut off by it.
+///
+/// Ending them is what rotation is for, and the client needs nothing new to
+/// cope. `EventSource` reconnects on its own, carrying whatever cookie the
+/// browser holds by then, and a greeting that is not the first makes the
+/// runtime re-fetch the page, so the tab ends up correctly identified and
+/// showing the right markup with no reload.
+///
+/// A connection that opened under no name is never matched, whatever `name`
+/// is: see [`Connection::session`].
+///
+/// # Panics
+///
+/// If the registry lock was poisoned; see [`connection_count`].
+pub(crate) fn disconnect(name: &Id) -> usize {
+    let mut registry = connections()
+        .lock()
+        .expect("the registry lock is never held across a panic");
+
+    let before = registry.len();
+
+    registry.retain(|_, connection| {
+        if connection.session.as_ref() != Some(name) {
+            return true;
+        }
+
+        // Said on the way out, because a browser that is not told waits the
+        // seconds a broken network deserves, and this is not one: the stream
+        // is being ended so it can come back as somebody else. A receiver
+        // drains what is already buffered before it sees the end, so this
+        // arrives.
+        drop(
+            connection
+                .sender
+                .send(Event::default().retry(RETRY_WHEN_RENAMED)),
+        );
+
+        // Dropping the entry drops the only sender, which closes the channel
+        // and ends the response body the browser is reading.
+        false
+    });
+
+    before - registry.len()
 }
 
 /// Forgets a connection when its stream ends.
@@ -341,7 +429,11 @@ async fn subscribe(Json(request): Json<Subscription>) -> StatusCode {
 /// *start* one, because its response headers go out here and there would be no
 /// second chance to set the cookie.
 async fn stream() -> Response {
-    let audiences = match identity::resolve(crate::session().id()).await {
+    // Kept as well as resolved, because a rotation has to be able to find the
+    // streams a name opened, and audiences cannot be worked backwards.
+    let session = crate::session().id();
+
+    let audiences = match identity::resolve(session.clone()).await {
         Ok(audiences) => audiences.into_keys(),
         Err(error) => {
             // Refusing is the loud version of what opening anyway would do
@@ -353,7 +445,7 @@ async fn stream() -> Response {
         }
     };
 
-    let (id, receiver) = open(audiences);
+    let (id, receiver) = open(session, audiences);
 
     let events = BroadcastStream::new(receiver)
         // A lagged tab skips ahead rather than stalling the publisher; the
@@ -361,7 +453,7 @@ async fn stream() -> Response {
         .filter_map(|event| event.ok().map(Ok::<Event, Infallible>));
 
     Sse::new(Disconnect {
-        greeting: Some(Event::default().event(HELLO).data(&id)),
+        greeting: Some(Event::default().retry(RETRY).event(HELLO).data(&id)),
         id,
         events,
     })
@@ -461,9 +553,13 @@ mod tests {
 
         let text = String::from_utf8(first.to_vec()).expect("the greeting is text");
 
+        assert!(text.contains("event: connection"), "{text:?}");
+
+        // Read line by line rather than off the front, because the greeting
+        // carries the reconnection time as well as the name.
         let id = text
-            .strip_prefix("event: connection\ndata: ")
-            .and_then(|rest| rest.split('\n').next())
+            .lines()
+            .find_map(|line| line.strip_prefix("data: "))
             .unwrap_or_else(|| panic!("the greeting names the connection, got {text:?}"))
             .to_owned();
 
@@ -514,7 +610,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscribing_keeps_only_the_topics_it_can_prove() {
-        let (id, _receiver) = open(HashSet::new());
+        let (id, _receiver) = open(None, HashSet::new());
 
         let real = Topic::new("presence", &(42_u32,));
         let forged = Topic::new("presence", &(43_u32,));
@@ -567,7 +663,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_connection_is_addressable_as_whoever_opened_it() {
-        let (_id, _receiver) = open(identity::Audiences::of(&Viewer(1)).into_keys());
+        let (_id, _receiver) = open(None, identity::Audiences::of(&Viewer(1)).into_keys());
 
         assert!(connected(&Viewer(1)));
         assert!(!connected(&Viewer(2)), "and as nobody else");
@@ -579,7 +675,7 @@ mod tests {
     /// and nothing arriving from a client reaches the second.
     #[tokio::test]
     async fn a_client_cannot_talk_its_way_into_an_audience() {
-        let (id, _receiver) = open(HashSet::new());
+        let (id, _receiver) = open(None, HashSet::new());
 
         // The exact string the server would have written had it decided this
         // connection was viewer 3, handed back as a topic with a real token.
@@ -610,7 +706,7 @@ mod tests {
         let audiences = identity::Audiences::of(&Viewer(4)).into_keys();
 
         {
-            let (id, _receiver) = open(audiences);
+            let (id, _receiver) = open(None, audiences);
             assert!(connected(&Viewer(4)));
 
             close(&id);
@@ -640,9 +736,9 @@ mod tests {
     async fn an_effect_reaches_every_stream_in_its_audience_and_no_other() {
         let audience = identity::Audiences::of(&Viewer(5)).into_keys();
 
-        let (_id, mut tab) = open(audience.clone());
-        let (_id, mut other_tab) = open(audience);
-        let (_id, mut somebody_else) = open(identity::Audiences::of(&Viewer(6)).into_keys());
+        let (_id, mut tab) = open(None, audience.clone());
+        let (_id, mut other_tab) = open(None, audience);
+        let (_id, mut somebody_else) = open(None, identity::Audiences::of(&Viewer(6)).into_keys());
 
         send(&Viewer(5), &crate::Effect::reload());
 
@@ -653,7 +749,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_step_becomes_one_event() {
-        let (_id, mut tab) = open(identity::Audiences::of(&Viewer(7)).into_keys());
+        let (_id, mut tab) = open(None, identity::Audiences::of(&Viewer(7)).into_keys());
 
         let effect = crate::Effect::patch(Markup(String::from("<p id=\"x\"></p>")))
             .focus("#x")
@@ -668,7 +764,7 @@ mod tests {
     /// so it costs nothing and says nothing.
     #[tokio::test]
     async fn sending_nothing_or_to_nobody_is_silent() {
-        let (_id, mut tab) = open(identity::Audiences::of(&Viewer(8)).into_keys());
+        let (_id, mut tab) = open(None, identity::Audiences::of(&Viewer(8)).into_keys());
 
         send(&Viewer(8), &crate::Effect::none());
         send(&Viewer(9), &crate::Effect::reload());
@@ -682,7 +778,7 @@ mod tests {
     /// key does.
     #[tokio::test]
     async fn a_topic_is_not_a_way_into_an_audience() {
-        let (id, mut receiver) = open(HashSet::new());
+        let (id, mut receiver) = open(None, HashSet::new());
 
         let claimed = identity::key(&Viewer(10));
         let topic = Topic::from_raw(&claimed);
@@ -702,6 +798,110 @@ mod tests {
         // that was never going to receive anything.
         publish(&crate::Fragment::new(topic, Markup::default()));
         assert_eq!(received(&mut receiver), 1);
+    }
+
+    // ---- what a rotation does to a stream -----------------------------------
+
+    #[tokio::test]
+    async fn a_rotation_ends_the_streams_that_opened_under_the_old_name() {
+        let name = Id::random();
+        let (_id, _receiver) = open(
+            Some(name.clone()),
+            identity::Audiences::of(&Viewer(11)).into_keys(),
+        );
+
+        assert!(connected(&Viewer(11)));
+        assert_eq!(disconnect(&name), 1);
+        assert!(!connected(&Viewer(11)));
+    }
+
+    /// A session name is one browser, so a rotation reaches that browser's
+    /// tabs and stops there.
+    #[tokio::test]
+    async fn a_rotation_leaves_every_other_browser_alone() {
+        let mine = Id::random();
+        let theirs = Id::random();
+
+        let (_id, _mine) = open(
+            Some(mine.clone()),
+            identity::Audiences::of(&Viewer(12)).into_keys(),
+        );
+        let (_id, _theirs) = open(
+            Some(theirs),
+            identity::Audiences::of(&Viewer(13)).into_keys(),
+        );
+
+        assert_eq!(disconnect(&mine), 1);
+
+        assert!(!connected(&Viewer(12)));
+        assert!(connected(&Viewer(13)));
+    }
+
+    /// The rule a plausible implementation gets wrong.
+    ///
+    /// A stream opened by a browser carrying no cookie belongs to no browser in
+    /// particular, and every such browser looks identical from here. Matching
+    /// them as a group would let one visitor's sign-in end the streams of every
+    /// anonymous visitor in the process.
+    #[tokio::test]
+    async fn a_stream_that_opened_with_no_name_is_never_ended_by_a_rotation() {
+        let (_id, _receiver) = open(None, identity::Audiences::of(&Viewer(14)).into_keys());
+
+        assert_eq!(disconnect(&Id::random()), 0);
+        assert!(connected(&Viewer(14)));
+    }
+
+    /// The whole point, on the wire. The body has to *end*, because that is
+    /// what makes `EventSource` reconnect and carry the new cookie; a stream
+    /// that merely went quiet would leave the tab hanging on a dead identity.
+    ///
+    /// And it has to say how long to wait on the way out, because the browser
+    /// would otherwise wait the seconds a broken network deserves while the
+    /// tab shows a name that is no longer this browser's.
+    #[tokio::test]
+    async fn an_ended_stream_says_come_straight_back_and_then_closes() {
+        let name = Id::random();
+
+        let response = served()
+            .oneshot(
+                Request::builder()
+                    .uri(STREAM)
+                    .header(axum::http::header::COOKIE, format!("exos={name}"))
+                    .body(Body::empty())
+                    .expect("a valid request"),
+            )
+            .await
+            .expect("the router answers");
+
+        let mut body = response.into_body().into_data_stream();
+
+        let greeting = read(&mut body).await;
+        assert!(
+            greeting.contains(&format!("retry: {}", RETRY.as_millis())),
+            "an ordinary stream sets an ordinary wait: {greeting:?}"
+        );
+
+        assert_eq!(disconnect(&name), 1, "the cookie named this stream");
+
+        let parting = read(&mut body).await;
+        assert_eq!(
+            parting,
+            format!("retry: {}\n\n", RETRY_WHEN_RENAMED.as_millis()),
+            "and nothing else, since there is nothing to apply"
+        );
+
+        assert!(body.next().await.is_none(), "and then the body is over");
+    }
+
+    /// One chunk of the body, as text.
+    async fn read(body: &mut axum::body::BodyDataStream) -> String {
+        let chunk = body
+            .next()
+            .await
+            .expect("the stream says something")
+            .expect("the body does not fail");
+
+        String::from_utf8(chunk.to_vec()).expect("an event is text")
     }
 
     /// An application that never calls `identify` gets a stream that works and

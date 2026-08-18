@@ -291,9 +291,35 @@ should, because a name the browser has stopped sending is not a name nobody
 else has.
 
 Both answer with a `reload` rather than a patch. Navigation morphs the body
-without reopening the `EventSource`, so a tab that signs in as somebody else
-keeps whatever the stream was opened as, and dropping the document is what
+without reopening the `EventSource`, so the tab that signed in would otherwise
+keep whatever its stream was opened as, and dropping the document is what
 closes that.
+
+**The browser's other tabs are exos's to deal with, and it does.** A rotation
+closes every live connection that opened under the name it replaced. Those tabs
+made no request, so there is nothing to answer them with, and they need no
+handling of their own: `EventSource` reconnects by itself with the cookie the
+browser now holds, and the runtime re-fetches the page on a greeting that is
+not the first, so each one comes back correctly identified and showing the
+right markup. Signing out is the same and matters more, since a tab you did not
+sign out of would otherwise hold a signed-in stream until you closed it.
+
+That takes about a sixth of a second, not the three a browser waits after a
+stream it thinks broke. A server-sent stream can name its own reconnection
+time, so a stream being ended on purpose says "come straight back" on the way
+out, and the greeting on the next one puts the ordinary wait back.
+
+Worth knowing why it closes them rather than correcting them in place.
+Re-resolving a live connection would carry it across the boundary rotating
+exists to draw: somebody holding a stolen cookie with a stream open would be
+*upgraded* to the new identity rather than cut off by it. Ending the stream is
+what makes rotation mean what it says.
+
+Pushing those tabs a reload would not work either, and it is worth knowing why
+before reaching for it in application code. The push would go out while the
+response carrying the new cookie was still being written, so a tab acting on it
+at once would re-request with the *old* cookie and come back as whoever it used
+to be, with nothing to prompt it again.
 
 ### Sessions without a user
 

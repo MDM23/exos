@@ -245,29 +245,13 @@ async fn claim(Path(id): Path<u32>) -> Effect {
         accounts.forget(&previous).await;
     }
 
-    // This tab, and only this tab. See the note below on the ones it cannot
-    // reach.
+    // This tab, because this tab asked. The browser's other tabs are exos's to
+    // deal with, and `rotate` already did it: their streams opened under the
+    // name that just went away, so they were closed, and each will reconnect
+    // and re-fetch this page as whoever this browser is now. Nothing here has
+    // to know how many of them there are.
     Effect::reload()
 }
-
-// Signing in changes the cookie for the whole browser, and only the tab that
-// asked can be answered. The others go on showing the old name, and their
-// streams go on carrying the old audience, because a stream resolves its
-// identity when it opens and never again.
-//
-// Pushing them a reload looks like the answer and is not. It would go out
-// while the response carrying the new cookie is still being written, so a tab
-// that acted on it at once would reload with the *old* cookie, come back as
-// the guest it used to be, and never be prompted again. That is a coin flip,
-// and a coin flip is worse than a known limitation.
-//
-// Nor would a `reconnect` step help, though the roadmap rightly wants one for
-// other reasons: a reopened stream carries whatever cookie the jar holds at
-// that instant, which is the same race in a different coat.
-//
-// What would fix it is server-side and needs no client involvement at all. At
-// a rotation exos knows both names, so it could end every connection opened
-// under the old one and let the browser reopen them. See the roadmap.
 
 /// Signs out. Taking the cookie back is exos's half; forgetting what was kept
 /// under the name is this application's, and it has to happen, because a name

@@ -100,9 +100,13 @@ impl Tab {
         let mut events = response.into_body().into_data_stream();
 
         let greeting = read(&mut events).await;
+        assert!(greeting.contains("event: connection"), "{greeting:?}");
+
+        // Line by line, because the greeting carries the reconnection time as
+        // well as the name.
         let connection = greeting
-            .strip_prefix("event: connection\ndata: ")
-            .and_then(|rest| rest.split('\n').next())
+            .lines()
+            .find_map(|line| line.strip_prefix("data: "))
             .unwrap_or_else(|| panic!("the greeting names the connection, got {greeting:?}"))
             .to_owned();
 
