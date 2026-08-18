@@ -135,6 +135,95 @@ pub fn connected<A: Audience>(audience: &A) -> bool {
         .any(|connection| connection.audiences.contains(&key))
 }
 
+/// Sends `effect` to every open stream that belongs to `audience`.
+///
+/// The other half of [`publish`], and the two are addressed differently on
+/// purpose. A fragment is addressed by what is on screen and reaches whoever
+/// is watching it. A directed effect is addressed by who a connection is, so
+/// it reaches every tab that person has open regardless of what they are
+/// looking at, which is what a notification needs and what a subscription
+/// derived from the DOM cannot express.
+///
+/// ```
+/// # use exos::{Audience, Effect};
+/// # use serde::{Deserialize, Serialize};
+/// #[exos::model]
+/// #[derive(Debug, Default, Deserialize, Serialize)]
+/// struct Toast {
+///     message: String,
+/// }
+///
+/// #[derive(Hash)]
+/// struct Viewer(u32);
+///
+/// impl Audience for Viewer {
+///     const NAME: &'static str = "viewer";
+/// }
+///
+/// # let user = 7;
+/// # let summary = String::from("Ada mentioned you in Q3 planning");
+/// exos::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
+/// ```
+///
+/// Every step becomes one event, exactly as a publish sends one, so the eight
+/// things an [`Effect`](crate::Effect) can say are the eight things this can
+/// say. Sending to an audience nobody is connected as is free and silent.
+///
+/// # It accelerates state, it does not record it
+///
+/// A patch is state replacement and the next publish repairs a lost one. A
+/// directed effect has no fragment to re-render from, so a recipient who is
+/// offline, whose tab lagged past the channel's capacity, or who was inside a
+/// reconnect gap simply does not get it, and none of the three is fixable by
+/// trying harder. Persist first and push second: the record is what the next
+/// page load renders, and this is what saves the recipient from waiting for
+/// one.
+///
+/// # Authorizing is the caller's
+///
+/// A subscription is authorized by construction, since a topic can only be
+/// subscribed to by whoever was served it. This inverts that: the server names
+/// the recipient, so exos guarantees that only connections whose identity
+/// matched receive it and nothing whatever about whether that person should
+/// see the content. That check belongs at the call site, in ordinary Rust,
+/// where it can be read.
+///
+/// # Order
+///
+/// Guaranteed per connection and nowhere else. A connection has one channel
+/// and both this and [`publish`] send under the registry lock, so a publish
+/// followed by a send arrives in that order at every tab that gets both. Two
+/// connections are ordered against each other in no way at all.
+///
+/// # Panics
+///
+/// If the registry lock was poisoned; see [`connection_count`].
+pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
+    // Framed once rather than per connection, since every recipient gets the
+    // same bytes and a fan-out is the shape this is for.
+    let events: Vec<Event> = effect.steps().iter().cloned().map(Event::from).collect();
+
+    if events.is_empty() {
+        return;
+    }
+
+    let key = identity::key(audience);
+
+    let registry = connections()
+        .lock()
+        .expect("the registry lock is never held across a panic");
+
+    for connection in registry.values() {
+        if connection.audiences.contains(&key) {
+            for event in &events {
+                // A closed receiver is a tab that went away between the check
+                // and this send; the cleanup path removes it.
+                drop(connection.sender.send(event.clone()));
+            }
+        }
+    }
+}
+
 /// Re-renders nothing, since the caller already did, and sends the fragment to
 /// every connection watching it.
 ///
@@ -332,6 +421,7 @@ mod tests {
     use tower::ServiceExt as _;
 
     use super::*;
+    use crate::Markup;
 
     /// The routes with the layers [`app`](crate::app) puts around them.
     ///
@@ -527,6 +617,91 @@ mod tests {
         }
 
         assert!(!connected(&Viewer(4)));
+    }
+
+    // ---- sending to a person ------------------------------------------------
+
+    /// How many events are waiting. `sse::Event` cannot be read back, so a unit
+    /// test counts and [`tests/directed.rs`](../../tests/directed.rs) reads the
+    /// wire, where a real stream frames it.
+    fn received(receiver: &mut broadcast::Receiver<Event>) -> usize {
+        let mut count = 0;
+
+        while receiver.try_recv().is_ok() {
+            count += 1;
+        }
+
+        count
+    }
+
+    /// Every tab, which is the answer to the open question: a toast in six tabs
+    /// is six toasts, and the page is where the decision to show one belongs.
+    #[tokio::test]
+    async fn an_effect_reaches_every_stream_in_its_audience_and_no_other() {
+        let audience = identity::Audiences::of(&Viewer(5)).into_keys();
+
+        let (_id, mut tab) = open(audience.clone());
+        let (_id, mut other_tab) = open(audience);
+        let (_id, mut somebody_else) = open(identity::Audiences::of(&Viewer(6)).into_keys());
+
+        send(&Viewer(5), &crate::Effect::reload());
+
+        assert_eq!(received(&mut tab), 1);
+        assert_eq!(received(&mut other_tab), 1, "the same person's other tab");
+        assert_eq!(received(&mut somebody_else), 0);
+    }
+
+    #[tokio::test]
+    async fn every_step_becomes_one_event() {
+        let (_id, mut tab) = open(identity::Audiences::of(&Viewer(7)).into_keys());
+
+        let effect = crate::Effect::patch(Markup(String::from("<p id=\"x\"></p>")))
+            .focus("#x")
+            .scroll("#x");
+
+        send(&Viewer(7), &effect);
+
+        assert_eq!(received(&mut tab), effect.steps().len());
+    }
+
+    /// Sending to whoever is not there is the ordinary case for a notification,
+    /// so it costs nothing and says nothing.
+    #[tokio::test]
+    async fn sending_nothing_or_to_nobody_is_silent() {
+        let (_id, mut tab) = open(identity::Audiences::of(&Viewer(8)).into_keys());
+
+        send(&Viewer(8), &crate::Effect::none());
+        send(&Viewer(9), &crate::Effect::reload());
+
+        assert_eq!(received(&mut tab), 0);
+    }
+
+    /// The other direction of the rule that keeps the two sets apart. Watching
+    /// a topic that spells an audience exactly is watching a topic, and a
+    /// directed effect does not follow it, even though a publish of the same
+    /// key does.
+    #[tokio::test]
+    async fn a_topic_is_not_a_way_into_an_audience() {
+        let (id, mut receiver) = open(HashSet::new());
+
+        let claimed = identity::key(&Viewer(10));
+        let topic = Topic::from_raw(&claimed);
+
+        let status = subscribe(Json(Subscription {
+            connection: id,
+            topics: vec![(claimed, topic.token())],
+        }))
+        .await;
+
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        send(&Viewer(10), &crate::Effect::reload());
+        assert_eq!(received(&mut receiver), 0);
+
+        // And the control, so the silence above is the rule rather than a tab
+        // that was never going to receive anything.
+        publish(&crate::Fragment::new(topic, Markup::default()));
+        assert_eq!(received(&mut receiver), 1);
     }
 
     /// An application that never calls `identify` gets a stream that works and

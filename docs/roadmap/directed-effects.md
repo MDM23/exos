@@ -2,12 +2,15 @@
 
 Pushing an `Effect` to a person, rather than a patch to a screen region.
 
-Status: half built. Stage 1 is done, which was the link everything here waited
-on: a connection now carries who it is, resolved from the session name when the
-stream opens, and `connected` came with it so an audience is something a program
-can observe rather than a field nothing reads. Stage 2 was already done. What is
-left is stage 3 onwards, which is the sending itself, and it now waits on
-nothing.
+Status: built, apart from the parts that were always going to wait. Stages 1, 2
+and 3 are done: a connection carries who it is, resolved from the session name
+when the stream opens, and `send` pushes an `Effect` to every tab an audience
+has open. A notification centre is expressible today.
+
+What is left is stage 4, which is two open questions rather than a chore, and
+the things this document has always named as out of scope or unfelt: a bus for
+more than one instance, a topic index nothing has needed yet, and rate
+limiting.
 
 Two corrections to what follows, both recorded rather than edited away. The
 resolver sketched below takes a session and reads it; exos holds no session
@@ -193,13 +196,30 @@ fragment on purpose.
 
 ## Stage 3: sending
 
+**Built**, in [stream.rs](../../crates/exos/src/live/stream.rs), next to
+`publish` because it reads the same registry.
+
 ```rust
 exos::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
 ```
 
 Every step becomes one event, exactly as `publish` sends one. Delivery is
 best-effort fan-out to every open connection carrying that audience, which is
-zero, one, or a tab per device.
+zero, one, or a tab per device. The events are framed once and cloned per
+connection rather than per step per connection, since a fan-out is the shape
+this is for.
+
+**It is called `send`**, which settles the naming question below. The document
+worried that `send` says little next to `publish`, and that turned out to be
+the argument for it rather than against: `deliver` claims an arrival that
+best-effort fan-out cannot promise, and `dispatch` already means something in
+the client runtime. A name that says little is the honest one for a call whose
+whole contract is that it might reach nobody.
+
+It hands back nothing, deliberately. A count of connections reached would be
+read as a delivery receipt, and it is not one: the number is stale before the
+caller sees it, and the rule in [stage 5](#stage-5-when-nobody-is-listening) is
+that the push was never the record anyway.
 
 The sender usually wants to know whether anyone is there, since the user's own
 framing was that the server figures out who is connected:
@@ -208,19 +228,26 @@ framing was that the server figures out who is connected:
 if exos::connected(&Viewer(user)) { /* push */ } else { /* email */ }
 ```
 
-**`connected` is built**, and came with stage 1 rather than waiting for this
+**`connected` is built** too, and came with stage 1 rather than waiting for this
 stage, because an audience nothing can read is not a feature that shipped. That
 answer is a race by nature, so it is a hint, not a guarantee. The honest version
 of it is the rule in [stage 5](#stage-5-when-nobody-is-listening): persist
 first, push second.
 
-What is left here is `send` itself, which is the fan-out and the question of
-what an `Effect` becomes on the way down. Nothing blocks it.
-
 What is guaranteed is order, per connection. A connection has one channel and
 sends happen under the registry lock, so a `publish` followed by a `send`
 arrives in that order at every tab that gets both. Across connections nothing
-is ordered, and nothing should be made to be.
+is ordered, and nothing should be made to be. That is pinned by a test that
+subscribes a real tab to a topic, publishes it, sends, and reads both off the
+wire in order.
+
+The tests split along the one line `sse::Event` draws: it cannot be read back,
+so the unit tests count events per connection and
+[tests/directed.rs](../../crates/exos/tests/directed.rs) opens real streams
+through `app()` and asserts on the bytes a browser would parse. Nothing in
+either waits on a timer. That a tab did *not* receive something is asserted by
+sending it something else afterwards and checking that arrives first, which is
+a fact about ordering rather than about how long a test is willing to wait.
 
 ### Client changes
 
@@ -231,6 +258,10 @@ all eight now, as a [loose end](loose-ends.md) rather than as part of this
 design, so every step this stage can send already has somewhere to land.
 
 ## Stage 4: things that are not state
+
+**Not built, and the only thing here that is still a design.** Both halves work
+today in the sense that `send` will carry them; what is unsettled is what a
+toast should *be*, and stage 3 shipped without answering it on purpose.
 
 The toast in the opening example is not a fragment, and it should not become
 one. Two ways to say it, and they are not rivals.
@@ -344,14 +375,20 @@ pointing at.
 
 ## What it costs
 
-`publish` takes a `Mutex` over the whole registry and walks every connection.
-At presence volumes that is invisible. One send per notification against
-thousands of connections is a different shape, and directed effects will be the
-first thing to feel it.
+`publish` takes a `Mutex` over the whole registry and walks every connection,
+and `send` now does the same walk against the audience set. At presence volumes
+that is invisible. One send per notification against thousands of connections is
+a different shape, and this is the feature that will feel it first.
 
-The fix is an index from topic to connection ids, which is a [loose
-end](loose-ends.md) with the constraints written down. Nothing here needs it to
-land first; this is just the feature that will make it worth doing.
+The fix is an index from key to connection ids, which is a [loose
+end](loose-ends.md) with the constraints written down, and which now has two
+callers to serve rather than one. Nothing here needed it to land first, and
+nothing has felt it yet, so it stays where it is: the entry says not to build it
+before something does.
+
+What it did not cost is a client change or a dependency. The runtime already
+registers all eight step names, the events are the ones `Effect` already framed,
+and `send` adds no crate to the tree.
 
 ## The notification centre, end to end
 
@@ -387,18 +424,23 @@ it open, and the ones that do not will render it fresh when they navigate. Only
 the third line needs anything new, and it needs it because a toast is addressed
 to a person and has no correct second delivery.
 
-That is the summary of the whole design. Most of a notification centre is
-already expressible; identity is what makes it safe, and directed effects are
-what the remaining line needs.
+That is the summary of the whole design, and every line of it now compiles.
+Most of a notification centre was already expressible; identity is what makes
+it safe, and `send` is what the remaining line needed. What the example still
+leans on is the toast being a `#[model]`, which is stage 4's open question and
+the one thing here that is not settled.
 
 ## Open questions
 
-- **Naming.** `send` reads well next to `publish` and says little. `deliver`
-  and `dispatch` are the alternatives, and `dispatch` already means something
-  in the client runtime.
-- **Every tab, or one?** A toast in six tabs is six toasts. Delivering to the
-  focused tab needs the client to report focus, which is state the server does
-  not otherwise keep. Deliver to all and let the page decide, at least first.
+- **Naming.** *Answered: `send`.* That it says little is the argument for it.
+  `deliver` claims an arrival this cannot promise, and `dispatch` already means
+  something in the client runtime. See
+  [stage 3](#stage-3-sending).
+- **Every tab, or one?** *Answered: every tab, and the page decides.* A toast in
+  six tabs is six toasts, and delivering only to the focused one would need the
+  client to report focus, which is state the server does not otherwise keep and
+  would have to be kept fresh for the life of every connection. Reopening this
+  means finding a case the page cannot decide for itself.
 - **Anonymous visitors.** *Answered, and it fell out of the resolver as hoped.*
   The name reaches the resolver as an `Option`, so a logged-out visitor with a
   name can be addressed as that name, which is the queue position and the

@@ -54,7 +54,7 @@ pub use crate::{
         IntoJs, IntoPayload, Js, append, attr_now, call, emit, focus_now, quote_js, record, when,
     },
     keys::{Keys, keys},
-    live::{Fragment, Topic, connected, connection_count, publish},
+    live::{Fragment, Topic, connected, connection_count, publish, send},
     model::{Model, ModelFields, ModelRejection, to_wire},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,

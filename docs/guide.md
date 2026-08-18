@@ -963,17 +963,78 @@ in as somebody else keeps the audiences it had until the stream drops. That is
 why sign-in answers with `Effect::reload()`, which drops the document and the
 stream with it.
 
-What there is to do with an audience today is ask whether anybody is there:
+### Sending to a person
+
+`publish` reaches whoever is watching a fragment. `send` reaches whoever *is*
+somebody, whatever they happen to be looking at:
+
+```rust
+exos::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
+```
+
+Every step becomes one event, exactly as a publish sends one, so anything an
+`Effect` can say a directed effect can say. It reaches every tab that person
+has open, because a toast in six tabs is six toasts and the page is the right
+place to decide what to do about that. Sending to somebody who is not connected
+is free and silent.
+
+The two mechanisms are worth keeping apart in your head:
+
+|                      | live fragment                        | directed effect                   |
+| -------------------- | ------------------------------------ | --------------------------------- |
+| addressed by         | topic: a name and its arguments      | audience: who the connection is   |
+| content decided by   | the fragment function                | the sender, at the call site      |
+| delivered while      | it is on screen                      | a stream is open                  |
+| missed by the client | repaired by the next publish or load | lost                              |
+| authorized by        | a token proving it was served        | the sender choosing who           |
+| use it for           | state that is visible                | events, alerts, per-viewer nudges |
+
+The last two rows are the ones that change how you write code.
+
+**Authorizing is yours.** A subscription is authorized by construction, since a
+topic can only be subscribed to by whoever was served it. `send` inverts that:
+the server names the recipient, so exos guarantees that only connections whose
+identity matched receive it and nothing at all about whether that person should
+see the content. That check goes at the call site, in ordinary Rust, where it
+can be read.
+
+**A directed effect is an accelerator, never the record.** A patch is state
+replacement and the next publish repairs a lost one. A directed effect has no
+fragment to re-render from, so a recipient who is offline, whose tab lagged
+past the channel's capacity, or who was inside a reconnect gap does not get it,
+and none of the three is fixable by trying harder. Persist first, push second:
+
+```rust
+fn notify(user: u32, event: &Event) {
+    // Durable first. Everything below is an accelerator.
+    data::<Notifications>().record(user, event);
+
+    // State, to whichever tabs are showing it.
+    publish(&notification_count(user));
+
+    // The arrival, to the person.
+    send(&Viewer(user), &Effect::set(&Toast::signals().message, event.summary()));
+}
+```
+
+The badge sits in the layout, so it is on every page and every tab of that user
+gets it from an ordinary publish. Only the last line needs an audience, and it
+needs one because a toast is addressed to a person and has no correct second
+delivery.
+
+Asking first is allowed, and is how a push and an email are chosen between:
 
 ```rust
 if exos::connected(&Viewer(user)) { /* push */ } else { /* email */ }
 ```
 
-That is a hint and not a guarantee, since the last tab can close between the
-answer and whatever is done about it. The honest shape is to persist first and
-treat reaching somebody as an accelerator. Sending an `Effect` to an audience
-is the next piece and does not exist yet; see
-[the roadmap](roadmap/directed-effects.md).
+That answer is a hint and not a guarantee, since the last tab can close between
+it and whatever is done about it, which is the rule above in another shape.
+
+Order is guaranteed per connection and nowhere else. A connection has one
+channel and both calls send under the same lock, so a publish followed by a
+send arrives in that order at every tab that gets both. Two connections are
+ordered against each other in no way at all.
 
 ## What exos does not do
 

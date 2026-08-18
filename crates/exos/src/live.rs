@@ -46,7 +46,7 @@ use crate::{Markup, Render, escape_into, keys};
 
 mod stream;
 
-pub use crate::live::stream::{connected, connection_count, publish};
+pub use crate::live::stream::{connected, connection_count, publish, send};
 
 pub(crate) use crate::live::stream::routes;
 

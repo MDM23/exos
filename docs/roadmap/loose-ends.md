@@ -66,14 +66,20 @@ up as silence.
 volumes that is invisible, and it is the wrong shape for one send per
 notification against thousands of connections.
 
-The fix is an index from topic to connection ids, maintained on subscribe and
-on close, so both `publish` and a future `send` become a lookup. Two
-constraints on whoever writes it: `await_holding_lock` is on, so the send path
-stays synchronous, which `broadcast::Sender::send` allows; and the index has to
-be dropped in `close` or it outlives the connections it names.
+The fix is an index from key to connection ids, maintained on subscribe and on
+close, so both `publish` and `send` become a lookup. Two constraints on whoever
+writes it: `await_holding_lock` is on, so the send path stays synchronous, which
+`broadcast::Sender::send` allows; and the index has to be dropped in `close` or
+it outlives the connections it names.
 
-Not worth doing before something feels it. Worth knowing where it is when
-something does.
+`send` now exists and walks the registry the same way, so this has two callers
+rather than one and a half. It also needs two indexes rather than one, because
+topics and audiences are deliberately separate sets and merging them at the
+index would give back exactly the distinction that keeps a client from claiming
+an audience.
+
+Still not worth doing before something feels it, and nothing has. Worth knowing
+where it is when something does.
 
 ## Morphing stays in-house
 
