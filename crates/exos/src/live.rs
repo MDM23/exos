@@ -39,10 +39,9 @@
 //! inside one whether or not a request is being served: a fragment's arguments
 //! are its whole input.
 
-use core::hash::{Hash, Hasher};
-use std::collections::hash_map::DefaultHasher;
+use core::hash::{Hash, Hasher as _};
 
-use crate::{Markup, Render, escape_into, keys};
+use crate::{Markup, Render, escape_into, fnv::Fnv1a, keys};
 
 mod stream;
 
@@ -64,9 +63,30 @@ impl Topic {
     ///
     /// The name stays in the id so the DOM is readable in a debugger, and the
     /// hash disambiguates the arguments.
+    ///
+    /// # It is the same name in every build
+    ///
+    /// The hash is FNV-1a, written down in this crate, rather than
+    /// `DefaultHasher`, whose algorithm std declines to promise across
+    /// releases. That matters because a topic is the one name a client and a
+    /// server have to agree on without either having been told it: a tab
+    /// subscribes to what the instance that served the page produced, and a
+    /// publish reaches it only if the instance that sends spells it the same
+    /// way.
+    ///
+    /// Two binaries of one program built with different compilers are exactly
+    /// the case that breaks, and it breaks silently: the fragment stops
+    /// updating for the life of that document, no request fails, and a reload
+    /// fixes it, so it reads as a network glitch. A rolling deploy is enough to
+    /// produce it.
+    ///
+    /// What still renames a topic is a change to the arguments' own [`Hash`]
+    /// implementations. Adding a field to a type used as a fragment argument
+    /// renames every topic it appears in, which is a deploy that has to drop
+    /// its documents.
     #[must_use]
     pub fn new(name: &str, arguments: &impl Hash) -> Self {
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = Fnv1a::new();
         name.hash(&mut hasher);
         arguments.hash(&mut hasher);
 
@@ -202,6 +222,22 @@ mod tests {
             Topic::new("presence", &(7_u32,))
                 .as_str()
                 .starts_with("live-presence-")
+        );
+    }
+
+    /// A written-down name rather than whatever this build happens to produce.
+    ///
+    /// The test above would pass against `DefaultHasher` too, and that is the
+    /// point: a topic is the one name a client and a server agree on without
+    /// either being told it, so a hash that drifts between compilers is a
+    /// fragment that quietly stops updating on the far side of a rolling
+    /// deploy. Changing this value is changing what every open tab is
+    /// subscribed to, and it should take an argument rather than a rebuild.
+    #[test]
+    fn a_topic_is_named_the_same_way_by_every_build() {
+        assert_eq!(
+            Topic::new("presence", &(7_u32,)).as_str(),
+            "live-presence-8eb61815f6eafc86"
         );
     }
 

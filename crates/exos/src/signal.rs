@@ -62,12 +62,12 @@
 //! template as a raw expression and [`view!`](crate::view) declares them where
 //! it finds them. Nothing in Rust can hand out a handle to one.
 
-use core::{marker::PhantomData, panic::Location};
+use core::{hash::Hasher as _, marker::PhantomData, panic::Location};
 
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{IntoJs, Js, emit};
+use crate::{IntoJs, Js, emit, fnv::Fnv1a};
 
 /// Where a signal's name is resolved from.
 ///
@@ -304,30 +304,18 @@ impl<M> Field<M> {
 /// when one element declares both, and that is the clash a hand-written name
 /// could always have.
 fn generated(at: &Location<'_>) -> String {
-    // FNV-1a over the call site, for a short name that needs no dependency.
-    // Truncated to 32 bits: a collision has to survive landing on the same
-    // element to matter at all.
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    // The same hash a topic gets, for the same reason it is written down
+    // rather than borrowed. Truncated to 32 bits: a collision has to survive
+    // landing on the same element to matter at all.
+    let mut hasher = Fnv1a::new();
 
-    for byte in at.file().bytes() {
-        hash = mix(hash, byte);
-    }
-
-    for byte in at.line().to_le_bytes() {
-        hash = mix(hash, byte);
-    }
-
-    for byte in at.column().to_le_bytes() {
-        hash = mix(hash, byte);
-    }
+    hasher.write(at.file().as_bytes());
+    hasher.write_u32(at.line());
+    hasher.write_u32(at.column());
 
     // Leading letter, because a JavaScript identifier cannot start with a
     // digit and this name is read back as `$.<name>`.
-    format!("s{:08x}", hash >> 32)
-}
-
-const fn mix(hash: u64, byte: u8) -> u64 {
-    (hash ^ byte as u64).wrapping_mul(0x0000_0100_0000_01b3)
+    format!("s{:08x}", hasher.finish() >> 32)
 }
 
 #[cfg(test)]

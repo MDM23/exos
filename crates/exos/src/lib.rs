@@ -27,6 +27,7 @@ mod attributes;
 mod context;
 mod discover;
 mod effect;
+mod fnv;
 mod hex;
 mod identity;
 mod js;

@@ -81,6 +81,28 @@ an audience.
 Still not worth doing before something feels it, and nothing has. Worth knowing
 where it is when something does.
 
+## A topic was named differently by every build
+
+**Done**, in [fnv.rs](../../crates/exos/src/fnv.rs). `Topic::new` hashed with
+`DefaultHasher`, whose algorithm std explicitly declines to promise across
+releases. A topic is the one name a client and a server agree on without either
+being told it, so two binaries of one program built with different compilers
+disagree about what a fragment is called, and the fragment then stops updating
+for the life of that document with no error anywhere. A rolling deploy is enough
+to produce it, and it reads as a network glitch.
+
+FNV-1a, written down in the crate, with the integer writes forced little-endian
+and the pointer-sized ones widened, so the answer depends on neither the
+compiler nor the machine. [`signal`](../../crates/exos/src/signal.rs) was
+already doing this by hand for the same reason and now shares it, byte for byte.
+
+The test is a golden value rather than a round trip, because a round trip passes
+against a hasher that drifts, which is the failure this exists to stop. What is
+still not promised is that a value keeps its name when its own `Hash`
+implementation changes: adding a field to a fragment argument renames every
+topic it appears in, which is a deploy that has to drop its documents, and is
+the application's to know about.
+
 ## Morphing stays in-house
 
 **Decided.** [idiomorph](https://github.com/bigskysoftware/idiomorph) was
