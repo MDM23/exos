@@ -208,6 +208,25 @@ impl Declaration {
                 }
             }
 
+            // What exos itself reads, since it cannot name this type. Every
+            // item delegates to the inherent one above, which is where the
+            // documentation is and which an application reaches with nothing
+            // imported.
+            impl ::exos::LocaleSet for Locale {
+                const ALL: &'static [Self] = Self::ALL;
+                const FALLBACK: Self = Self::FALLBACK;
+
+                fn tag(self) -> &'static str {
+                    Locale::tag(self)
+                }
+
+                fn direction(self) -> ::exos::Direction {
+                    Locale::direction(self)
+                }
+            }
+
+            impl ::exos::Sealed for Locale {}
+
             #(#languages)*
         })
     }
@@ -431,6 +450,17 @@ mod tests {
         assert!(expanded.contains("pub enum Locale"));
         assert!(expanded.contains("FALLBACK : Self = Self :: En"));
         assert!(expanded.contains(r#"Self :: De => "de""#));
+    }
+
+    /// exos cannot name the enum this generates, so it reads it through a
+    /// trait, and a set that carried no implementation of it would compile and
+    /// then be unresolvable.
+    #[test]
+    fn the_set_answers_the_framework_as_well_as_the_application() {
+        let expanded = expand_ok(r#"#[fallback] En = "en","#);
+
+        assert!(expanded.contains("impl :: exos :: LocaleSet for Locale"));
+        assert!(expanded.contains("impl :: exos :: Sealed for Locale"));
     }
 
     /// The categories are the language's own, so German gets two and Arabic

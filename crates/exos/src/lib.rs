@@ -59,7 +59,7 @@ pub use crate::{
     },
     keys::{Keys, keys},
     live::{Fragment, Topic, connected, connection_count, publish, send},
-    locale::{Direction, PluralCategory},
+    locale::{Direction, Lang, LocaleSet, PluralCategory, lang, locale},
     model::{Model, ModelFields, ModelRejection, to_wire},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
@@ -70,6 +70,11 @@ pub use crate::{
 
 #[doc(inline)]
 pub use exos_macro::{asset, delete, get, live, locales, model, patch, post, put, view};
+
+// What keeps `LocaleSet` implementable by `locales!` alone, which has to be
+// able to name it.
+#[doc(hidden)]
+pub use crate::locale::Sealed;
 
 // Re-exported so the macros can name them without the user taking a direct
 // dependency, and so nobody has to keep versions in step with ours.

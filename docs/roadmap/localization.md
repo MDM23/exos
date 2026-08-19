@@ -2,17 +2,19 @@
 
 Messages defined in Rust, rendered wherever the fact they need is known.
 
-Status: the first half of [stage 1](#stage-1-the-locale) is built.
-`exos::locales!` declares the set and generates each language's plural
-categories, out of the CLDR table [exos-cldr](../../crates/exos-cldr) vendors as
-ordinary source, and a committed fixture holds `cargo test` and `npm test` to
-the same answers. Resolution, `exos::locale()`, `Accept-Language` and the
-document's `lang` and `dir` attributes are not built, and neither is anything
-above stage 1. The shape below, one macro with
-match-like arms and one call site that works on both sides, predates exos: it
-was settled while the framework was still a prototype, and lived in a guide
-draft that was cut when the guide was rewritten against code that existed. It
-is recorded here so it stops being remembered and starts being reviewed.
+Status: [stage 1](#stage-1-the-locale) is built. `exos::locales!` declares the
+set and generates each language's plural categories, out of the CLDR table
+[exos-cldr](../../crates/exos-cldr) vendors as ordinary source, and a committed
+fixture holds `cargo test` and `npm test` to the same answers. `exos::locale()`
+resolves a request through the scope, `Accept-Language` and the fallback,
+`exos::lang` puts the answer on the document, and a response that read the
+header says so with `Vary`. Nothing above stage 1 is built, so the only thing
+reading a locale today is the document: there are no messages yet. The shape
+below, one macro with match-like arms and one call site that works on both
+sides, predates exos: it was settled while the framework was still a prototype,
+and lived in a guide draft that was cut when the guide was rewritten against
+code that existed. It is recorded here so it stops being remembered and starts
+being reviewed.
 
 Stages 1 to 3 and stage 5 wait on nothing. [Sessions and
 identity](sessions-and-identity.md) already supplies the one thing they need
@@ -123,6 +125,10 @@ It generates more than a list, and that is the point of having it:
   **exactly the categories that language reaches** (`de::Plural` has `One` and
   `Other`, `ar::Plural` has six) and a `category` function mapping a count to
   one of them.
+- An `exos::LocaleSet` implementation, sealed so that nothing else can carry
+  one, which is how the framework reads a set it cannot name. It delegates to
+  the inherent items above, so an application never imports the trait to ask a
+  locale anything.
 
 Both come from the vendored table described [below](#where-the-data-comes-from),
 and only for the locales declared, so an application that ships two languages
@@ -167,6 +173,30 @@ always succeeds. Outside a request it panics exactly as `exos::scope()` does.
 Inside a live fragment it answers once `Locale` is a declared
 [dimension](dimensions.md) and panics until then, which is stage 4.
 
+The locale set is the application's type and exos has never seen it, so
+`locale` is generic over `LocaleSet`, the trait `locales!` implements alongside
+the enum. That is the whole of what the framework knows about a language: the
+declared set, the fallback, a tag and a direction. A call site writes
+`exos::locale::<Locale>()`, or nothing at all where the type is already known,
+which is most places:
+
+```rust
+let locale: Locale = exos::locale();
+```
+
+Step 2 is RFC 4647 lookup, so a range is tried whole and then with its subtags
+dropped one at a time. `de-CH` therefore reaches an application that declared
+`de`, and a range is never lengthened: a browser asking for `pt` does not reach
+an application that declared only `pt-BR`, which is an [open
+question](#open-questions) below rather than an oversight. `*` is answered with
+the fallback, since that is what this application means by "anything", and
+`q=0` is not a preference to try because it is the spelling for refusing one.
+
+Resolution happens once per request and the answer is kept in the scope, so a
+page rendering a hundred messages reads the header once. Step 1 is still looked
+at first, so an application that resolves its reader halfway through a request
+overrides what was already worked out rather than disagreeing with it.
+
 ### The override, and why nothing is persisted
 
 A signed-in reader's language lives in their profile. The application already
@@ -205,10 +235,29 @@ needs it, `dir`. Not decoration: the runtime reads
 `document.documentElement.lang` for every `Intl` call in stages 3 and 5, so the
 attribute is the contract between the two halves.
 
+```rust
+view! {
+    <html { exos::lang(locale) }>
+}
+```
+
+An attribute block like any other, so it merges with whatever else the element
+declares. `dir` comes only with a right-to-left script, because absent already
+means left to right and an attribute repeating the default is one more thing to
+keep in step. It takes the locale rather than resolving one, so that a document
+rendered in a language which is not the request's still says which one it is
+in, and so that the call site reads as the two facts it is: this locale, on
+this element.
+
 Where resolution actually consulted `Accept-Language`, the response gets `Vary:
-Accept-Language`. Where the application overrode, it did not vary by the header
-and should not claim to, which means an application serving per-reader pages
-owns its own caching policy, the same hazard the guide already names for pages.
+Accept-Language`. That includes a request that sent no header at all, since one
+that had sent one would have been answered differently and a cache has to be
+told. It is appended rather than set, and a response already varying by the
+header, or by `*`, is left alone.
+
+Where the application overrode, it did not vary by the header and should not
+claim to, which means an application serving per-reader pages owns its own
+caching policy, the same hazard the guide already names for pages.
 
 ## Stage 2: messages
 
@@ -578,10 +627,15 @@ skips none.
 The fixture holds no formatted numbers yet. It will when the symbols are
 vendored, and a fixture half that only one side can check would not be one.
 
-Beyond that: negotiation is a unit test, a fragment rendering in two locales
-produces two topics, and the compile errors in stage 2 are worth a `trybuild`
-case each, since an error message that stops naming the missing locale is the
-kind of regression nothing else catches.
+Beyond that, negotiation is a unit test, and is one:
+[locale.rs](../../crates/exos/src/locale.rs) declares a set by hand, so that
+what a header resolves to is checked without the macro in the way, and
+[tests/locale.rs](../../crates/exos/tests/locale.rs) asks the same questions of
+a request served by the real thing, which is also what compiles the trait
+`locales!` generates. What is left is that a fragment rendering in two locales
+produces two topics, and the compile errors in stage 2, which are worth a
+`trybuild` case each, since an error message that stops naming the missing
+locale is the kind of regression nothing else catches.
 
 ## What it costs
 
@@ -620,8 +674,11 @@ kind of regression nothing else catches.
   parts with cloned nodes rather than write a string, which is a real piece of
   machinery and worth building only if a projected sentence with a link turns
   out to be common.
-- **Whether exos sets `Vary: Accept-Language` itself** or leaves the header to
-  the application, given that an override means the response did not vary by it.
+- **Whether a range should ever be lengthened**, so that a browser asking for
+  `pt` reaches an application that declared only `pt-BR` and `pt-PT`. Lookup
+  says no and the answer would have to be one of the two, picked by declaration
+  order, which is a coin toss wearing a rule. Declaring `pt` is the answer
+  today, and the question is whether anybody trips over it.
 - **Ordinals** ("3rd"), a separate CLDR table and a second parameter type.
 - **Decimal counts** ("1.5 hours"), which need the full operand set rather than
   the integer collapse in stage 1, and which would hand `many` back to the five

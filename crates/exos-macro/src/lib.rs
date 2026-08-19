@@ -185,6 +185,10 @@ pub fn live(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 ///   **exactly the categories CLDR gives that language**, so `de::Plural` has
 ///   `One` and `Other` while `ar::Plural` has six, and a `category` function
 ///   mapping a count to one of them.
+/// - An implementation of `exos::LocaleSet`, which is how
+///   `exos::locale::<Locale>()` answers with a type exos has never seen. It
+///   delegates to the items above, so nothing has to be imported to ask a
+///   locale for its tag.
 ///
 /// Both come from the CLDR table [`exos-cldr`](https://docs.rs/exos-cldr)
 /// vendors as ordinary source, so nothing is fetched or parsed while an

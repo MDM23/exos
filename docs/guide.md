@@ -401,6 +401,86 @@ exos::with_scope(|| {
 });
 ```
 
+## Languages
+
+Declare the ones the application is built in, once, at the crate root:
+
+```rust
+exos::locales! {
+    De = "de",
+    #[fallback]
+    En = "en",
+}
+```
+
+That generates `Locale`: the tags, the fallback, each language's writing
+direction, and, per language, exactly the plural categories CLDR gives it, so
+`de::Plural` has `One` and `Other` while `ar::Plural` has six. The table is
+vendored as source, nothing is fetched while your crate builds, and only the
+languages you declared are compiled into it.
+
+`exos::locale()` says which one a request is in:
+
+```rust
+let locale: Locale = exos::locale();
+```
+
+In order, first hit wins:
+
+1. A `Locale` in the request scope, put there by you.
+2. `Accept-Language`, matched against your tags by RFC 4647 lookup, so `de-CH`
+   finds `de`. A range is only ever shortened, so `pt` does not find a `pt-BR`
+   you declared; declare `pt` too if you want to answer it.
+3. The fallback, which is why this answers with a `Locale` rather than an
+   `Option`. There is no such thing as a request in no language.
+
+The rules the scope has are the rules this has: outside a request it panics,
+and inside a live fragment it panics, because a fragment renders again from
+whatever publishes it and its arguments are its whole input.
+
+Step 1 is the override, and it belongs where you already resolve who is
+reading:
+
+```rust
+if let Some(viewer) = data::<Sessions>().viewer(&id).await? {
+    exos::scope().set(viewer.locale);
+    exos::scope().set(viewer);
+}
+```
+
+That is [the handler that resolves a session](#why-it-stops-there) with one
+more line in it. `Locale` is `Copy`, so the language goes in before the viewer
+moves.
+
+exos writes no language cookie and has nowhere to keep one. The preference
+lives in the profile that owns it, a second copy disagrees with it the moment
+the reader changes their language on their phone, and whether such a cookie
+needs consent is a question about your jurisdiction rather than about a
+framework. An anonymous language switcher is one cookie you write and read in
+step 1.
+
+### What the document carries
+
+```rust
+view! {
+    <html { exos::lang(locale) }>
+}
+```
+
+`lang`, and `dir` where the script runs right to left. Not decoration: the
+browser hands `document.documentElement.lang` to every `Intl` call, so this is
+how the two halves of a page agree on the language.
+
+A response that reached step 2 carries `Vary: Accept-Language`, including one
+whose request sent no header at all, because a request that had sent one would
+have been answered differently and a cache has to be told. A response you
+decided yourself carries no such claim, since it did not vary by the header,
+and a page rendered for one reader is yours to set a caching policy for.
+
+Messages are not built yet. What exists is the locale, which is the fact
+everything above it needs; where the rest is going is written down in [the
+roadmap](roadmap/localization.md).
+
 ## Routes
 
 ```rust

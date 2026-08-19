@@ -322,7 +322,7 @@ likely to need a document of its own.
 
 ## Not in here
 
-Three things are deliberately absent, because they are designs rather than
+Four things are deliberately absent, because they are designs rather than
 chores and each has somewhere better to live.
 
 - **Sessions, identity and CSRF**, in [sessions and
@@ -332,12 +332,15 @@ chores and each has somewhere better to live.
 - **Directed effects and audiences**, in [directed
   effects](directed-effects.md), including the `#[derive(Audience)]` sugar,
   which cannot be a loose end before the trait it derives exists.
+- **Localization**, in [localization](localization.md), whose first stage is
+  built: the locale set, how a request reaches one, and what the document says
+  it was rendered in. Messages are the rest of that document rather than a
+  loose end.
 - **Running more than one instance.** The connection registry is a process-local
   `HashMap`, so a publish reaches only the tabs connected to the instance that
   sent it. Swapping a session store does nothing for it. It needs a bus, and it
   is the one thing here that cannot be added quietly later.
 
-Form validation and localization are absent for the opposite reason: the
-`Effect` shape is right for the first and the plan for the second is a
-paragraph in the README, and neither has been designed enough to break into
-chores.
+Form validation is absent for the opposite reason: the `Effect` shape is right
+for it and what is missing is the way rules are expressed, which has not been
+designed enough to break into chores.

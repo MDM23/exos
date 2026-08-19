@@ -120,6 +120,10 @@ pub fn app() -> Router {
         // stream needs the name as much as a handler does, and an asset request
         // that carries the cookie costs a header lookup and nothing more.
         .layer(axum::middleware::from_fn(crate::session::layer))
+        // Beside the session and for the same reason: what the browser asked
+        // for has to be readable from a view, which is not a handler and can
+        // extract nothing, and the response has to say whether it was read.
+        .layer(axum::middleware::from_fn(crate::locale::layer))
         // Last, so that it wraps the merges above rather than only the routes
         // discovered before it: the stream and the assets are requests too.
         .layer(axum::middleware::from_fn(crate::scope::layer))
