@@ -70,6 +70,57 @@ This is the piece the README's form-validation gap was waiting on, and it was
 the whole of the client's half. What is still missing is a way to express rules,
 which is a design rather than a chore.
 
+## An application could not be nested
+
+**Done**, in [base.rs](../../crates/exos/src/base.rs). `Router::nest` routes
+exos wherever it is told, so nesting looked like it worked and did not: `asset!`
+baked a root-absolute literal, so the script tag 404ed, the runtime never
+loaded, and every typed route caller posted into nothing. The stylesheet was
+gone before any of that, which is the part no client could have repaired.
+
+The answer went through two shapes and the first one is worth recording, because
+it looked reasonable.
+
+**Rejected: `exos::base("/admin")` moving the routes too.** One call, `app()`
+mounting under it, deterministic, no discovery. It duplicates what `nest`
+already does, so doing both silently gives `/admin/admin/...`, and it makes the
+idiomatic axum composition the wrong move in a project whose pitch is that it
+composes into an axum application. A design that quietly forbids `nest` is
+fighting the tool.
+
+**Built: the prefix is discovered.** axum records the arriving URI before
+nesting rewrites it, so the mount point is `original` minus `current`, read on
+the first request and kept for the process. Four things came out of it.
+
+- **The feature travels.** exos asks axum for `original-uri`, and since the
+  `#[cfg]` is inside axum's own source and cargo compiles one axum for the union
+  of every requested feature, a downstream crate that builds axum with
+  `default-features = false` still gets it. It could not be otherwise: exos
+  hands back an `axum::Router`, so nesting only typechecks against the same
+  axum.
+- **It is kept, not read per request.** `publish` renders fragments where no
+  request exists, and they carry asset URLs like anything else.
+- **The mount point itself is its own case.** A router nested at `/admin`
+  forwards a request for `/admin` as `/`, and `/admin` does not end with `/`, so
+  suffix stripping alone misses it. A path that does not line up at all answers
+  nothing rather than guessing, since the guess would be kept for good.
+- **Route callers had to move with it.** A route attribute says the path the
+  server sees and a browser has to ask for the one it is served at, so
+  `exos::call` prefixes. That is the same rule for nesting and for a
+  prefix-stripping proxy, which is the sign it is the right one.
+
+`exos::base` survives for the case discovery cannot see: it is the outermost
+axum `Router` that records the URI, so a reverse proxy stripping `/admin` is
+invisible from inside. Said explicitly it wins and discovery never runs.
+
+What exos still does not touch is a URL the application writes: a link, a
+redirect, an `Effect::navigate` target. `exos::base_path()` is there for those,
+and at the root it adds nothing, which is what makes it easy to forget.
+
+`asset!` returns a `String` now rather than a `&'static str`, and
+`exos_build::Built::url` is gone: what a URL starts with is a runtime fact and a
+build-time crate had no business claiming to know it.
+
 ## The stream carries all eight steps
 
 **Done.** [runtime.js](../../crates/exos/js/runtime.js) registered listeners for

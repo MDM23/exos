@@ -180,6 +180,12 @@ pub fn detached<R>(render: impl FnOnce() -> R) -> R {
 /// Mounted by [`app`](crate::app) around everything, so the stream and the
 /// asset routes are inside it too.
 pub(crate) async fn layer(request: Request, next: Next) -> Response {
+    // The outermost thing exos runs, and therefore where the one question that
+    // needs a request but does not belong to one gets answered: where this
+    // application is mounted. It settles on the first request and is read while
+    // rendering, which happens later in this same one.
+    crate::base::observe(&request);
+
     // One small allocation per request, empty until something writes to it: a
     // `HashMap` does not allocate for its entries until the first insert.
     STATE

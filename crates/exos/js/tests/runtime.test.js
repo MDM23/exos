@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { boot, settled } from "./harness.js";
+import { boot, bootUnder, settled } from "./harness.js";
 
 /** One row, declaring a signal and binding a class to it. */
 const row = (id = "row") =>
@@ -565,6 +565,37 @@ test("a repair that lands after the tab moved on is dropped", async () => {
     await settled();
 
     assert.equal(window.document.getElementById("count").textContent, "1");
+});
+
+// An application served under a prefix has to agree with its server about what
+// that prefix is. Nothing here is told: the runtime is itself an asset served
+// under the same prefix, so the URL its own script came from carries the
+// answer, and a wrong one would not have loaded this code at all.
+
+test("the endpoints hang off the base the runtime was loaded from", async () => {
+    const window = bootUnder("/admin", live());
+    const [stream] = window.transport.streams;
+
+    assert.equal(window.exos.base, "/admin");
+    assert.equal(stream.url, "/admin/_exos/live");
+
+    stream.emit("connection", "named");
+    await settled();
+
+    assert.equal(window.transport.requests[0].url, "/admin/_exos/subscribe");
+});
+
+test("an application at the root has no base and says nothing extra", async () => {
+    const window = boot(live());
+    const [stream] = window.transport.streams;
+
+    assert.equal(window.exos.base, "");
+    assert.equal(stream.url, "/_exos/live");
+
+    stream.emit("connection", "named");
+    await settled();
+
+    assert.equal(window.transport.requests[0].url, "/_exos/subscribe");
 });
 
 test("a repair leaves the page alone when the fetch does not answer with one", async () => {

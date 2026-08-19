@@ -14,12 +14,24 @@ use axum::{
     routing::get,
 };
 
-/// Where assets are mounted. Hashed names make the prefix arbitrary.
+/// Where assets sit under whatever [`base`](crate::base) the application has.
 ///
-/// [`asset!`](crate::asset) bakes this into the URLs it returns, so the two
-/// have to agree. [`the_router_serves_what_the_macro_points_at`] checks that
-/// they do.
+/// Hashed names make the segment itself arbitrary. What is not arbitrary is
+/// that the runtime finds the base by looking for this in its own script URL,
+/// so the endpoints in [`live`](crate::live) share it deliberately rather than
+/// by coincidence.
 pub(crate) const PREFIX: &str = "/_exos";
+
+/// The URL an asset is served from, under the application's base.
+///
+/// Called by [`asset!`](crate::asset), which knows the hashed file name at
+/// compile time but cannot know the base, since that is chosen when the program
+/// runs. There is no reason to call it by hand.
+#[doc(hidden)]
+#[must_use]
+pub fn asset_url(file: &str) -> String {
+    format!("{}{PREFIX}/{file}", crate::base::path())
+}
 
 /// The URL of the client runtime, which every page has to load.
 ///
@@ -30,7 +42,7 @@ pub(crate) const PREFIX: &str = "/_exos";
 /// It ships inside this crate, so there is nothing to copy into a project and
 /// no version to keep in step.
 #[must_use]
-pub fn runtime() -> &'static str {
+pub fn runtime() -> String {
     crate::asset!("js/exos.js")
 }
 
@@ -78,7 +90,7 @@ impl Asset {
     /// The URL this asset is served from.
     #[must_use]
     pub fn url(&self) -> String {
-        format!("{PREFIX}/{}", self.file)
+        asset_url(self.file)
     }
 }
 
@@ -101,6 +113,11 @@ impl AssetSet {
 }
 
 /// Serves the given sets under `/_exos`.
+///
+/// Mounted at the root of whatever router this ends up in, because nesting is
+/// what puts an application under a prefix and doing it here too would put it
+/// under one twice. What the [base](crate::base) changes is the URL
+/// [`asset_url`] writes into a page, not where this answers.
 ///
 /// Takes the sets by value: discovery assembles them at startup and each one
 /// only points at `'static` data, so this is a handful of fat pointers.
@@ -161,9 +178,11 @@ mod tests {
         assert_eq!(STYLESHEET.url(), "/_exos/app-0123456789ab.css");
     }
 
-    /// The macro bakes its own copy of the prefix into every URL it returns,
-    /// because it has to produce a literal. This is what stops the two copies
-    /// from drifting apart into a runtime 404.
+    /// The macro and the router build their URLs from one function and one
+    /// constant, so neither can drift into a 404 the other serves. What that
+    /// looks like under a base is checked in
+    /// [`tests/base.rs`](../../tests/base.rs), which needs a process of its own
+    /// to set one.
     #[test]
     fn the_router_serves_what_the_macro_points_at() {
         assert!(

@@ -1,0 +1,125 @@
+//! Nesting an application under a prefix, with nothing configured.
+//!
+//! `Router::nest` already routes exos wherever it is told. The only thing that
+//! does not follow from that is the URL written into a page, because a URL in
+//! HTML is absolute and absolute needs the prefix. exos works it out from the
+//! first request rather than being told, so this file is about a mount point
+//! nobody mentions anywhere.
+//!
+//! The prefix is process-global and settles once, so this is a test binary of
+//! its own. Its neighbour [`base.rs`](base.rs) covers being told instead.
+
+use axum::{
+    Router,
+    body::Body,
+    http::{Request, StatusCode},
+};
+use exos::{Page, view};
+use tower::ServiceExt as _;
+
+const BASE: &str = "/admin";
+
+#[exos::get("/page")]
+async fn page() -> Page {
+    Page(view! {
+        <!DOCTYPE html>
+        <html lang="en">
+            <head>
+                <script defer src={ exos::runtime() }></script>
+            </head>
+            <body>
+                <h1>"Nested"</h1>
+            </body>
+        </html>
+    })
+}
+
+/// The application as a downstream crate would compose it, and the whole of
+/// what it says about where exos lives.
+fn mounted() -> Router {
+    Router::new().nest(BASE, exos::app())
+}
+
+async fn served(uri: &str) -> axum::response::Response {
+    mounted()
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .body(Body::empty())
+                .expect("a valid request"),
+        )
+        .await
+        .expect("the router answers")
+}
+
+async fn status(uri: &str) -> StatusCode {
+    served(uri).await.status()
+}
+
+/// The rendered page, which is where every URL a browser would use comes from.
+/// Asking `exos::runtime()` directly would be asking a question no browser
+/// asks.
+async fn rendered() -> String {
+    let bytes = axum::body::to_bytes(served("/admin/page").await.into_body(), usize::MAX)
+        .await
+        .expect("the body is readable");
+
+    String::from_utf8(bytes.to_vec()).expect("a page is text")
+}
+
+/// The value of the first attribute spelled `name="..."` in the page.
+async fn attribute(name: &str) -> String {
+    let html = rendered().await;
+    let opening = format!("{name}=\"");
+
+    let start = html.find(&opening).expect("the attribute is there") + opening.len();
+    let end = start + html[start..].find('"').expect("an attribute ends");
+
+    html[start..end].to_owned()
+}
+
+async fn script_url() -> String {
+    attribute("src").await
+}
+
+/// The whole property, end to end and in the order a browser does it: ask for a
+/// page, read the URL it carries, and fetch that. Either half alone would pass
+/// while the other served 404s.
+#[tokio::test]
+async fn the_page_carries_a_url_the_router_answers_on() {
+    let src = script_url().await;
+
+    assert!(src.starts_with(&format!("{BASE}/_exos/exos-")), "got {src}");
+    assert_eq!(status(&src).await, StatusCode::OK);
+}
+
+/// The prefix is learned rather than configured, so a request has to have
+/// happened before there is anything to have learned it from.
+#[tokio::test]
+async fn the_prefix_is_the_one_nesting_put_there() {
+    // Any request settles it, and asking for a page is the honest one.
+    assert!(!script_url().await.is_empty());
+
+    assert_eq!(exos::base_path(), BASE);
+}
+
+#[tokio::test]
+async fn the_live_endpoints_are_reachable_under_it() {
+    assert_eq!(status(&format!("{BASE}/_exos/live")).await, StatusCode::OK);
+}
+
+/// Nesting is what moved them, so nothing is left behind where they used to be.
+#[tokio::test]
+async fn nothing_answers_at_the_root() {
+    assert_eq!(status("/_exos/live").await, StatusCode::NOT_FOUND);
+    assert_eq!(status("/page").await, StatusCode::NOT_FOUND);
+}
+
+/// A route path is written out in the attribute that declares it, and nesting
+/// puts it under the prefix along with everything else. Nothing rewrites it
+/// twice.
+#[tokio::test]
+async fn a_route_sits_where_nesting_put_it() {
+    assert_eq!(status("/admin/page").await, StatusCode::OK);
+    assert_eq!(status("/admin/admin/page").await, StatusCode::NOT_FOUND);
+}

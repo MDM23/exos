@@ -16,15 +16,39 @@ const read = (name) => readFileSync(join(HERE, "..", `${name}.js`), "utf8");
 
 /** A page with the runtime loaded, the markup bound, and `plugins` applied. */
 export function boot(body, ...plugins) {
-    const dom = new JSDOM(`<!DOCTYPE html><html><body>${body}</body></html>`, {
-        runScripts: "outside-only",
-        url: "http://localhost/",
-    });
+    return booted(body, "", plugins);
+}
+
+/**
+ * The same page, served under `base` rather than at the root.
+ *
+ * The runtime works the base out from the URL its own script was loaded from,
+ * so what this changes is only the `src` of the script tag in the head, which
+ * is exactly what an application changes by calling `exos::base`.
+ */
+export function bootUnder(base, body, ...plugins) {
+    return booted(body, base, plugins);
+}
+
+function booted(body, base, plugins) {
+    // The tag the runtime reads its base out of. A real page gets this from
+    // `exos::runtime()`, which is the same string with the same prefix on it.
+    const script = `<script defer src="${base}/_exos/exos-0123456789ab.js"></script>`;
+
+    const dom = new JSDOM(
+        `<!DOCTYPE html><html><head>${script}</head><body>${body}</body></html>`,
+        { runScripts: "outside-only", url: "http://localhost/" },
+    );
 
     const { window } = dom;
 
     // One jsdom provides only to refuse.
     window.scrollTo = () => {};
+
+    // Node's rather than jsdom's, so that the bytes the transport below encodes
+    // and the runtime decodes come from one realm.
+    window.TextDecoder = TextDecoder;
+    window.TextEncoder = TextEncoder;
 
     // Installed before the runtime is evaluated, because a page that arrives
     // with a live fragment already in it opens its stream on the last line of

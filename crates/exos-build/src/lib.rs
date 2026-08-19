@@ -31,11 +31,10 @@ mod media;
 
 pub use crate::media::content_type;
 
-/// Where assets are mounted. Hashed names make the prefix arbitrary.
-///
-/// Lives here because the macro bakes it into the URL it returns while the
-/// server mounts its router on it, and the two have to agree.
-pub const PREFIX: &str = "/_exos";
+// Where an asset is served from is deliberately not here. This crate turns a
+// file into bytes and a hashed name, and a URL is neither: it starts with the
+// base the application picks when it runs, which nothing at build time can
+// know. `exos::asset_url` is the one place that builds one.
 
 /// Anything that can go wrong while building an asset.
 #[derive(Debug, thiserror::Error)]
@@ -115,14 +114,6 @@ pub struct Built {
     /// Changing any of them changes this asset, so the caller has to treat all
     /// of them as inputs.
     pub sources: Vec<PathBuf>,
-}
-
-impl Built {
-    /// The URL this asset is served from.
-    #[must_use]
-    pub fn url(&self) -> String {
-        format!("{PREFIX}/{}", self.file)
-    }
 }
 
 /// Processes one asset, choosing the pipeline from the file extension.

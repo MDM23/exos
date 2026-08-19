@@ -86,7 +86,10 @@ instead of excluding one another.
 
 - [`exos`](crates/exos) is the runtime library, and returns a plain
   `axum::Router` so it composes into an axum application rather than replacing
-  one.
+  one. `Router::new().nest("/admin", exos::app())` needs no configuration:
+  exos works out where it was mounted and puts that in front of every URL it
+  writes, and the browser runtime finds it from the URL it was itself loaded
+  from.
 - [`exos-macro`](crates/exos-macro) holds `view!`, `asset!`, the route
   attributes, `#[model]` and `#[live]`. Depend on `exos`, which re-exports
   them.
@@ -124,8 +127,9 @@ reach, and the reason it exists is that every bug that got past review lived
 there. Node is a dev dependency of this repository and of nothing built with
 it; an application still needs no bundler and no npm.
 
-CI runs both, plus `cargo clippy` over every target, `cargo audit` against the
-lockfile, and a build with the oldest supported compiler.
+CI runs both, plus `cargo clippy` over every target, `cargo doc` with warnings
+denied so the doc links cannot rot, `cargo audit` against the lockfile, and a
+build with the oldest supported compiler.
 
 ## Status
 

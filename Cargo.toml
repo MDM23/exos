@@ -20,7 +20,7 @@ rust-version = "1.88"
 version = "0.1.0"
 
 [workspace.dependencies]
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "original-uri", "query", "tokio"] }
 exos = { path = "crates/exos", version = "0.1.0" }
 exos-build = { path = "crates/exos-build", version = "0.1.0" }
 exos-macro = { path = "crates/exos-macro", version = "0.1.0" }

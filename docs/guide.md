@@ -100,10 +100,14 @@ view! {
 ```
 
 There is no build script and nothing to register. The file is processed while
-your crate compiles, its bytes go into the binary, and the macro returns a
-`&'static str` with the content hash already in it. Files are served from
-memory as `immutable` for a year, which is safe unconditionally because a
-changed file is a different URL.
+your crate compiles, its bytes go into the binary, and the macro returns the URL
+with the content hash already in it. Files are served from memory as `immutable`
+for a year, which is safe unconditionally because a changed file is a different
+URL.
+
+The URL is a `String` rather than a `&'static str`, because the hash is known
+when your crate compiles and the [prefix](#serving-under-a-prefix) it hangs
+under is not known until the program is running.
 
 The path is relative to your crate root, and its extension decides everything
 else. A `.css` file is bundled through its `@import`s, a `.js` file through its
@@ -415,6 +419,88 @@ handler and forget to mount it.
 Registration is collected at link time, so routes in a crate that nothing links
 do not exist. That is irrelevant in a binary and worth knowing if you split
 routes into a library.
+
+### Serving under a prefix
+
+Nest it, and nothing else:
+
+```rust
+Router::new().nest("/admin", exos::app())
+```
+
+`nest` does the routing. What it cannot do is fix the URLs written *into* a
+page, because a URL in HTML is absolute and absolute needs the prefix. So exos
+works the prefix out: `nest` rewrites the path it forwards, axum records what
+arrived, and the difference between the two is the mount point.
+
+```text
+original  /admin/_exos/live
+current         /_exos/live
+prefix    /admin
+```
+
+It is read on the first request and kept for the process, because the answer
+belongs to the process rather than to the request: `publish` renders fragments
+where no request exists, and they carry asset URLs like any other markup.
+
+**One rule covers everything.** A route attribute says the path the *server*
+sees; the prefix is what the browser adds in front. exos puts it back on
+everything it writes for you:
+
+| written by | example | prefixed |
+| --- | --- | --- |
+| `asset!`, `runtime()` | `/admin/_exos/app-9f2c.css` | yes |
+| the live endpoints | `/admin/_exos/live` | yes |
+| a link, a redirect, `Effect::navigate` | `<a href="/files">` | **no** |
+
+The last row is yours, and `exos::base_path()` is how:
+
+```rust
+view! { <a href={ format!("{}/files", exos::base_path()) }>"Files"</a> }
+```
+
+At the root that adds nothing, which is exactly why it is easy to forget until
+the day something is mounted somewhere.
+
+**The client is not told either.** The runtime is itself an asset served under
+the prefix, so it reads the base out of its own script URL. That is
+self-verifying: if the script is running, the URL it came from was right.
+
+#### When it has to be told
+
+It is the outermost axum `Router` that records the arriving URI, so anything
+that rewrites the path in front of one is invisible from here. A reverse proxy
+serving you at `/admin` while forwarding `/` is the ordinary case: the server
+never receives that prefix, so no amount of looking will find it.
+
+```rust
+exos::base("/admin");
+```
+
+Said explicitly it wins and discovery never runs. It goes before anything is
+served, and a second one panics, whether the first was another call or a request
+that had already answered the question.
+
+## Client state: signals
+
+A signal is a piece of state in the browser, declared once in Rust:
+
+```rust
+let gone = signal(false);   // Signal<bool>
+```
+
+Put the handle in an attribute block to declare it. That element becomes its
+scope:
+
+```rust
+view! {
+    <li id={ row_id } {&gone}>/* ... */</li>
+}
+```
+
+Scoping is lexical with the DOM as the tree: the nearest ancestor that declares
+a name wins. A row already needs an `id` for morphing, so a hundred rows can
+each declare their own without colliding and you never invent `gone_3`.
 
 ## Client state: signals
 

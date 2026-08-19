@@ -78,13 +78,16 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         Err(error) => return fail(span, &describe(&error)),
     };
 
-    let url = built.url();
+    // The hashed name is known here, because it is derived from the content.
+    // The base it hangs under is not: that is chosen when the program runs, so
+    // the call site asks for the URL rather than being handed a literal.
+    let file = &built.file;
+    let url = quote! { ::exos::asset_url(#file) };
 
     // A repeat reference needs the URL and nothing else: the bytes and the
-    // registration are already in this crate, and the URL is known here
-    // because it is derived from the content.
+    // registration are already in this crate.
     if !claim(&built.file) {
-        return quote! { #url };
+        return url;
     }
 
     // Rebuild tracking. Cargo's `rerun-if-changed` belongs to build scripts,
@@ -97,7 +100,6 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         .map(|source| LitStr::new(&source.display().to_string(), Span::call_site()));
 
     let name = &built.name;
-    let file = &built.file;
     let content_type = &built.content_type;
     let bytes = Literal::byte_string(&built.bytes);
 

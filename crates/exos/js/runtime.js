@@ -21,6 +21,38 @@
     "use strict";
 
     // -------------------------------------------------------------------------
+    //                                 THE BASE
+    // -------------------------------------------------------------------------
+
+    // Where this application's URLs start, worked out rather than configured.
+    //
+    // An application served under a prefix has to agree with its server about
+    // what that prefix is, and the usual way to do that is a second place to
+    // write it down: a meta tag, an attribute on <html>, a build-time constant.
+    // Every one of those can be forgotten or can drift.
+    //
+    // There is no need. This file is itself an asset, served under the same
+    // prefix as the endpoints below, so the URL it was loaded from already
+    // carries the answer and everything before `/_exos/` in it is the base. It
+    // cannot be out of step with the server, because a wrong URL would not have
+    // loaded this script at all.
+
+    const BASE = (() => {
+        const src =
+            document.currentScript?.src ??
+            document.querySelector('script[src*="/_exos/"]')?.src;
+
+        if (!src) return "";
+
+        // Last rather than first, so a base that happens to contain the segment
+        // is still read as a base.
+        const { pathname } = new URL(src, location.href);
+        const cut = pathname.lastIndexOf("/_exos/");
+
+        return cut === -1 ? "" : pathname.slice(0, cut);
+    })();
+
+    // -------------------------------------------------------------------------
     //                                REACTIVITY
     // -------------------------------------------------------------------------
 
@@ -951,7 +983,7 @@
     function openStream() {
         if (source) return;
 
-        source = new EventSource("/_exos/live");
+        source = new EventSource(`${BASE}/_exos/live`);
 
         // Every step there is, and not the five a patch burst happens to use.
         // The stream and a handler's reply carry the same `Effect` through the
@@ -1074,7 +1106,7 @@
         subscribed = encoded;
 
         try {
-            const response = await fetch("/_exos/subscribe", {
+            const response = await fetch(`${BASE}/_exos/subscribe`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ connection, topics }),
@@ -1102,6 +1134,10 @@
     // -------------------------------------------------------------------------
 
     window.exos = {
+        // Where this application's URLs start, for a plugin that has to build
+        // one. Empty at the root, and never with a trailing slash.
+        base: BASE,
+
         // The global signal namespace. Reads and writes here resolve from the
         // document root, so they see what `data-signals-root` declared and
         // nothing an element holds. That is what an effect's `signals` step

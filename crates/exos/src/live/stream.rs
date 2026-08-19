@@ -59,6 +59,10 @@ use crate::{
 };
 
 /// Where the stream and the subscription endpoint are mounted.
+///
+/// Both start with the same segment an asset URL does, which is what lets the
+/// runtime find the [base](crate::base) by looking at its own script URL rather
+/// than being told.
 const STREAM: &str = "/_exos/live";
 const SUBSCRIBE: &str = "/_exos/subscribe";
 
@@ -547,6 +551,9 @@ impl<S> Drop for Disconnect<S> {
 }
 
 /// Mounts the stream and the subscription endpoint.
+///
+/// At the root of whatever router these end up in. Nesting is what puts an
+/// application under a prefix, and the client finds that prefix for itself.
 pub(crate) fn routes() -> Router {
     Router::new()
         .route(STREAM, get(stream))
