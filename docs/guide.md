@@ -842,7 +842,7 @@ no signature:
 async fn archive(Model(selection): Model<Selection>) -> Effect {
     data::<Files>().update(|entries| store::archive(entries, &selection.picked));
 
-    publish(&file_list());
+    publish(file_list);
     Effect::set(&Selection::signals().picked, Vec::new()).scroll("#file-list")
 }
 ```
@@ -927,9 +927,18 @@ fn presence(user: u32) -> Markup {
 One definition, two uses:
 
 ```rust
-{ presence(user.id) }         // in a template: renders it
-publish(&presence(user.id));  // anywhere: re-renders and pushes to watchers
+{ presence(user.id) }          // in a template: renders it
+publish(|| presence(user.id)); // anywhere: re-renders and pushes to watchers
 ```
+
+`publish` takes the call rather than its result, and that is worth a sentence
+because it looks like ceremony and is not. A patch is state replacement, so
+what has to be true is that the **last** patch a tab receives is the newest one.
+Rendering first and publishing second gives that away: a publisher that read the
+state first can reach the wire second, and the stale markup then sits on the
+screen until that topic is published again, which for the last write of the day
+is never. Handing over the render lets exos do both under one lock, and the
+signature is what stops the other order being written.
 
 The topic derives from the function name and the argument values, so
 `presence(2)` always names the same fragment. One event stream per tab carries
@@ -1100,7 +1109,7 @@ fn notify(user: u32, event: &Event) {
     data::<Notifications>().record(user, event);
 
     // State, to whichever tabs are showing it.
-    publish(&notification_count(user));
+    publish(|| notification_count(user));
 
     // The arrival, to the person.
     send(&Viewer(user), &Effect::set(&Toast::signals().message, event.summary()));

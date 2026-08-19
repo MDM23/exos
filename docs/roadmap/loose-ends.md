@@ -84,6 +84,33 @@ background job are rude, but they are rude in exactly the way an application
 chooses, and a framework that refuses to deliver them is a surprise that shows
 up as silence.
 
+## A stale patch could arrive last
+
+**Done**, in [stream.rs](../../crates/exos/src/live/stream.rs). `publish` took a
+rendered `&Fragment`, so a caller rendered and then asked to send, and two of
+those racing left a tab wrong forever: the publisher that read the state first
+could reach the registry lock second, so the older markup landed last and stayed
+until that topic was published again, which for the last write of the day is
+never.
+
+It takes the render now, `publish(|| lot(id, role))`, and holds a lock across
+both. Three things came out of writing it.
+
+- **The type is the fix.** A `Fragment` rendered beforehand can no longer be
+  handed to `publish` at all, so the order that was wrong is the order that no
+  longer compiles. Documenting it would have been a rule to remember.
+- **It is a lock of its own, not the registry's.** Arbitrary rendering must
+  never run while the registry is held, or a fragment that panics would poison
+  it and every publish afterwards would panic too. The ordering lock guards
+  `()`, so poisoning is recovered rather than propagated and a panicking
+  fragment costs its own publish and nothing else.
+- **The test is white-box, deliberately.** A behavioural test was written first,
+  two threads counting one state up and asserting the last patch carried the
+  final count. It passed against the broken implementation on every run, because
+  a render that fast never loses the race, and a test that passes against the
+  bug it names is worse than no test. What is checked instead is that the render
+  observes the lock held, which fails the moment the mechanism is removed.
+
 ## Publishing scans every connection
 
 `publish` takes a `Mutex` over the whole registry and walks it. At presence
@@ -101,6 +128,12 @@ rather than one and a half. It also needs two indexes rather than one, because
 topics and audiences are deliberately separate sets and merging them at the
 index would give back exactly the distinction that keeps a client from claiming
 an audience.
+
+There is now a second thing to fix here, and it wants fixing at the same time.
+The entry above serializes every publish against every other, render included,
+so an expensive fragment holds up an unrelated one. A lock per topic is the
+right shape and it is the same bookkeeping as the index: whatever maps a topic
+to the connections watching it is also what a per-topic lock hangs off.
 
 Still not worth doing before something feels it, and nothing has. Worth knowing
 where it is when something does.

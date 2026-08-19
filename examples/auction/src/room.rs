@@ -101,7 +101,7 @@ pub(crate) fn lots(role: Role) -> Markup {
 /// and silent, so this needs to know nothing about who is in the room.
 pub(crate) fn publish_lot(id: u32) {
     for role in [Role::Bidder, Role::Staff] {
-        publish(&lot(id, role));
+        publish(|| lot(id, role));
     }
 }
 

@@ -82,7 +82,7 @@ fn listeners() -> Markup {
 ///
 /// Every action ends here, and that one line is what keeps two tabs in step.
 pub(crate) fn publish_room() {
-    publish(&room());
+    publish(room);
 }
 
 /// What the room has to say about a batch, if anything.

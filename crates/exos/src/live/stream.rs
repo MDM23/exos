@@ -34,7 +34,7 @@ use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
     pin::Pin,
-    sync::{Mutex, OnceLock},
+    sync::{Mutex, OnceLock, PoisonError},
     task::{Context, Poll},
 };
 
@@ -259,16 +259,56 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
     }
 }
 
-/// Re-renders nothing, since the caller already did, and sends the fragment to
-/// every connection watching it.
+/// Renders a fragment and sends it to every connection watching it.
 ///
 /// Publishing a fragment nobody is looking at is free and silent, which is
 /// what lets a handler publish unconditionally rather than asking first.
 ///
+/// ```ignore
+/// publish(|| presence(user.id));
+/// ```
+///
+/// # Why it renders rather than taking a rendered one
+///
+/// Because a patch is state replacement, so what has to be true is that the
+/// last patch a tab receives is the newest one, and that is a fact about the
+/// order of two things rather than about either of them.
+///
+/// This used to take a `&Fragment`, which meant the caller rendered and then
+/// asked to send. Two of those racing is enough to leave a tab wrong forever: a
+/// publisher that read the state first can reach the lock second, so the older
+/// markup lands last and stays until something publishes that topic again,
+/// which for the last write of the day is never. It is invisible in a test, it
+/// needs no unusual load, and the symptom is a price or a status that is simply
+/// out of date on one screen.
+///
+/// Taking the render closes it, because the read and the send then happen under
+/// one lock. A publisher may still find that another has already sent what it
+/// was about to, and that is harmless: both read current state, so whichever
+/// goes last is current. The type is what enforces it, since a `Fragment`
+/// rendered beforehand can no longer be handed to this.
+///
+/// # What it costs
+///
+/// Publishes are serialized against each other, so an expensive fragment holds
+/// up an unrelated one. That is the same shape as the registry walk this
+/// already does and is fine at the volumes it is fine at; a lock per topic is
+/// the refinement, and belongs with the index that would make the walk a
+/// lookup.
+///
 /// # Panics
 ///
-/// If the registry lock was poisoned; see [`connection_count`].
-pub fn publish(fragment: &crate::Fragment) {
+/// If the registry lock was poisoned; see [`connection_count`]. A panic in
+/// `render` propagates, and does not poison anything: the ordering lock guards
+/// no data, so a fragment that panics costs its own publish and nothing else.
+pub fn publish(render: impl FnOnce() -> crate::Fragment) {
+    // Held across the render as well as the send, which is the whole point.
+    // Recovered rather than propagated on poisoning, because `()` has no
+    // invariant a panicking render could have broken, and because that panic
+    // is the caller's rather than this module's.
+    let _order = order().lock().unwrap_or_else(PoisonError::into_inner);
+
+    let fragment = render();
     let event = Event::from(Step::Patch(fragment.to_markup()));
     let topic = fragment.topic().as_str();
 
@@ -283,6 +323,16 @@ pub fn publish(fragment: &crate::Fragment) {
             drop(connection.sender.send(event.clone()));
         }
     }
+}
+
+/// Orders a publish against every other publish, render included.
+///
+/// Its own lock rather than the registry's, so that arbitrary rendering never
+/// runs while the registry is held and the claim every `expect` in this file
+/// makes about that lock stays true.
+fn order() -> &'static Mutex<()> {
+    static ORDER: OnceLock<Mutex<()>> = OnceLock::new();
+    ORDER.get_or_init(Mutex::default)
 }
 
 /// A name no other connection has and no client can guess.
@@ -772,6 +822,32 @@ mod tests {
         assert_eq!(received(&mut tab), 0);
     }
 
+    /// What makes the last patch a tab receives the newest one.
+    ///
+    /// The behaviour is asserted over real streams in
+    /// [`tests/directed.rs`](../../tests/directed.rs); this pins the mechanism,
+    /// because the mechanism is the only reason the behaviour holds and it is
+    /// invisible from outside. A render that runs before the lock is a render
+    /// whose result can be overtaken.
+    #[tokio::test]
+    async fn a_fragment_is_rendered_while_the_order_is_held() {
+        let mut rendered = false;
+
+        publish(|| {
+            assert!(
+                order().try_lock().is_err(),
+                "the render has to happen inside the lock, or a publisher that \
+                 read the state first can still send second"
+            );
+
+            rendered = true;
+            crate::Fragment::new(Topic::new("order", &(1_u32,)), Markup::default())
+        });
+
+        assert!(rendered, "and the closure is what produced the fragment");
+        assert!(order().try_lock().is_ok(), "and the lock is let go after");
+    }
+
     /// The other direction of the rule that keeps the two sets apart. Watching
     /// a topic that spells an audience exactly is watching a topic, and a
     /// directed effect does not follow it, even though a publish of the same
@@ -796,7 +872,7 @@ mod tests {
 
         // And the control, so the silence above is the rule rather than a tab
         // that was never going to receive anything.
-        publish(&crate::Fragment::new(topic, Markup::default()));
+        publish(|| crate::Fragment::new(topic, Markup::default()));
         assert_eq!(received(&mut receiver), 1);
     }
 

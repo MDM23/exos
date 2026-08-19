@@ -74,7 +74,7 @@ pub(crate) fn bar(selection: &SelectionSignals) -> Markup {
 async fn remove(Model(selection): Model<Selection>) -> Effect {
     let refused = data::<Room>().update(|tracks| store::remove(tracks, &selection.picked));
 
-    publish(&room());
+    publish(room);
 
     // The selection no longer refers to anything the listener can see, whether
     // or not the room kept one of them. The handle names the signal, so this

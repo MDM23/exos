@@ -360,9 +360,11 @@ nobody behind it can be addressed as itself, which is what a queue position or
 a checkout timer wants.
 
 **Audiences are taken by reference**, `Audiences::of(&Viewer(id))`, which the
-sketch wrote without the `&`. That matches `publish(&fragment)` and the `send`
+sketch wrote without the `&`. That matched `publish(&fragment)` and the `send`
 the other document sketches, and it keeps `needless_pass_by_value` quiet
-without an exception.
+without an exception. `publish` has since taken the render rather than the
+fragment, so it is `send` that this still lines up with; nothing about the
+argument here changed with it.
 
 **An audience reduces to the same key a topic does**, through `Topic::new`, so
 there is one rule for how a name and its arguments become a key rather than two
