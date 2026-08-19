@@ -8,3 +8,10 @@
 
 # Lock files are generated: collapse them in merge request diffs
 Cargo.lock gitlab-generated=true linguist-generated=true
+
+# So is everything exos-cldr's generate.mjs writes. Committed rather than built,
+# so that no build reaches the network, and reviewed as a whole rather than line
+# by line: what a CLDR bump changes is read from the diff of the fixture.
+crates/exos-cldr/fixture.json gitlab-generated=true linguist-generated=true
+crates/exos-cldr/src/table.rs gitlab-generated=true linguist-generated=true
+crates/exos/tests/cldr/locales.rs gitlab-generated=true linguist-generated=true

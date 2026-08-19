@@ -7,6 +7,7 @@ use proc_macro::TokenStream;
 
 mod asset;
 mod live;
+mod locales;
 mod model;
 mod profile;
 mod route;
@@ -158,4 +159,48 @@ pub fn model(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn live(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     live::expand(item.into()).into()
+}
+
+/// Declares the languages an application is built in.
+///
+/// ```ignore
+/// exos::locales! {
+///     De = "de",
+///     #[fallback]
+///     En = "en",
+/// }
+/// ```
+///
+/// Write it once, at the crate root, because everything localization decides
+/// resolves `crate::Locale`. The list stays alphabetical and the fallback is
+/// marked rather than positional; it is the locale a request answers with when
+/// nothing better is known, which is what lets resolution return a `Locale`
+/// rather than an `Option`.
+///
+/// It generates more than the list, and that is the point of having it:
+///
+/// - `enum Locale`, with `ALL`, `FALLBACK`, the tag each locale was declared
+///   with, the writing direction, and `from_tag`.
+/// - Per locale, a module named after the tag holding a `Plural` enum with
+///   **exactly the categories CLDR gives that language**, so `de::Plural` has
+///   `One` and `Other` while `ar::Plural` has six, and a `category` function
+///   mapping a count to one of them.
+///
+/// Both come from the CLDR table [`exos-cldr`](https://docs.rs/exos-cldr)
+/// vendors as ordinary source, so nothing is fetched or parsed while an
+/// application builds, and only the locales that were declared are compiled
+/// into it.
+///
+/// A tag is matched by dropping subtags, so `de-AT` resolves through `de`,
+/// while a tag naming its own script means that script: `pa` is written left
+/// to right and `pa-Arab` is not. A language CLDR has no rules for is a
+/// compile error here rather than a wrong plural later.
+///
+/// Counts are whole numbers in this stage. The operands CLDR uses to describe
+/// the digits after a decimal point are therefore zero, which is what collapses
+/// most languages to one or two comparisons, and why the five whose `many`
+/// applies only to a fraction do not carry that category at all.
+#[proc_macro]
+pub fn locales(input: TokenStream) -> TokenStream {
+    locales::expand(input.into()).into()
 }

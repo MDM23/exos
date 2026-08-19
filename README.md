@@ -96,6 +96,10 @@ instead of excluding one another.
 - [`exos-build`](crates/exos-build) is the asset pipeline `asset!` calls while
   your crate compiles: bundle CSS, bundle and minify JS, content-hash, embed.
   There is no build script.
+- [`exos-cldr`](crates/exos-cldr) is the slice of CLDR `locales!` reads while it
+  expands: cardinal plural rules and writing direction, vendored as committed
+  source by a script a maintainer runs. No build reaches the network for it, and
+  nothing of it reaches a binary except the languages an application declared.
 
 The [guide](docs/guide.md) walks through the whole surface.
 [`examples/playlist`](examples/playlist) is a listening room several browsers
@@ -146,9 +150,13 @@ carried a real application yet. Known gaps, roughly in priority order:
   with the status it deserves and an `Effect` saying what to do about it, and
   the client applies effects whatever status carries them. What is missing is
   the way rules are expressed, which is a design rather than a chore.
-- **No localization.** The plan is to project a message's variants for the
-  active locale and let `Intl.PluralRules` pick, so catalogs stay on the
-  server.
+- **No messages, though the locale set is.** `exos::locales!` declares an
+  application's languages and generates, per language, exactly the plural
+  categories CLDR gives it, out of a table vendored as source rather than
+  fetched at build time. What is missing above it is the resolution that decides
+  which locale a request is in, and `messages!` itself, which will project a
+  message's variants for the active locale and let `Intl.PluralRules` pick, so
+  catalogs stay on the server.
 - **Expressions are compiled with `new Function`**, which a strict CSP without
   `unsafe-eval` blocks. A precompiled mode is the answer.
 - **Running more than one instance.** The connection registry is a process-local

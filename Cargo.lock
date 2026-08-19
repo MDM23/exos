@@ -369,10 +369,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "exos-cldr"
+version = "0.1.0"
+
+[[package]]
 name = "exos-macro"
 version = "0.1.0"
 dependencies = [
  "exos-build",
+ "exos-cldr",
  "proc-macro2",
  "quote",
  "rstml",

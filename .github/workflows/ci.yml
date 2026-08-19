@@ -57,7 +57,7 @@ jobs:
         run: nix develop --command cargo doc --workspace --all-features --no-deps
 
   runtime:
-    name: Client runtime
+    name: Client runtime and CLDR
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -65,7 +65,9 @@ jobs:
       # The one place this project needs node, and it comes from the flake like
       # everything else. Applications built with exos need none, which is what
       # the asset pipeline is for; the runtime is the half of the framework
-      # `cargo test` cannot reach, and testing a DOM takes one.
+      # `cargo test` cannot reach, and testing a DOM takes one. The same suite
+      # holds the vendored plural rules against this platform's `Intl`, which
+      # is the half of the CLDR fixture the other job cannot check.
       - uses: cachix/install-nix-action@v31
 
       - name: Install

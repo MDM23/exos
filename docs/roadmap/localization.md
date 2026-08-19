@@ -2,8 +2,13 @@
 
 Messages defined in Rust, rendered wherever the fact they need is known.
 
-Status: none of it is built. The README carries the plan as one sentence, and
-this document is that sentence written out. The shape below, one macro with
+Status: the first half of [stage 1](#stage-1-the-locale) is built.
+`exos::locales!` declares the set and generates each language's plural
+categories, out of the CLDR table [exos-cldr](../../crates/exos-cldr) vendors as
+ordinary source, and a committed fixture holds `cargo test` and `npm test` to
+the same answers. Resolution, `exos::locale()`, `Accept-Language` and the
+document's `lang` and `dir` attributes are not built, and neither is anything
+above stage 1. The shape below, one macro with
 match-like arms and one call site that works on both sides, predates exos: it
 was settled while the framework was still a prototype, and lived in a guide
 draft that was cut when the guide was rewritten against code that existed. It
@@ -111,15 +116,42 @@ list.
 
 It generates more than a list, and that is the point of having it:
 
-- `enum Locale`, with the declared tag, the writing direction, `Locale::ALL`,
-  and parsing from a tag.
-- Per locale, a module holding a `Plural` enum with **exactly the categories
-  CLDR gives that language** (`de::Plural` has `One` and `Other`, `ar::Plural`
-  has six) and a `category` function mapping a count to one of them.
+- `enum Locale`, with `ALL`, `FALLBACK`, the declared tag, the writing
+  direction, `from_tag`, and `CLDR_VERSION` so an application can say which
+  release its plurals came from.
+- Per locale, a module named after the tag holding a `Plural` enum with
+  **exactly the categories that language reaches** (`de::Plural` has `One` and
+  `Other`, `ar::Plural` has six) and a `category` function mapping a count to
+  one of them.
 
 Both come from the vendored table described [below](#where-the-data-comes-from),
 and only for the locales declared, so an application that ships two languages
 compiles two evaluators.
+
+Two supporting types are the framework's rather than the generated code's,
+because they are the same in every application:
+[`Direction`](../../crates/exos/src/locale.rs), which is what `dir` carries, and
+`PluralCategory`, which is CLDR's six keywords. A message never names the
+second: it branches on the locale's own `Plural`, which is what makes a missing
+translation a non-exhaustive match. `Locale::category` answers in the shared
+spelling instead, for the two places that cross locales, which are a projection
+into the browser and a test.
+
+**"Exactly the categories CLDR gives that language" turned out to be a
+slightly different sentence from the one this document opened with.** Whole
+number counts do not reach every category CLDR lists. Czech, Slovak, Manx,
+Lithuanian and Samogitian each have a `many` that is nothing but "there are
+digits after the decimal point", so with the operand set stage 1 supports it can
+never apply, and the generated enum does not carry it. Emitting it anyway would
+demand a translation of a string nothing can render, which is a string no
+translator can check. The cost is that decimal counts, an [open
+question](#open-questions) below, would add a variant to five languages and
+break every message written in them. That is the same guarantee working, at the
+moment it becomes true, rather than a silent change.
+
+The reverse also happens and is left alone: Polish reaches `one`, `few` and
+`many` but never `other` with a whole number, and `pl::Plural::Other` exists all
+the same, because it is the arm the rule list ends in.
 
 ### Resolving it
 
@@ -465,24 +497,53 @@ and it would still be wrong for the first render, which is the one that matters.
 
 ## Where the data comes from
 
-CLDR, vendored into [exos-macro](../../crates/exos-macro) as committed
-generated source, produced by a script a maintainer runs when CLDR is bumped.
-Not fetched during a build: a build that reaches the network is the leak
+CLDR, vendored into [exos-cldr](../../crates/exos-cldr/src/table.rs) as
+committed generated source, produced by
+[generate.mjs](../../crates/exos-cldr/generate.mjs) beside it, which a
+maintainer runs with `npm run cldr` when CLDR is bumped. Not fetched during a
+build: a build that reaches the network is the leak
 [nix.md](../../.claude/rules/nix.md) is about, and a build script that parses
-CLDR would pay for it on every clean checkout.
+CLDR would pay for it on every clean checkout. What release a checkout is on is
+a line in `package-lock.json` rather than whatever a network answered with that
+afternoon.
 
 Three slices, and nothing else:
 
 - **Cardinal plural rules**, which are a small expression language over the
   operands `n, i, v, w, f, t, c`. With integer counts only, `v` through `c` are
   zero and most languages collapse to one or two comparisons.
-- **Number symbols**: decimal separator, group separator, minus sign, percent,
-  grouping sizes.
 - **Writing direction**, for `dir` on the document.
+- **Number symbols**: decimal separator, group separator, minus sign, percent,
+  grouping sizes. Not vendored yet. They arrive with the number interpolation in
+  stage 2, since a column nothing reads is a column nothing checks.
 
-The table is a few hundred kilobytes of Rust in the macro crate, compiled once
-and contributing nothing to an application binary, which only ever contains the
-locales it declared.
+### What the first two slices measured
+
+The collapse is what the rest of stage 1 was staged on, so here is what it
+actually came to, against cldr-core 48.2.0:
+
+- **223 locales**, in 32 distinct rule shapes. `und` is dropped: it is the tag
+  for a language nobody has determined, and the one tag ICU cannot check a
+  fixture row for.
+- **186 of the 223 ask two comparisons or fewer.** Thirty-three have a single
+  category and never look at the count, 120 ask one question, 33 ask two. The
+  tail is Slavic and Celtic: Polish, Russian, Belarusian and Ukrainian ask
+  seven, Breton eight, and Cornish ten.
+- **The whole table is 5,400 lines of Rust**, 160 KB, and takes about 100 ms to
+  compile. That is the reason it is its own crate rather than a module of
+  [exos-macro](../../crates/exos-macro): the data changes twice a year and the
+  macro changes whenever it is worked on, so the two should not recompile each
+  other. An application still carries only the locales it declared.
+- **Every rule list ends in an unconditional `other`**, and nothing before it is
+  unconditional, which is what lets the generated function be a chain of `if`s
+  ending in an `else`. The generator refuses to write a table where that stops
+  being true rather than emitting unreachable code.
+
+A tag is looked up whole and then by dropping subtags, so `de-AT` finds `de` and
+`pt-PT` finds itself, which is one of two tags in CLDR's table with a subtag at
+all. Direction comes from the script CLDR expects the language to be written in,
+except where the tag names a script itself: `pa` is Gurmukhi and `pa-Arab` is
+not, and both resolve to the same plural rules.
 
 ## Testing
 
@@ -491,12 +552,31 @@ our vendored CLDR and the browser's ICU disagree tomorrow, in one language,
 about one number.
 
 A committed fixture makes that a test failure in two places rather than a bug
-report. It holds, per declared tag, a range of counts with their expected
-category and a set of values with their expected formatting. `cargo test`
-asserts the generated evaluator reproduces it; `npm test` asserts `Intl`
-reproduces the same file in jsdom. Neither suite depends on the other having
-run, and a CLDR bump that changes an answer fails loudly on the side that
-changed.
+report. [fixture.json](../../crates/exos-cldr/fixture.json) holds, for every tag
+in the table, the category of each of 97 counts, chosen to sit on the edges the
+rules have: a run through the first hundred, runs around 100 and 1000 for the
+teens exceptions Slavic and Celtic rules carry, and a tail for the millions rule
+French and Breton use.
+
+Both suites read it and neither needs the other to have run.
+[crates/exos/tests/cldr.rs](../../crates/exos/tests/cldr.rs) declares every tag
+in one `locales!` and asserts the generated evaluator reproduces the file, which
+also means `cargo test` compiles the evaluator for all 223 languages rather than
+for the two an example would carry. It sits in the exos crate rather than beside
+the table because reading the fixture from Rust takes the macro, and the macro
+takes exos.
+[fixture.test.js](../../crates/exos-cldr/fixture.test.js) asserts
+`Intl.PluralRules` reproduces it, in plain node rather than in jsdom, since
+`Intl` belongs to the language rather than to the document. Both name the
+language and the count they
+disagreed about, and both name the CLDR release they were reading. A tag ICU has
+never heard of is skipped rather than failed, because a vendored CLDR newer than
+the runtime's ICU is a legitimate state to be in, and the number skipped is
+asserted so that the check cannot quietly degrade to checking nothing. Today it
+skips none.
+
+The fixture holds no formatted numbers yet. It will when the symbols are
+vendored, and a fixture half that only one side can check would not be one.
 
 Beyond that: negotiation is a unit test, a fragment rendering in two locales
 produces two topics, and the compile errors in stage 2 are worth a `trybuild`
@@ -517,7 +597,8 @@ kind of regression nothing else catches.
 - **Message text lives in Rust source**, so a translator cannot touch it until
   the export exists.
 - **A vendored table nobody reviews by eye.** The fixture is the only thing
-  standing between it and a quiet wrong answer in a language none of us reads.
+  standing between it and a quiet wrong answer in a language none of us reads,
+  which is why it was the first thing built rather than the last.
 - **`crate::Locale` by convention** is magic, in a codebase that has mostly
   avoided it. It buys one absent path per block.
 - **Slots put a second syntax inside a string.** `{count}` interpolates and
@@ -543,5 +624,6 @@ kind of regression nothing else catches.
   the application, given that an override means the response did not vary by it.
 - **Ordinals** ("3rd"), a separate CLDR table and a second parameter type.
 - **Decimal counts** ("1.5 hours"), which need the full operand set rather than
-  the integer collapse in stage 1.
+  the integer collapse in stage 1, and which would hand `many` back to the five
+  languages that lose it there, breaking every message written in them.
 - **Currency**, which is listed as out of scope and will be asked for anyway.

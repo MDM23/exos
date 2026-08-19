@@ -2,6 +2,7 @@
 members = [
   "crates/exos",
   "crates/exos-build",
+  "crates/exos-cldr",
   "crates/exos-macro",
   "examples/auction",
   "examples/playlist",
@@ -23,6 +24,7 @@ version = "0.1.0"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "original-uri", "query", "tokio"] }
 exos = { path = "crates/exos", version = "0.1.0" }
 exos-build = { path = "crates/exos-build", version = "0.1.0" }
+exos-cldr = { path = "crates/exos-cldr", version = "0.1.0" }
 exos-macro = { path = "crates/exos-macro", version = "0.1.0" }
 futures-core = { version = "0.3", default-features = false }
 getrandom = { version = "0.3", default-features = false }

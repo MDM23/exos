@@ -1,0 +1,21 @@
+[package]
+description = "The slice of CLDR exos vendors: cardinal plural rules and writing direction"
+documentation = "https://docs.rs/exos-cldr"
+name = "exos-cldr"
+categories.workspace = true
+edition.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+version.workspace = true
+
+# The generator, the fixture and the half of the fixture's check that runs in
+# node. They are how the table is produced and proved rather than part of it,
+# and a crate downloading them would be downloading a copy of CLDR it has no
+# way to run.
+exclude = ["fixture.json", "fixture.test.js", "generate.mjs"]
+
+[lints]
+workspace = true

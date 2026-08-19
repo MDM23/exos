@@ -34,6 +34,7 @@ mod identity;
 mod js;
 mod keys;
 mod live;
+mod locale;
 mod model;
 mod render;
 mod response;
@@ -58,6 +59,7 @@ pub use crate::{
     },
     keys::{Keys, keys},
     live::{Fragment, Topic, connected, connection_count, publish, send},
+    locale::{Direction, PluralCategory},
     model::{Model, ModelFields, ModelRejection, to_wire},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
@@ -67,7 +69,7 @@ pub use crate::{
 };
 
 #[doc(inline)]
-pub use exos_macro::{asset, delete, get, live, model, patch, post, put, view};
+pub use exos_macro::{asset, delete, get, live, locales, model, patch, post, put, view};
 
 // Re-exported so the macros can name them without the user taking a direct
 // dependency, and so nobody has to keep versions in step with ours.
