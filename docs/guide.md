@@ -451,16 +451,48 @@ everything it writes for you:
 | --- | --- | --- |
 | `asset!`, `runtime()` | `/admin/_exos/app-9f2c.css` | yes |
 | the live endpoints | `/admin/_exos/live` | yes |
-| a link, a redirect, `Effect::navigate` | `<a href="/files">` | **no** |
+| a typed route caller | `favorite::post(3)` | yes |
+| a route's own URL | `favorite::url(3)` | yes |
+| a link you write | `<a href="/files">` | **no** |
 
-The last row is yours, and `exos::base_path()` is how:
+The last row is yours, and there are two ways to write it. For a route, the
+route attribute already generated one:
 
 ```rust
-view! { <a href={ format!("{}/files", exos::base_path()) }>"Files"</a> }
+#[exos::get("/files/{id}")]
+async fn show(Path(id): Path<u32>) -> Page { /* ... */ }
+
+view! { <a href={ show::url(3) }>"Open"</a> }
 ```
 
-At the root that adds nothing, which is exactly why it is easy to forget until
+That is built from the same path and the same `Path<T>` the caller is, so
+renaming the route or changing its parameter type breaks every link to it rather
+than leaving one that 404s. It is the same guarantee `show::get(..)` gives an
+action, and it is the one to reach for.
+
+For anything that is not a route, `exos::url` joins a path to the base:
+
+```rust
+view! { <a href={ exos::url("/files") }>"Files"</a> }
+```
+
+At the root both add nothing, which is exactly why they are easy to forget until
 the day something is mounted somewhere.
+
+`<base href={ format!("{}/", exos::base_path()) }>` is the obvious alternative
+and is worth knowing the shape of before reaching for it. It does not do what it
+looks like it does:
+
+| written | with `<base href="/admin/">` |
+| --- | --- |
+| `href="files"` | `/admin/files`, from any page |
+| `href="/files"` | `/files`, because a root-absolute URL ignores the base |
+| `href="#section"` | `/admin/#section`, which leaves the page |
+
+So it only helps if every in-app URL is relative, one leading slash breaks
+silently and only under a prefix, and in-page anchors have to be written out in
+full. That is a convention for the whole application to buy into, not a tag to
+add, which is why exos prefixes what it writes instead.
 
 **The client is not told either.** The runtime is itself an asset served under
 the prefix, so it reads the base out of its own script URL. That is
@@ -480,27 +512,6 @@ exos::base("/admin");
 Said explicitly it wins and discovery never runs. It goes before anything is
 served, and a second one panics, whether the first was another call or a request
 that had already answered the question.
-
-## Client state: signals
-
-A signal is a piece of state in the browser, declared once in Rust:
-
-```rust
-let gone = signal(false);   // Signal<bool>
-```
-
-Put the handle in an attribute block to declare it. That element becomes its
-scope:
-
-```rust
-view! {
-    <li id={ row_id } {&gone}>/* ... */</li>
-}
-```
-
-Scoping is lexical with the DOM as the tree: the nearest ancestor that declares
-a name wins. A row already needs an `id` for morphing, so a hundred rows can
-each declare their own without colliding and you never invent `gone_3`.
 
 ## Client state: signals
 

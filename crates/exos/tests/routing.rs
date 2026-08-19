@@ -22,6 +22,26 @@ async fn create() -> StatusCode {
     StatusCode::CREATED
 }
 
+/// A route declared where the whole crate has been glob-imported.
+///
+/// The generated module does `use super::*`, so `exos::url` lands in the same
+/// scope as the `url` the attribute generates. An item beats a glob import, so
+/// the caller reaches its own, and this is here because the day that stops
+/// being true it should be a build failure rather than a link to the wrong
+/// place.
+mod globbed {
+    use exos::*;
+
+    #[exos::get("/globbed/{id}")]
+    async fn show(axum::extract::Path(id): axum::extract::Path<u32>) -> Markup {
+        view! { <h1>{ id }</h1> }
+    }
+
+    pub(super) fn link() -> String {
+        show::url(7)
+    }
+}
+
 async fn status(uri: &str, method: &str) -> StatusCode {
     exos::app()
         .oneshot(
@@ -73,6 +93,12 @@ async fn the_runtime_is_served_and_cached_forever() {
             .expect("assets carry a caching policy"),
         "public, max-age=31536000, immutable"
     );
+}
+
+#[tokio::test]
+async fn a_route_url_survives_a_glob_import_of_the_crate() {
+    assert_eq!(globbed::link(), "/globbed/7");
+    assert_eq!(status("/globbed/7", "GET").await, StatusCode::OK);
 }
 
 /// The URL is derived from the content, so two call sites cannot disagree

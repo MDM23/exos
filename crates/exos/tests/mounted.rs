@@ -14,10 +14,15 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use exos::{Page, view};
+use exos::{Effect, Page, on_click, view};
 use tower::ServiceExt as _;
 
 const BASE: &str = "/admin";
+
+#[exos::post("/files/{id}/favorite")]
+async fn favorite(axum::extract::Path(_id): axum::extract::Path<u32>) -> Effect {
+    Effect::none()
+}
 
 #[exos::get("/page")]
 async fn page() -> Page {
@@ -29,6 +34,9 @@ async fn page() -> Page {
             </head>
             <body>
                 <h1>"Nested"</h1>
+                <button {on_click(|_| favorite::post(3))}>"Favorite"</button>
+                <a href={ page::url() }>"This page"</a>
+                <a id="written" href={ exos::url("/files") }>"Files"</a>
             </body>
         </html>
     })
@@ -122,4 +130,43 @@ async fn nothing_answers_at_the_root() {
 async fn a_route_sits_where_nesting_put_it() {
     assert_eq!(status("/admin/page").await, StatusCode::OK);
     assert_eq!(status("/admin/admin/page").await, StatusCode::NOT_FOUND);
+}
+
+/// The rule the whole thing rests on: a route attribute says the path the
+/// *server* sees, and a caller has to ask for the one the *browser* is served
+/// at. Nesting puts those two apart, so a caller that emitted the attribute's
+/// own path would post into a 404 from every button on the page.
+#[tokio::test]
+async fn a_typed_caller_posts_to_where_the_browser_can_reach_it() {
+    let handler = attribute("data-on-click").await;
+
+    assert!(handler.contains("/admin/files/3/favorite"), "got {handler}");
+
+    assert_eq!(
+        status("/admin/files/3/favorite").await,
+        StatusCode::METHOD_NOT_ALLOWED,
+        "and that URL is routed, since a GET of a POST route is not a 404"
+    );
+}
+
+/// A link built from the route rather than from a string, which is what makes
+/// renaming the route a compile error at every place that links to it.
+#[tokio::test]
+async fn a_route_knows_its_own_url() {
+    let html = rendered().await;
+
+    assert!(html.contains("href=\"/admin/page\""), "{html}");
+    assert_eq!(status("/admin/page").await, StatusCode::OK);
+}
+
+/// The same prefix, for a path that is not a route's, which is the case the
+/// route attribute cannot help with.
+#[tokio::test]
+async fn a_path_written_by_hand_gets_the_prefix_too() {
+    let html = rendered().await;
+
+    assert!(
+        html.contains("id=\"written\" href=\"/admin/files\""),
+        "{html}"
+    );
 }

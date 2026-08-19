@@ -115,6 +115,37 @@ pub(crate) fn path() -> &'static str {
     base_path()
 }
 
+/// One of this application's own paths, as a browser has to ask for it.
+///
+/// The short way to write [`base_path`] into a URL, and the only one worth
+/// using, since it is also the one place the joining rule lives:
+///
+/// ```rust
+/// # use exos::{Markup, view};
+/// # fn link() -> Markup {
+/// view! { <a href={ exos::url("/files") }>"Files"</a> }
+/// # }
+/// ```
+///
+/// Where the path is a route's, prefer the `url` the route attribute generates:
+/// `files::url(3)` is checked against the handler's own signature, so renaming
+/// the route or changing its parameter breaks the link at compile time. This is
+/// for everything else, and for a path that is not a route at all.
+///
+/// # What it does not do
+///
+/// It cannot tell that a path already carries the base, because `/admin/files`
+/// is a perfectly ordinary route to have. Pass what a route is declared with,
+/// which is the path the server sees.
+///
+/// It does take any number of leading slashes down to one, so a path that
+/// arrived from outside cannot turn into `//example.com` and send somebody to
+/// another host.
+#[must_use]
+pub fn url(path: impl AsRef<str>) -> String {
+    format!("{}/{}", base_path(), path.as_ref().trim_start_matches('/'))
+}
+
 /// Learns the mount point from a request, once.
 ///
 /// The first request to answer the question wins, and a later one cannot change
@@ -209,6 +240,36 @@ mod tests {
     fn a_path_that_does_not_line_up_answers_nothing() {
         assert!(prefix_of("/admin/files", "/other").is_none());
         assert!(prefix_of("/short", "/a/much/longer/path").is_none());
+    }
+
+    // `url` reads the store, which these tests leave at the root, so what it
+    // does under a base is checked in `tests/mounted.rs` and `tests/base.rs`.
+    // What is worth pinning here is the joining, which is the same either way.
+
+    #[test]
+    fn a_path_is_joined_with_exactly_one_slash() {
+        assert_eq!(url("/files"), "/files");
+        assert_eq!(
+            url("files"),
+            "/files",
+            "a missing slash is not a missing one"
+        );
+        assert_eq!(url("/files/3?page=2"), "/files/3?page=2");
+    }
+
+    /// A path that arrived from outside must not be able to become a URL
+    /// pointing at another host, which is what a second leading slash would
+    /// make it.
+    #[test]
+    fn a_protocol_relative_path_cannot_escape_the_application() {
+        assert_eq!(url("//example.com/files"), "/example.com/files");
+        assert_eq!(url("///example.com"), "/example.com");
+    }
+
+    #[test]
+    fn the_root_path_is_a_single_slash() {
+        assert_eq!(url(""), "/");
+        assert_eq!(url("/"), "/");
     }
 
     #[test]

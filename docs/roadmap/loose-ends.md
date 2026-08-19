@@ -114,8 +114,22 @@ axum `Router` that records the URI, so a reverse proxy stripping `/admin` is
 invisible from inside. Said explicitly it wins and discovery never runs.
 
 What exos still does not touch is a URL the application writes: a link, a
-redirect, an `Effect::navigate` target. `exos::base_path()` is there for those,
-and at the root it adds nothing, which is what makes it easy to forget.
+redirect, an `Effect::navigate` target. Two things are there for those, and
+which one to reach for is the interesting part.
+
+`exos::url("/files")` joins a path to the base, and is the answer for a path
+that is not a route's. A tuple form, `url(("files", id))`, was considered and
+rejected: it is a worse `format!`, since the shape of the URL stops being
+legible at the call site, and it needs an implementation per arity to buy
+nothing the compiler can check.
+
+What it was reaching for already existed one level up. The route attribute knows
+the path template and the `Path<T>` types, because it generates the caller from
+them, so it now generates `show::url(3)` as well. That is the typed answer:
+renaming a route or changing a parameter breaks every link to it at compile
+time, which is the guarantee the README already advertises for actions. It also
+put the URL in one place rather than two, since the caller now asks for it
+instead of building its own, and `exos::call` stopped prefixing.
 
 `asset!` returns a `String` now rather than a `&'static str`, and
 `exos_build::Built::url` is gone: what a URL starts with is a runtime fact and a

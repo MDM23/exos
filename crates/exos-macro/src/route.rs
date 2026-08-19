@@ -69,11 +69,13 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
 
     // Built as one list: appending the body after `#(#params,)*` would leave a
     // stray comma whenever either side is empty.
-    let mut parameters: Vec<TokenStream> = arguments
+    let path_parameters: Vec<TokenStream> = arguments
         .iter()
         .zip(&path_types)
         .map(|(ident, ty)| quote! { #ident: #ty })
         .collect();
+
+    let mut parameters = path_parameters.clone();
 
     let body = match &body_type {
         Some(ty) => {
@@ -90,16 +92,30 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
         path.value()
     );
 
+    let url_summary = format!(
+        "The URL of `{}`, under the application's base.",
+        path.value()
+    );
+
     quote! {
         #[doc = concat!("Typed client-side caller for [`", stringify!(#name), "`].")]
         #[allow(non_snake_case, unused_imports)]
         pub mod #name {
             use super::*;
 
+            #[doc = #url_summary]
+            ///
+            /// Built from the route's own path and the types its handler
+            /// destructures, so a renamed route or a changed parameter breaks
+            /// every link to it rather than producing one that 404s.
+            #[must_use]
+            pub fn url(#(#path_parameters),*) -> ::std::string::String {
+                ::exos::url(::std::format!(#format, #(#arguments),*))
+            }
+
             #[doc = #summary]
             pub fn #method(#(#parameters),*) {
-                let url = format!(#format, #(#arguments),*);
-                ::exos::call(#method_name, &url, #body);
+                ::exos::call(#method_name, &url(#(#arguments),*), #body);
             }
         }
     }
@@ -196,6 +212,40 @@ mod tests {
 
         assert!(expanded.contains("pub mod files"));
         assert!(expanded.contains("pub fn get"));
+    }
+
+    /// A link to a route is built from the same path and the same types the
+    /// caller is, so renaming the route breaks every link to it rather than
+    /// leaving one that 404s.
+    #[test]
+    fn generates_a_url_from_the_path_parameters_alone() {
+        let expanded = expand_ok(
+            r#""/files/{id}""#,
+            "async fn show(Path(id): Path<u32>, Model(body): Model<Draft>) {}",
+        );
+
+        assert!(expanded.contains("pub fn url (p0 : u32) -> :: std :: string :: String"));
+        assert!(
+            !expanded.contains("pub fn url (p0 : u32 , body"),
+            "a link has no body to send"
+        );
+    }
+
+    /// One place decides what a route's URL is. Prefixing in both would put the
+    /// application's base on twice the moment it stopped being empty.
+    #[test]
+    fn the_caller_asks_for_the_url_rather_than_building_a_second_one() {
+        let expanded = expand_ok(r#""/files/{id}""#, "async fn show(Path(id): Path<u32>) {}");
+
+        assert!(
+            expanded.contains("call (\"get\" , & url (p0)"),
+            "{expanded}"
+        );
+        assert_eq!(
+            expanded.matches("format !").count(),
+            1,
+            "the path template is written out once"
+        );
     }
 
     /// A handler naming either body extractor gets the same typed caller, so

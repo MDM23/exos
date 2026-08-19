@@ -17,10 +17,15 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use exos::{Page, view};
+use exos::{Effect, Page, on_click, view};
 use tower::ServiceExt as _;
 
 const BASE: &str = "/admin";
+
+#[exos::post("/files/{id}/favorite")]
+async fn favorite(axum::extract::Path(_id): axum::extract::Path<u32>) -> Effect {
+    Effect::none()
+}
 
 /// Declared at the path the *server* is asked for, which is what the proxy
 /// forwards. The prefix is what the browser adds in front, and exos puts it
@@ -35,6 +40,7 @@ async fn page() -> Page {
             </head>
             <body>
                 <h1>"Behind a proxy"</h1>
+                <button {on_click(|_| favorite::post(3))}>"Favorite"</button>
             </body>
         </html>
     })
@@ -95,6 +101,12 @@ async fn what_the_browser_is_given_carries_the_prefix() {
             .await
             .starts_with(&format!("{BASE}/_exos/")),
         "the runtime is loaded through the proxy"
+    );
+    assert!(
+        attribute("data-on-click")
+            .await
+            .contains("/admin/files/3/favorite"),
+        "and so is every action"
     );
 }
 
