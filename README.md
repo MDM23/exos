@@ -151,8 +151,10 @@ carried a real application yet. Known gaps, roughly in priority order:
   server.
 - **Expressions are compiled with `new Function`**, which a strict CSP without
   `unsafe-eval` blocks. A precompiled mode is the answer.
-- **Morphing is hand-rolled.** It keys on id and preserves input state, but
-  [idiomorph](https://github.com/bigskysoftware/idiomorph) is better tested.
+- **Running more than one instance.** The connection registry is a process-local
+  map, so a publish reaches only the tabs connected to the instance that sent
+  it. It needs a bus, and it is the one gap here that cannot be added quietly
+  later.
 - **No CSRF token.** `SameSite=Lax` on the session cookie, the `X-Exos` header
   and JSON-only bodies are three defences rather than one, which is a policy and
   is written down in the guide. It leaks for a handler that accepts a
