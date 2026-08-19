@@ -133,9 +133,10 @@ carried a real application yet. Known gaps, roughly in priority order:
   bind the tag to now exists; what is left is that `publish` renders a fragment
   outside any request, so where the token comes from there has to be settled
   first.
-- **No form validation API.** The `Effect` shape is right for it, errors as
-  signals reaching only the requester, but the way rules are expressed is not
-  designed.
+- **No form validation API.** The mechanism works: a handler answers a refusal
+  with the status it deserves and an `Effect` saying what to do about it, and
+  the client applies effects whatever status carries them. What is missing is
+  the way rules are expressed, which is a design rather than a chore.
 - **No localization.** The plan is to project a message's variants for the
   active locale and let `Intl.PluralRules` pick, so catalogs stay on the
   server.

@@ -58,7 +58,11 @@ function transports(window) {
     // fetching the URL it is already on, and the ordinary answer to that is the
     // document the tab already has, so a test only says what came back when the
     // point of the test is that something did.
-    const responses = { body: null, status: 204 };
+    //
+    // `type` is what decides how the runtime reads the body, and it is the
+    // whole subject of any test about a refusal that still has something to
+    // say, so it is settable rather than derived from the status.
+    const responses = { body: null, status: 204, type: "text/html; charset=utf-8" };
 
     window.EventSource = class EventSource {
         constructor(url) {
@@ -88,18 +92,52 @@ function transports(window) {
             body: options.body === undefined ? null : JSON.parse(options.body),
         });
 
+        const text =
+            responses.body ?? `<!DOCTYPE html>${window.document.documentElement.outerHTML}`;
+
         return Promise.resolve({
             ok: responses.status < 400,
             status: responses.status,
-            text: () =>
-                Promise.resolve(
-                    responses.body ??
-                        `<!DOCTYPE html>${window.document.documentElement.outerHTML}`,
-                ),
+            statusText: "",
+            headers: {
+                get: (name) =>
+                    name.toLowerCase() === "content-type" ? responses.type : null,
+            },
+            text: () => Promise.resolve(text),
+            // Server-sent events arrive as bytes off a reader rather than as
+            // text, because that is what lets the runtime apply a slow
+            // handler's steps as they land instead of after the last one.
+            body: { getReader: () => reader(window, text) },
         });
     };
 
     return { requests, responses, streams };
+}
+
+/**
+ * A body handed over in small pieces, the way a socket delivers one.
+ *
+ * Deliberately not one chunk. A server-sent event ends at a blank line and a
+ * read ends wherever the network says, so the two boundaries do not line up and
+ * the runtime has to buffer across them. Chunking here in sevens means every
+ * frame of any length is split at least once, which is the only way this
+ * harness can tell a parser that buffers from one that happens to be handed
+ * whole frames.
+ */
+function reader(window, text) {
+    const bytes = new window.TextEncoder().encode(text);
+    let offset = 0;
+
+    return {
+        read() {
+            if (offset >= bytes.length) return Promise.resolve({ done: true });
+
+            const chunk = bytes.slice(offset, offset + 7);
+            offset += chunk.length;
+
+            return Promise.resolve({ done: false, value: chunk });
+        },
+    };
 }
 
 /** Effects are scheduled on a microtask, so nothing is on the page until they run. */

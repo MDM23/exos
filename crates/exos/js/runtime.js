@@ -580,10 +580,29 @@
 
         try {
             const response = await fetch(target, init);
+            const type = response.headers?.get("content-type") ?? "";
 
-            // A rejected action used to fail in silence: the server answered
-            // 4xx, nothing was applied, and the page simply did not change,
-            // which reads exactly like a feature that is not wired up.
+            // An effect is applied whatever the status, and everything else is
+            // applied only on success.
+            //
+            // A refusal is a thing the server has something to say about: which
+            // field was wrong, which signal to put back, where to move the
+            // caret. All of that is an Effect already, and answering 422 is how
+            // a validation failure says it is one. Reading the body only on 2xx
+            // meant the server could either be honest about the status or be
+            // heard, never both, so the whole category came back as a console
+            // line and a page that did not change.
+            //
+            // An error page is the other half of the rule and stays out: HTML
+            // on a failure is a document about the failure, and morphing one
+            // into the page would be a 500 eating the screen.
+            if (type.includes("text/event-stream")) {
+                await consume(response);
+                return response;
+            }
+
+            // Nothing to apply, so this is the silent failure the rule above
+            // is about, and it is announced rather than swallowed.
             if (!response.ok) {
                 console.error(
                     `[exos] ${method} ${url} answered ${response.status} ${response.statusText}`,
@@ -600,9 +619,7 @@
                 return response;
             }
 
-            const type = response.headers.get("content-type") ?? "";
-            if (type.includes("text/event-stream")) await consume(response);
-            else if (type.includes("text/html")) applyPatch(await response.text());
+            if (type.includes("text/html")) applyPatch(await response.text());
 
             return response;
         } finally {

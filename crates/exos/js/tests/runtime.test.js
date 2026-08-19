@@ -336,6 +336,69 @@ test("a row dropped from a list takes only its own signals with it", async () =>
     );
 });
 
+// A refusal is a thing the server has something to say about, and an Effect is
+// how it says it. Reading the body only on 2xx meant a handler could either be
+// honest about the status or be heard, never both, so every rejected action
+// came back as a console line and a page that did not change.
+
+/** Clicks a button that posts, and waits for whatever came back to land. */
+async function posted(window) {
+    const button = window.document.createElement("button");
+    button.setAttribute("data-on-click", "post('/drafts')");
+    window.document.body.append(button);
+
+    button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    // One for the reply to be read off the wire, one for the effects it
+    // scheduled to run.
+    await settled();
+    await settled();
+}
+
+test("an effect is applied whatever the status the server sent it with", async () => {
+    const window = boot(`<p id="slot">before</p>`);
+
+    window.transport.responses.status = 422;
+    window.transport.responses.type = "text/event-stream";
+    window.transport.responses.body =
+        `event: signals\ndata: {"draft":"too short"}\n\n` +
+        `event: patch\ndata: <p id="slot">after</p>\n\n`;
+
+    await posted(window);
+
+    assert.equal(window.exos.signals.draft, "too short", "the validation message landed");
+    assert.equal(window.document.getElementById("slot").textContent, "after");
+});
+
+test("a failure with nothing to apply is announced rather than swallowed", async () => {
+    const window = boot(`<p>x</p>`);
+    const seen = [];
+
+    window.document.addEventListener("exos:error", (ev) => seen.push(ev.detail.status));
+
+    window.transport.responses.status = 500;
+    window.transport.responses.type = "text/plain";
+    window.transport.responses.body = "it broke";
+
+    await posted(window);
+
+    assert.deepEqual(seen, [500]);
+});
+
+// The other half of the rule. HTML on a failure is a document about the
+// failure, so morphing it in would let a 500 eat the page.
+test("html arriving with a failure is left where it is", async () => {
+    const window = boot(`<p id="slot">before</p>`);
+
+    window.transport.responses.status = 500;
+    window.transport.responses.type = "text/html";
+    window.transport.responses.body = `<p id="slot">the server is on fire</p>`;
+
+    await posted(window);
+
+    assert.equal(window.document.getElementById("slot").textContent, "before");
+});
+
 /** One live fragment, as the server renders it: a name and the proof of it. */
 const live = (id = "presence-1") => `<exos-live id="${id}" data-token="token-for-${id}"></exos-live>`;
 

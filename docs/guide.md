@@ -870,6 +870,35 @@ declared and is not where a `signal` handle lives, so model fields are the
 writable ones. Handing this a `signal` handle is a mistake the types cannot
 catch, and a debug build asserts rather than writing a signal nothing reads.
 
+### Refusing with an effect
+
+An effect is applied whatever status it arrives with, so a handler can say no
+and still say what to do about it:
+
+```rust
+#[exos::post("/drafts")]
+async fn save(Model(draft): Model<Draft>) -> Result<Effect, (StatusCode, Effect)> {
+    if draft.title.trim().is_empty() {
+        return Err((
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Effect::set(&Draft::signals().error, String::from("A title is needed."))
+                .focus("#title"),
+        ));
+    }
+
+    /* ... */
+}
+```
+
+Answer with the status the outcome deserves. A refusal that had to be `200` in
+order to be heard is a lie told to every log, proxy and test in front of it.
+
+The rule has one other half worth knowing: **HTML arriving with a failure is
+left where it is.** Markup on an error is a document *about* the error, and
+morphing one in would let a 500 eat the page. So an error carrying an effect is
+applied, an error carrying anything else is announced as `exos:error` and
+logged, and only a success can patch with plain HTML.
+
 ### Why `Page` is still its own type
 
 `Effect::page` exists, but a `Page` returned from a `GET` is a real HTTP

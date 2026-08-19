@@ -46,6 +46,30 @@ Four rules came out of writing it, and each is pinned by a test.
   way a navigation does. Neither a 404 nor an unsteady network should turn a
   hiccup into a lost document.
 
+## A refusal could not be heard
+
+**Done**, in [runtime.js](../../crates/exos/js/runtime.js). The client read a
+response body only when the status was 2xx, so a handler could either be honest
+about a refusal or be heard, never both. Everything a rejected action wanted to
+say, which field was wrong, which signal to put back, where to move the caret,
+is an `Effect` already, and all of it came back as a console line and a page
+that did not change.
+
+An effect is now applied whatever status carries it. Two rules fell out, and the
+second is the one that keeps this from being reckless.
+
+- **Only an effect.** HTML arriving with a failure is a document *about* the
+  failure, so it is left where it is; morphing one in would let a 500 eat the
+  page. A failure carrying neither is announced as `exos:error` and logged,
+  which is what that path already did.
+- **An effect means handled.** A response that says what to do is not also
+  reported as an unhandled error, or every validation failure would be noise in
+  a console somebody is trying to read.
+
+This is the piece the README's form-validation gap was waiting on, and it was
+the whole of the client's half. What is still missing is a way to express rules,
+which is a design rather than a chore.
+
 ## The stream carries all eight steps
 
 **Done.** [runtime.js](../../crates/exos/js/runtime.js) registered listeners for
