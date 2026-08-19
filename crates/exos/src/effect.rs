@@ -37,6 +37,10 @@ use serde_json::{Map, Value};
 
 use crate::{Markup, Placement, Signal};
 
+mod streaming;
+
+pub use crate::effect::streaming::EffectStream;
+
 /// One instruction for the client.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
@@ -226,6 +230,15 @@ impl Effect {
     #[must_use]
     pub fn steps(&self) -> &[Step] {
         &self.steps
+    }
+
+    /// The steps, owned.
+    ///
+    /// What [`EffectStream`](crate::EffectStream) frames, since a step on its
+    /// way to the wire has no reason to be copied first.
+    #[must_use]
+    pub fn into_steps(self) -> Vec<Step> {
+        self.steps
     }
 
     /// The server-sent-event framed body.

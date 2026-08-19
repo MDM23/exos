@@ -859,9 +859,8 @@ async fn archive(Model(selection): Model<Selection>) -> Effect {
 
 Several steps compose with the `and_` methods, and consecutive `set` calls
 become one merge on the wire. The wire format is the same server-sent event
-format the live channel uses, so there is one parser rather than two, the
-action path and the live path are the same code, and a slow handler can stream
-effects as it computes them.
+format the live channel uses, so there is one parser rather than two, and the
+action path and the live path are the same code.
 
 `set` takes a handle, so the name and the type come from wherever the template
 got them and no string has to agree with anything. The client resolves that
@@ -898,6 +897,41 @@ left where it is.** Markup on an error is a document *about* the error, and
 morphing one in would let a 500 eat the page. So an error carrying an effect is
 applied, an error carrying anything else is announced as `exos:error` and
 logged, and only a success can patch with plain HTML.
+
+### Streaming a slow answer
+
+Where a handler cannot finish before it has something worth saying, answer with
+an `EffectStream` and each effect goes out as it is produced:
+
+```rust
+#[exos::post("/reports/build")]
+async fn build() -> EffectStream<ReceiverStream<Effect>> {
+    let (sender, receiver) = tokio::sync::mpsc::channel(8);
+
+    tokio::spawn(async move {
+        for stage in plan {
+            let done = run(stage).await;
+            drop(sender.send(Effect::patch(progress(done))).await);
+        }
+    });
+
+    EffectStream::new(ReceiverStream::new(receiver))
+}
+```
+
+`EffectStream::new` takes any `Stream<Item = Effect>` that is `Unpin`, which a
+channel receiver, a boxed stream and `tokio_stream::iter` all are. The wrapper
+above is `tokio_stream::wrappers::ReceiverStream`, so a crate that streams adds
+`tokio-stream` to its own dependencies; exos does not re-export it, because
+which stream type you want is yours to pick.
+
+Nothing on the client learns about this. The response is the same server-sent
+events a whole `Effect` would be, so it is read frame by frame by the parser
+that was already there, and a browser cannot tell the two apart.
+
+Reach for it when the progress belongs to the caller and to nobody else, which
+is what makes it neither a fragment nor a directed effect: no topic, no
+audience, and it ends when the request does.
 
 ### Why `Page` is still its own type
 

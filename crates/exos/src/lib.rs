@@ -49,7 +49,7 @@ pub use crate::{
     },
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry, app},
-    effect::{Effect, Step},
+    effect::{Effect, EffectStream, Step},
     identity::{Audience, Audiences, Resolution, identify},
     js::{
         IntoJs, IntoPayload, Js, append, attr_now, call, emit, focus_now, quote_js, record, when,

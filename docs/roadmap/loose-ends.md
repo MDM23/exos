@@ -84,6 +84,25 @@ background job are rude, but they are rude in exactly the way an application
 chooses, and a framework that refuses to deliver them is a surprise that shows
 up as silence.
 
+## A slow handler had to finish before it said anything
+
+**Done**, in [streaming.rs](../../crates/exos/src/effect/streaming.rs).
+[effect.rs](../../crates/exos/src/effect.rs) claimed a slow handler could stream
+its steps as it computed them, and the wire format did allow it while nothing in
+the API did: `Effect::into_response` built the whole body first.
+
+`EffectStream` is the missing half, and it is small precisely because the format
+was right. It frames through the same `Sse` the live stream uses rather than
+writing bytes of its own, so the two stay identical by construction rather than
+by two pieces of code agreeing, which is how they drifted the last time. The
+client needed nothing: `consume` already read frames off a response as they
+landed.
+
+It takes a stream of `Effect` rather than of `Step`, because an effect is the
+unit a handler thinks in, and it flattens them so an effect's own steps stay
+together and in order. An empty effect is skipped rather than ending the
+response, since a handler with nothing to say yet is still running.
+
 ## A stale patch could arrive last
 
 **Done**, in [stream.rs](../../crates/exos/src/live/stream.rs). `publish` took a

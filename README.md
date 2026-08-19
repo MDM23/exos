@@ -62,6 +62,11 @@ fragment written for click-to-update also updates from a background job with no
 new machinery. Both directions are server-sent events, which means one parser
 on the client and one code path on the server.
 
+That one format is why the awkward cases need no new machinery either. A handler
+too slow to answer at once streams its effects as it computes them. A handler
+that refuses answers with the status a refusal deserves *and* with what the page
+should do about it, because an effect is applied whatever status carries it.
+
 Templates are **real HTML**. Void elements are void, attributes go where
 attributes go, and a braced block is Rust.
 
