@@ -750,6 +750,10 @@
                 }
                 break;
 
+            case "title":
+                document.title = payload;
+                break;
+
             default:
                 console.warn("[exos] unknown effect step:", step);
         }
@@ -1006,7 +1010,7 @@
         // answering that choice with silence is the worse surprise.
         for (const step of [
             "focus", "navigate", "page", "patch",
-            "reload", "remove", "scroll", "signals",
+            "reload", "remove", "scroll", "signals", "title",
         ]) {
             source.addEventListener(step, (ev) => apply(step, ev.data));
         }

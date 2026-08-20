@@ -1214,6 +1214,7 @@ async fn archive(Model(selection): Model<Selection>) -> Effect {
 | `remove(selector)` | delete matching elements |
 | `navigate(url)` | client-side navigation |
 | `page(markup)` | replace the active page without a second fetch |
+| `title(text)` | retitle the document |
 | `focus(selector)`, `scroll(selector)` | move the user |
 | `reload()`, `none()` | the extremes |
 
@@ -1228,6 +1229,28 @@ name from the document root, which is exactly where a `#[model]` field is
 declared and is not where a `signal` handle lives, so model fields are the
 writable ones. Handing this a `signal` handle is a mistake the types cannot
 catch, and a debug build asserts rather than writing a signal nothing reads.
+
+### Titles
+
+A title is markup like the rest of the document, so it is composed where every
+page already goes through:
+
+```rust
+fn title(page: Option<&str>) -> String {
+    page.map_or_else(|| String::from("MyApp"), |page| format!("{page} - MyApp"))
+}
+```
+
+exos has no opinion about an application's name or the separator in front of it,
+and needs none: navigation fetches the document and takes the title out of it,
+and `Effect::page` does the same with the one it carries.
+
+`Effect::title` is for a title that has to change without a new document, a count
+in it or a heading a patch has just rewritten, because a patch is element over
+element and the head is never morphed. It sets the whole title, so it goes
+through the same function the shell does or the two drift apart. Sent down the
+live stream it lands in every subscribed tab whatever page each is showing, which
+is the rule `focus` and `scroll` carry too.
 
 ### Refusing with an effect
 

@@ -475,10 +475,10 @@ test("the stream carries every step, not only the ones a patch uses", async () =
 
     assert.deepEqual(
         [...stream.handlers.keys()].sort(),
-        // The eight an Effect can be made of, plus the greeting that is not one.
+        // The nine an Effect can be made of, plus the greeting that is not one.
         [
-            "connection", "focus", "navigate", "page",
-            "patch", "reload", "remove", "scroll", "signals",
+            "connection", "focus", "navigate", "page", "patch",
+            "reload", "remove", "scroll", "signals", "title",
         ],
     );
 
@@ -486,6 +486,20 @@ test("the stream carries every step, not only the ones a patch uses", async () =
     await settled();
 
     assert.equal(window.document.activeElement.id, "field", "and an out of band one lands");
+});
+
+// A patch is element over element and the head is never morphed, so the title
+// of a page whose contents changed under it is only ever a step.
+test("a title step retitles a document a patch cannot reach", async () => {
+    const window = boot(`${live()}<p id="count">1</p>`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("patch", `<p id="count">2</p>`);
+    stream.emit("title", "2 waiting - MyApp");
+    await settled();
+
+    assert.equal(window.document.getElementById("count").textContent, "2");
+    assert.equal(window.document.title, "2 waiting - MyApp");
 });
 
 // The gap: EventSource reconnected on its own, the server had forgotten the

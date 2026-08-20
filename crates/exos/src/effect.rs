@@ -66,6 +66,12 @@ pub enum Step {
     Scroll(String),
     /// Merge into the client's signal store.
     Signals(Value),
+    /// Retitle the document.
+    ///
+    /// Navigation and [`Page`](Self::Page) carry a title already, in the
+    /// document they deliver. This is for a title that has to follow a patch,
+    /// since the head is never morphed.
+    Title(String),
 }
 
 impl Step {
@@ -87,6 +93,7 @@ impl Step {
             Self::Remove(selector) => ("remove", selector.clone()),
             Self::Scroll(selector) => ("scroll", selector.clone()),
             Self::Signals(value) => ("signals", value.to_string()),
+            Self::Title(text) => ("title", text.clone()),
         }
     }
 }
@@ -138,6 +145,12 @@ impl Effect {
     #[must_use]
     pub fn page(markup: impl Into<Markup>) -> Self {
         Self::none().and_page(markup)
+    }
+
+    /// Starts by retitling the document.
+    #[must_use]
+    pub fn title(text: impl Into<String>) -> Self {
+        Self::none().and_title(text)
     }
 
     /// Reloads the document.
@@ -212,6 +225,17 @@ impl Effect {
     #[must_use]
     pub fn and_page(self, markup: impl Into<Markup>) -> Self {
         self.push(Step::Page(markup.into()))
+    }
+
+    /// Retitles the document.
+    ///
+    /// The whole title, as the browser is to show it. exos has no opinion
+    /// about an application's name or how a page's title joins it, so this and
+    /// the `<title>` the document was served with are composed the same way
+    /// only because the application composes them in one place.
+    #[must_use]
+    pub fn and_title(self, text: impl Into<String>) -> Self {
+        self.push(Step::Title(text.into()))
     }
 
     /// Moves the keyboard focus.
@@ -437,6 +461,7 @@ mod tests {
             Step::Scroll(String::from("#x")),
             Step::Patch(Markup(String::from("<p id=\"x\">hi</p>"))),
             Step::Signals(serde_json::json!({ "a": 1 })),
+            Step::Title(String::from("Profile - MyApp")),
         ] {
             assert_eq!(
                 Effect::none().push(step.clone()).to_stream(),
