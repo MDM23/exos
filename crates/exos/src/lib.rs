@@ -35,6 +35,7 @@ mod js;
 mod keys;
 mod live;
 mod locale;
+mod message;
 mod model;
 mod render;
 mod response;
@@ -60,6 +61,7 @@ pub use crate::{
     keys::{Keys, keys},
     live::{Fragment, Topic, connected, connection_count, publish, send},
     locale::{Direction, Lang, LocaleSet, PluralCategory, lang, locale},
+    message::{Count, Enumerable},
     model::{Model, ModelFields, ModelRejection, to_wire},
     render::{AttributeValue, Flag, Markup, Render, escape_into},
     response::Page,
@@ -69,7 +71,9 @@ pub use crate::{
 };
 
 #[doc(inline)]
-pub use exos_macro::{asset, delete, get, live, locales, model, patch, post, put, view};
+pub use exos_macro::{
+    Enumerable, asset, delete, get, live, locales, messages, model, patch, post, put, view,
+};
 
 // What keeps `LocaleSet` implementable by `locales!` alone, which has to be
 // able to name it.

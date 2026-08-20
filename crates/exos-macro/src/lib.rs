@@ -6,8 +6,10 @@
 use proc_macro::TokenStream;
 
 mod asset;
+mod enumerable;
 mod live;
 mod locales;
+mod messages;
 mod model;
 mod profile;
 mod route;
@@ -184,11 +186,16 @@ pub fn live(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// - Per locale, a module named after the tag holding a `Plural` enum with
 ///   **exactly the categories CLDR gives that language**, so `de::Plural` has
 ///   `One` and `Other` while `ar::Plural` has six, and a `category` function
-///   mapping a count to one of them.
+///   mapping a count to one of them. Those categories are an
+///   [`Enumerable`](derive@Enumerable) domain like any other a message branches
+///   on.
 /// - An implementation of `exos::LocaleSet`, which is how
 ///   `exos::locale::<Locale>()` answers with a type exos has never seen. It
 ///   delegates to the items above, so nothing has to be imported to ask a
 ///   locale for its tag.
+/// - One hidden alias per locale, keyed by the variant, which is how
+///   [`messages!`](messages) reaches a language's categories from an arm that
+///   names `De` rather than `"de"`.
 ///
 /// Both come from the CLDR table [`exos-cldr`](https://docs.rs/exos-cldr)
 /// vendors as ordinary source, so nothing is fetched or parsed while an
@@ -207,4 +214,96 @@ pub fn live(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro]
 pub fn locales(input: TokenStream) -> TokenStream {
     locales::expand(input.into()).into()
+}
+
+/// Declares text, in every language the application is built in.
+///
+/// ```ignore
+/// exos::messages! {
+///     clear_selection {
+///         De = "Auswahl aufheben",
+///         En = "Clear selection",
+///     }
+///
+///     items_selected(count: Plural) {
+///         De { One } = "{count} Element ausgewählt",
+///         De { _ }   = "{count} Elemente ausgewählt",
+///         En { One } = "{count} item selected",
+///         En { _ }   = "{count} items selected",
+///     }
+/// }
+/// ```
+///
+/// It generates a module `t` beside the block, holding `t::clear_selection()`
+/// and `t::items_selected(count)`. Both read `exos::locale()` and answer with a
+/// `String`, so a message interpolated into a [`view!`](view) is escaped like
+/// any other string, and no part of one is ever parsed as HTML.
+///
+/// Write it wherever the text is used. The macro may be invoked as often as an
+/// application likes, so messages live next to the feature that says them
+/// rather than in one file every branch touches.
+///
+/// # Arms
+///
+/// An arm names a locale as a variant of `crate::Locale`, then one pattern per
+/// parameter. They read like a `match`: in order, first wins, with `_` and `..`
+/// as wildcards. That order carries meaning, so arms are the one list in this
+/// repository that is not kept alphabetical. A bare name is a value rather than
+/// a binding, so `De { One }` is the category and not a catch-all under a
+/// misleading name; write a locale with no braces at all where it says one
+/// thing whatever the parameters are.
+///
+/// A parameter declared as `Plural` is a count. It arrives as any whole number
+/// and is branched on through the categories of the language being rendered,
+/// which are that language's own: `de::Plural` has `One` and `Other` while
+/// `ar::Plural` has six. Any other parameter is interpolated by `{name}`
+/// wherever the translation puts it, as often as it likes or not at all, and
+/// branched on where an arm names one of its values, which asks that its type
+/// derive [`Enumerable`](derive@Enumerable).
+///
+/// # What the compiler checks
+///
+/// A proc macro cannot see another invocation, so "every message covers every
+/// locale" is not a check this macro performs. It does not have to be: the
+/// generated `match` over `crate::Locale` and the `match` over each language's
+/// categories leave the work to rustc.
+///
+/// | what is wrong | what the compiler says |
+/// | --- | --- |
+/// | a locale is missing from a message | non-exhaustive match on `Locale` |
+/// | a category is missing for a locale | non-exhaustive match on `de::Plural` |
+/// | a category does not exist in that language | no variant `de::Plural::Few` |
+/// | a branching enum gained a variant | non-exhaustive match, at every message |
+///
+/// Adding a locale to [`locales!`](locales) therefore breaks every `messages!`
+/// block in the workspace until it is translated, which is the point.
+///
+/// `crate::Locale` is a convention rather than a lookup, and
+/// `exos::messages!(in path::to::Locale { ... })` is the way out of it, for a
+/// locale set that is somewhere else.
+#[proc_macro]
+pub fn messages(input: TokenStream) -> TokenStream {
+    messages::expand(input.into()).into()
+}
+
+/// Marks an enum a message can branch on.
+///
+/// ```ignore
+/// #[derive(Clone, Copy, exos::Enumerable)]
+/// enum Assignee {
+///     Me,
+///     Somebody,
+/// }
+/// ```
+///
+/// Interpolating a value asks nothing of its type beyond `Display`. Branching
+/// on one asks that its values can be listed, since a message picks a string
+/// per value, and that is what this says: `Assignee::ALL` is every value, in
+/// the order they were declared.
+///
+/// A variant carries nothing, because a message would otherwise need a string
+/// for every value of whatever it carried.
+#[proc_macro_derive(Enumerable)]
+pub fn enumerable(item: TokenStream) -> TokenStream {
+    enumerable::expand(item.into()).into()
 }

@@ -1,0 +1,190 @@
+//! Text defined in Rust, in every language an application declares.
+//!
+//! [`messages!`](crate::messages) is the macro, and it writes almost all of
+//! this: a function per message, a `match` over the locale, and inside each of
+//! its arms a `match` over whatever the message branches on. What lives here
+//! are the two domains that generated code is generic over. A count is any
+//! whole number, and [`Count::magnitude`] is what a plural rule asks about. An
+//! [`Enumerable`] domain is what makes an application's own enum legal in an
+//! arm.
+//!
+//! ```
+//! exos::locales! {
+//!     De = "de",
+//!     #[fallback]
+//!     En = "en",
+//! }
+//!
+//! exos::messages! {
+//!     clear_selection {
+//!         De = "Auswahl aufheben",
+//!         En = "Clear selection",
+//!     }
+//!
+//!     items_selected(count: Plural) {
+//!         De { One } = "{count} Element ausgewählt",
+//!         De { _ }   = "{count} Elemente ausgewählt",
+//!         En { One } = "{count} item selected",
+//!         En { _ }   = "{count} items selected",
+//!     }
+//! }
+//!
+//! # fn main() {
+//! exos::with_scope(|| {
+//!     exos::scope().set(Locale::De);
+//!
+//!     assert_eq!(t::clear_selection(), "Auswahl aufheben");
+//!     assert_eq!(t::items_selected(1), "1 Element ausgewählt");
+//!     assert_eq!(t::items_selected(3), "3 Elemente ausgewählt");
+//! });
+//! # }
+//! ```
+
+use core::fmt::Display;
+
+/// What keeps [`Count`] implementable by the numbers listed here.
+mod sealed {
+    /// Named nowhere else, which is the whole of what it does.
+    pub trait Count {}
+}
+
+/// A whole number a message can count.
+///
+/// Every integer type is one, so a call site hands over whatever it already
+/// has: a `usize` from `len()`, an `i32` out of a row, a literal.
+///
+/// ```
+/// # exos::locales! { #[fallback] En = "en" }
+/// # exos::messages! { files(count: Plural) { En { One } = "{count} file", En { _ } = "{count} files" } }
+/// # fn main() { exos::with_scope(|| {
+/// let picked: Vec<u32> = vec![7, 9];
+///
+/// assert_eq!(t::files(picked.len()), "2 files");
+/// assert_eq!(t::files(1), "1 file");
+/// # }); }
+/// ```
+///
+/// It is sealed. What a message needs from a count is fixed by CLDR rather
+/// than by us, and the type is the whole of what decides where a message is
+/// resolved, so it is not somewhere an application should be able to reach.
+pub trait Count: Copy + Display + sealed::Count {
+    /// The count without its sign, which is CLDR's `n`.
+    ///
+    /// A plural rule asks about the absolute value: a language that has a
+    /// singular puts -1 in it just as it puts 1 there. The sign survives
+    /// anyway, because a count that is interpolated into a message is written
+    /// out as it arrived.
+    #[must_use]
+    fn magnitude(self) -> u64;
+}
+
+/// Implements [`Count`] for the whole numbers a count arrives as.
+///
+/// `u128` and `i128` are left out. A count large enough to need one is not a
+/// number of things anybody is pluralising, and the alternative is a
+/// conversion that quietly truncates.
+macro_rules! counts {
+    (unsigned $($number:ty),*) => {
+        $(
+            impl sealed::Count for $number {}
+
+            impl Count for $number {
+                fn magnitude(self) -> u64 {
+                    u64::from(self)
+                }
+            }
+        )*
+    };
+    (signed $($number:ty),*) => {
+        $(
+            impl sealed::Count for $number {}
+
+            impl Count for $number {
+                fn magnitude(self) -> u64 {
+                    u64::from(self.unsigned_abs())
+                }
+            }
+        )*
+    };
+}
+
+counts!(unsigned u8, u16, u32, u64);
+counts!(signed i8, i16, i32, i64);
+
+// The two whose width is the machine's are written out, since neither
+// conversion above holds on every target `u64::from` would have to cover.
+impl sealed::Count for usize {}
+
+impl Count for usize {
+    fn magnitude(self) -> u64 {
+        self as u64
+    }
+}
+
+impl sealed::Count for isize {}
+
+impl Count for isize {
+    fn magnitude(self) -> u64 {
+        self.unsigned_abs() as u64
+    }
+}
+
+/// A domain a message can branch on.
+///
+/// Interpolating a value asks nothing of its type beyond `Display`, but
+/// *branching* on one asks that the values can be listed: a message picks a
+/// string per value, so there has to be a knowable set of them. A fieldless
+/// enum qualifies and derives this:
+///
+/// ```
+/// use exos::Enumerable as _;
+///
+/// #[derive(Clone, Copy, exos::Enumerable)]
+/// enum Assignee {
+///     Me,
+///     Somebody,
+/// }
+///
+/// assert_eq!(Assignee::ALL.len(), 2);
+/// ```
+///
+/// A message never names this trait, since the generated code does. Reading
+/// [`ALL`](Enumerable::ALL) yourself is what asks for the import above.
+///
+/// [`bool`] is one too, so a message branching on a flag needs nothing
+/// declared. Plural categories are another, and `locales!` implements this for
+/// each language's own.
+pub trait Enumerable: Copy + 'static {
+    /// Every value, in the order they were declared.
+    const ALL: &'static [Self];
+}
+
+impl Enumerable for bool {
+    const ALL: &'static [Self] = &[false, true];
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_count_is_asked_for_its_magnitude_because_that_is_what_a_rule_asks() {
+        assert_eq!(3_u8.magnitude(), 3);
+        assert_eq!(3_usize.magnitude(), 3);
+        assert_eq!(u64::MAX.magnitude(), u64::MAX);
+    }
+
+    /// A language with a singular puts -1 in it, so the sign is dropped on the
+    /// way to the rule and kept on the way to the text.
+    #[test]
+    fn a_negative_count_falls_where_its_magnitude_does() {
+        assert_eq!((-1_i32).magnitude(), 1);
+        assert_eq!(i64::MIN.magnitude(), 9_223_372_036_854_775_808);
+        assert_eq!(format!("{}", -1_i32), "-1");
+    }
+
+    #[test]
+    fn a_flag_is_a_domain_without_anything_being_declared() {
+        assert_eq!(bool::ALL, &[false, true]);
+    }
+}

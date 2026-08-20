@@ -2,21 +2,29 @@
 
 Messages defined in Rust, rendered wherever the fact they need is known.
 
-Status: [stage 1](#stage-1-the-locale) is built. `exos::locales!` declares the
-set and generates each language's plural categories, out of the CLDR table
+Status: [stage 1](#stage-1-the-locale) is built, and so is [stage
+2](#stage-2-messages) except for slots. `exos::locales!` declares the set and
+generates each language's plural categories, out of the CLDR table
 [exos-cldr](../../crates/exos-cldr) vendors as ordinary source, and a committed
 fixture holds `cargo test` and `npm test` to the same answers. `exos::locale()`
 resolves a request through the scope, `Accept-Language` and the fallback,
 `exos::lang` puts the answer on the document, and a response that read the
-header says so with `Vary`. Nothing above stage 1 is built, so the only thing
-reading a locale today is the document: there are no messages yet. The shape
-below, one macro with match-like arms and one call site that works on both
-sides, predates exos: it was settled while the framework was still a prototype,
-and lived in a guide draft that was cut when the guide was rewritten against
-code that existed. It is recorded here so it stops being remembered and starts
-being reviewed.
+header says so with `Vary`. `exos::messages!` declares the text: a function per
+message, a `match` per language, and rustc holding every message to every
+locale. The shape below, one macro with match-like arms and one call site that
+works on both sides, predates exos: it was settled while the framework was
+still a prototype, and lived in a guide draft that was cut when the guide was
+rewritten against code that existed.
 
-Stages 1 to 3 and stage 5 wait on nothing. [Sessions and
+Two things stage 2 describes are not built.
+[Slots](#slots-structure-without-half-sentences) are the next change, so a
+message returns `String` today and there is no way to put a link inside a
+sentence. An interpolated number is written the way Rust writes it rather than
+the way the language does, because the [number
+symbols](#where-the-data-comes-from) are still not vendored; that is the other
+half of the same next change.
+
+Stage 3 and stage 5 wait on nothing. [Sessions and
 identity](sessions-and-identity.md) already supplies the one thing they need
 from elsewhere, which is a place for an application to say who a request is,
 and that place is built.
@@ -287,14 +295,37 @@ exos::messages! {
 Generating `t::clear_selection()`, `t::items_selected(count)` and
 `t::assigned(to, count)`, which return `String` and read the locale from the
 request scope. A message with no slots is text, so interpolating one into a
-[`view!`](../guide.md) escapes it like any other string.
+[`view!`](../guide.md) escapes it like any other string. `t` is a module beside
+the block, so a second block in one module is a name collision, which is the
+rule "messages live next to what says them" showing up as a compile error.
 
 Arms read like a `match`: in order, first wins, `_` and `..` as wildcards. That
 order carries meaning, so arms are exempt from the alphabetical rule while the
 messages and the locales around them are not.
 
+An arm names one pattern per parameter, in the order they were declared, and
+that is what decides which parameters are branched on at all: a parameter every
+arm writes `_` for stays out of the `match` and only ever gets interpolated. A
+bare name in an arm is a value of that parameter's domain rather than a
+binding, which is the one place this departs from `match` and does so to close
+the trap `match` has: `De { One }` is the category, and never "call whatever
+this is `One`". A locale written with no braces is the same as `..`.
+
 **The macro is usable more than once**, so messages live next to the feature
 that uses them rather than in one file that every branch touches.
+
+Three things the macro refuses itself, because rustc cannot see them: a
+placeholder naming no parameter, an arm naming a different number of patterns
+than the message takes, and a parameter that no arm branches on and no
+translation puts in. The last is the only one that is a judgement rather than a
+rule. A translation dropping a parameter is ordinary, and German dropping one
+English uses is the example above; a parameter *no* language reads is a value
+the call site is asked for that cannot reach any text.
+
+Everything else is left to the compiler, which means the errors land on the
+message, the locale or the type rather than on the block: a missing locale is
+reported at the message's name, a missing category at the locale in the arm,
+and a domain that cannot be branched on at the type in the signature.
 
 ### Why the checking works across invocations
 
@@ -320,6 +351,15 @@ one most likely to be argued about later.
 convention is what keeps the common case free of a path in every block, and the
 escape hatch exists because the convention breaks for a library crate.
 
+The inner `match` needs a path to the language's categories, and an arm names a
+variant while the module is named after a tag. That mapping is one `messages!`
+cannot see: nothing in an invocation knows that `PtBr` was declared as `pt-BR`.
+So `locales!` writes one hidden alias per locale beside the set, keyed by the
+variant, and `messages!` reaches the categories through that. It is the only
+machinery the two macros share, and it is there because the alternative is
+naming the module after the variant, which would name a language after whatever
+an application felt like calling it.
+
 **Messages belong to an application.** A library cannot know the locale set it
 will be compiled into, and a library that wants translatable text takes it as a
 parameter. That is a limit, stated rather than designed around, because the
@@ -336,15 +376,28 @@ stage 3, what lets the server walk the domain to project it. The rule is
 carried by a trait bound rather than by a check inside the macro, so getting it
 wrong is an ordinary trait error at the call site.
 
-Interpolated numbers are formatted with the locale's symbols, generated from
-the same vendored table. That is the server half of the agreement stage 3 makes
-with `Intl.NumberFormat`.
+A count is any whole number. `exos::Count` is implemented for the integer types
+and for nothing else, so a `len()` and a literal both go in without a cast, and
+what a rule is asked about is the magnitude: -1 is singular wherever 1 is, and
+the text still says -1.
+
+Interpolated numbers will be formatted with the locale's symbols, generated
+from the same vendored table, which is the server half of the agreement stage 3
+makes with `Intl.NumberFormat`. Today they are written the way Rust writes
+them, so a German page says 1000 where it should say 1.000. Those symbols are
+the [one slice](#where-the-data-comes-from) of the table still not vendored,
+and they arrive with the change that vendors them.
 
 An interpolated parameter appears wherever the translation puts it, as many
 times as it likes, or not at all. Word order is the translation's business and
 nothing in the call site knows about it.
 
 ### Slots: structure without half sentences
+
+**Not built.** A message returns `String`, and `{` in a message string opens a
+placeholder that has to name a parameter, so the syntax below is a compile
+error today rather than something half working. `{{` and `}}` are the braces
+themselves, which is the one thing about the string that is not simply text.
 
 A sentence with a link in it cannot be composed from two messages. The link
 lands in a different place in German, and a translator handed `"Please accept
@@ -632,10 +685,20 @@ Beyond that, negotiation is a unit test, and is one:
 what a header resolves to is checked without the macro in the way, and
 [tests/locale.rs](../../crates/exos/tests/locale.rs) asks the same questions of
 a request served by the real thing, which is also what compiles the trait
-`locales!` generates. What is left is that a fragment rendering in two locales
-produces two topics, and the compile errors in stage 2, which are worth a
-`trybuild` case each, since an error message that stops naming the missing
-locale is the kind of regression nothing else catches.
+`locales!` generates.
+
+Messages are the same two halves. What the macro writes is checked against its
+own expansion, in [messages.rs](../../crates/exos-macro/src/messages.rs), and
+what that expansion does is checked by compiling it:
+[tests/messages.rs](../../crates/exos/tests/messages.rs) declares three
+languages, one of them with all six categories, and asks a real request for a
+page in each.
+
+What is left is that a fragment rendering in two locales produces two topics,
+and the compile errors, which are worth a `trybuild` case each. Every one of
+them has been read by hand and says what the table above claims, but an error
+message that stops naming the missing locale is exactly the kind of regression
+nothing else catches, and a hand check does not survive the next rustc.
 
 ## What it costs
 

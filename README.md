@@ -150,14 +150,16 @@ carried a real application yet. Known gaps, roughly in priority order:
   with the status it deserves and an `Effect` saying what to do about it, and
   the client applies effects whatever status carries them. What is missing is
   the way rules are expressed, which is a design rather than a chore.
-- **No messages, though the language of a request is settled.**
-  `exos::locales!` declares an application's languages and generates, per
-  language, exactly the plural categories CLDR gives it, out of a table vendored
-  as source rather than fetched at build time. `exos::locale()` resolves a
-  request through the scope, `Accept-Language` and the fallback, and
-  `exos::lang` puts the answer on the document. What is missing is `messages!`
-  itself, which will project a message's variants for the active locale and let
-  `Intl.PluralRules` pick, so catalogs stay on the server.
+- **A message cannot reach the browser, or hold a link.** `exos::locales!`
+  declares an application's languages and `exos::messages!` declares its text,
+  as ordinary Rust functions whose arms the compiler holds to every language, so
+  a locale nobody translated a message into is a build failure rather than an
+  English string in a German page. Three things are missing. A message whose
+  count comes from client state should cross as its variants and let
+  `Intl.PluralRules` pick, which is what keeps catalogs on the server; a
+  sentence with a link in it needs slots, since no part of a message is ever
+  parsed as HTML; and an interpolated number is still written the way Rust
+  writes it rather than the way the language does.
 - **Expressions are compiled with `new Function`**, which a strict CSP without
   `unsafe-eval` blocks. A precompiled mode is the answer.
 - **Running more than one instance.** The connection registry is a process-local

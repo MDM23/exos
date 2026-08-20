@@ -227,6 +227,15 @@ impl Declaration {
 
             impl ::exos::Sealed for Locale {}
 
+            // How `messages!` reaches a language's categories. An arm names a
+            // variant, the module beside this one is named after a tag, and
+            // nothing in an invocation of that macro can see which tag a
+            // variant was declared with.
+            #[doc(hidden)]
+            pub mod __locales {
+                #(pub use super::#modules as #variants;)*
+            }
+
             #(#languages)*
         })
     }
@@ -415,6 +424,12 @@ impl Declared {
                             #(Plural::#variants => Self::#variants,)*
                         }
                     }
+                }
+
+                // A category is a domain a message branches on like any other,
+                // and this is the list a projection walks.
+                impl ::exos::Enumerable for Plural {
+                    const ALL: &'static [Self] = &[#(Plural::#variants),*];
                 }
 
                 #[doc = #function_docs]

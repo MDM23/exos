@@ -477,9 +477,105 @@ have been answered differently and a cache has to be told. A response you
 decided yourself carries no such claim, since it did not vary by the header,
 and a page rendered for one reader is yours to set a caching policy for.
 
-Messages are not built yet. What exists is the locale, which is the fact
-everything above it needs; where the rest is going is written down in [the
-roadmap](roadmap/localization.md).
+### Messages
+
+Text is Rust, declared wherever it is used:
+
+```rust
+exos::messages! {
+    clear_selection {
+        De = "Auswahl aufheben",
+        En = "Clear selection",
+    }
+
+    items_selected(count: Plural) {
+        De { One } = "{count} Element ausgewählt",
+        De { _ }   = "{count} Elemente ausgewählt",
+        En { One } = "{count} item selected",
+        En { _ }   = "{count} items selected",
+    }
+}
+```
+
+That generates a module `t` beside the block:
+
+```rust
+view! {
+    <button>{ t::clear_selection() }</button>
+    <p>{ t::items_selected(picked.len()) }</p>
+}
+```
+
+Each function reads `exos::locale()` and answers with a `String`, so a message
+interpolated into a template is escaped like every other string. No part of one
+is ever parsed as HTML, which means a translation cannot introduce an element by
+being edited.
+
+Arms read like a `match`: in order, first wins, `_` and `..` as wildcards, and a
+locale written with no braces answers whatever the parameters are. One thing
+does not read like a `match`, on purpose: a bare name is a value rather than a
+binding, so `De { One }` is that category and never "call whatever this is
+`One`".
+
+A `Plural` parameter is a count. It arrives as any whole number, so `len()` and
+a literal both go in without a cast, and the categories you may name are the
+ones that language has: `de::Plural` has `One` and `Other` while `ar::Plural`
+has six. Every other parameter is written into the sentence with `{name}`,
+wherever the translation puts it and as often as it likes:
+
+```rust
+exos::messages! {
+    assigned(to: Assignee, count: Plural) {
+        De { .. }          = "{count} Dateien zugewiesen",
+        En { Me, One }     = "{count} file assigned to you",
+        En { Me, _ }       = "{count} files assigned to you",
+        En { Somebody, _ } = "{count} files assigned to {to}",
+    }
+}
+```
+
+An arm names one pattern per parameter, in the order they were declared. Naming
+a value rather than `_` branches on that parameter, which asks that its type can
+list its values:
+
+```rust
+#[derive(Clone, Copy, exos::Enumerable)]
+enum Assignee {
+    Me,
+    Somebody,
+}
+```
+
+`bool` is such a type already, and a parameter no arm ever names is only
+interpolated, so it can be anything that implements `Display`. The two are
+independent: `{to}` in the arm above writes the assignee into the sentence, so
+that message asks `Assignee` for a `Display` as well as for this.
+
+#### What the compiler holds you to
+
+Nothing is looked up while your application runs, so all of this is a build
+failure instead:
+
+| what you did | what you get |
+| --- | --- |
+| left a locale out of a message | non-exhaustive match on `Locale` |
+| left a category out of a locale | non-exhaustive match on `de::Plural` |
+| named a category that language has not | no variant `de::Plural::Few` |
+| added a language to `locales!` | both of the above, at every message |
+
+The last line is the guarantee and the cost in one sentence: adding a language
+breaks the build until every message is translated, and there is no fallback
+that quietly renders English into a German page.
+
+Write the macro as often as you like, so that messages live next to the feature
+that says them. The module it generates is named `t`, which makes it one block
+per module. Your languages are found at `crate::Locale` by convention; write
+`exos::messages!(in path::to::Locale { ... })` where they are somewhere else.
+
+Two things are not built. A sentence cannot hold a link, and an interpolated
+number is written the way Rust writes it rather than the way the language does.
+Both are the next change, and [the roadmap](roadmap/localization.md) says what
+they will look like, along with what happens when the count is client state.
 
 ## Routes
 
