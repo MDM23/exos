@@ -54,10 +54,10 @@ pub fn asset(input: TokenStream) -> TokenStream {
 
 /// Compiles real HTML into a sequence of string pushes.
 ///
-/// The input is HTML: the tags, attributes and text you would write in a
-/// `.html` file. Void elements are void, so `<br>` and `<link rel="...">` are
-/// written the way HTML writes them rather than the XML-flavoured `<br/>` a
-/// generic tag parser would insist on.
+/// The input is HTML: the tags and attributes you would write in a `.html`
+/// file. Void elements are void, so `<br>` and `<link rel="...">` are written
+/// the way HTML writes them rather than the XML-flavoured `<br/>` a generic
+/// tag parser would insist on.
 ///
 /// The one addition is that a braced block is Rust:
 ///
@@ -68,6 +68,10 @@ pub fn asset(input: TokenStream) -> TokenStream {
 ///     </ul>
 /// }
 /// ```
+///
+/// Text is a string literal: `<p>"Hello"</p>`. Written bare it would arrive
+/// here as Rust tokens with the spacing rearranged, turning `50% off` into
+/// `50 % off`, so bare text is a compile error instead.
 ///
 /// Static parts become string literals in the binary, so nothing is parsed at
 /// runtime. Interpolated values go through `exos::Render` and are escaped;

@@ -11,7 +11,7 @@ use rstml::{
 
 mod signals;
 
-use crate::escape::{collapse_whitespace, escape_attribute, escape_text};
+use crate::escape::{escape_attribute, escape_text};
 
 /// Elements that must not be given a closing tag.
 ///
@@ -71,19 +71,23 @@ fn emit_node<C: rstml::node::CustomNode>(node: &Node<C>, out: &mut TokenStream, 
             push_literal(&if raw { value } else { escape_text(&value) }, out);
         }
 
-        // Unquoted text between tags. Same treatment, but indentation in the
-        // source should not become bytes on the wire.
+        // Unquoted text between tags. Whitespace here is the template's own
+        // indentation and never reaches the wire. Anything else is refused:
+        // outside a raw-text element it has already been through Rust's
+        // tokenizer, which comes back with the spacing rearranged, so
+        // `50% off` would render as `50 % off` and `don't` would not compile
+        // at all.
         Node::RawText(text) => {
-            let text = text.to_string_best();
-
             if raw {
-                push_literal(&text, out);
-                return;
-            }
-
-            let collapsed = collapse_whitespace(&text);
-            if !collapsed.is_empty() {
-                push_literal(&escape_text(&collapsed), out);
+                push_literal(&text.to_string_best(), out);
+            } else if !text.is_empty() {
+                out.extend(
+                    syn::Error::new_spanned(
+                        text,
+                        "text in a view is written as a string literal: `<p>\"Hello\"</p>`",
+                    )
+                    .to_compile_error(),
+                );
             }
         }
 
@@ -225,5 +229,37 @@ fn emit_attribute(key: &NodeName, value: Option<&syn::Expr>, out: &mut TokenStre
 
         // `<input disabled>`.
         None => push_literal(&format!(" {name}"), out),
+    }
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::expect_used,
+    reason = "a failing assertion is the point of a test"
+)]
+mod tests {
+    use super::*;
+
+    fn expand_ok(template: &str) -> String {
+        expand(template.parse().expect("valid template")).to_string()
+    }
+
+    #[test]
+    fn bare_text_is_refused() {
+        assert!(expand_ok("<p>Hello</p>").contains("compile_error"));
+    }
+
+    #[test]
+    fn indentation_around_tags_is_not_text() {
+        let expanded = expand_ok("<ul>\n    <li>\"a\"</li>\n</ul>");
+        assert!(!expanded.contains("compile_error"), "{expanded}");
+    }
+
+    /// Content of a raw-text element is character data, so the rule does not
+    /// reach into it: `<script>` has no string literals to write.
+    #[test]
+    fn script_content_stays_bare() {
+        let expanded = expand_ok("<script>a && b</script>");
+        assert!(!expanded.contains("compile_error"), "{expanded}");
     }
 }

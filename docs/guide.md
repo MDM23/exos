@@ -44,7 +44,10 @@ exos composes into an axum application rather than replacing one.
 ## Templates are HTML
 
 `view!` takes real HTML: the tags and attributes you would write in a `.html`
-file. Void elements are void (`<br>`, not `<br/>`). A braced block is Rust.
+file. Void elements are void (`<br>`, not `<br/>`). A braced block is Rust, and
+text is a string literal (`<p>"Hello"</p>`). Written bare, text would reach the
+macro as Rust tokens with the spacing rearranged, turning `50% off` into
+`50 % off`, so bare text is a compile error instead.
 
 ```rust
 view! {

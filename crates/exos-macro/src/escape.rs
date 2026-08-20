@@ -44,33 +44,6 @@ pub(crate) fn escape_attribute(text: &str) -> String {
     result
 }
 
-/// Collapses runs of whitespace to a single space, the way HTML itself does,
-/// so template indentation does not reach the wire.
-pub(crate) fn collapse_whitespace(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut pending = false;
-
-    for character in text.chars() {
-        if character.is_whitespace() {
-            pending = true;
-            continue;
-        }
-
-        if pending && !result.is_empty() {
-            result.push(' ');
-        }
-
-        pending = false;
-        result.push(character);
-    }
-
-    if pending && !result.is_empty() {
-        result.push(' ');
-    }
-
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,11 +56,5 @@ mod tests {
     #[test]
     fn attribute_escaping_closes_the_quote_hole() {
         assert_eq!(escape_attribute(r#"" onclick=""#), "&quot; onclick=&quot;");
-    }
-
-    #[test]
-    fn indentation_collapses_but_single_spaces_survive() {
-        assert_eq!(collapse_whitespace("\n    one   two\n"), "one two ");
-        assert_eq!(collapse_whitespace("   "), "");
     }
 }
