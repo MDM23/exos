@@ -334,9 +334,9 @@ chores and each has somewhere better to live.
   which cannot be a loose end before the trait it derives exists.
 - **Localization**, in [localization](localization.md), whose first two stages
   are built: the locale set, how a request reaches one, what the document says
-  it was rendered in, and the messages themselves. Slots, locale-formatted
-  numbers and everything that has to reach the browser are the rest of that
-  document rather than loose ends.
+  it was rendered in, and the messages themselves, slots included.
+  Locale-formatted numbers and everything that has to reach the browser are the
+  rest of that document rather than loose ends.
 - **Running more than one instance.** The connection registry is a process-local
   `HashMap`, so a publish reaches only the tabs connected to the instance that
   sent it. Swapping a session store does nothing for it. It needs a bus, and it

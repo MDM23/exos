@@ -3,9 +3,12 @@
 //! Static text is escaped once, by the macro, so the binary holds the finished
 //! bytes and the server does no work per request. Runtime values take the
 //! other path, through [`exos::Render`].
+//!
+//! `view!` is not the only macro with text to escape: a message with a slot in
+//! it renders as markup, so its own words are escaped here too.
 
 /// Escapes into an HTML text context.
-pub(super) fn escape_text(text: &str) -> String {
+pub(crate) fn escape_text(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
 
     for character in text.chars() {
@@ -21,7 +24,11 @@ pub(super) fn escape_text(text: &str) -> String {
 }
 
 /// Escapes into a double-quoted attribute context.
-pub(super) fn escape_attribute(text: &str) -> String {
+///
+/// The four characters `exos::Render` escapes, which is also what a message's
+/// own text takes, so that a sentence renders the same bytes whether or not it
+/// has a slot in it.
+pub(crate) fn escape_attribute(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
 
     for character in text.chars() {
@@ -39,7 +46,7 @@ pub(super) fn escape_attribute(text: &str) -> String {
 
 /// Collapses runs of whitespace to a single space, the way HTML itself does,
 /// so template indentation does not reach the wire.
-pub(super) fn collapse_whitespace(text: &str) -> String {
+pub(crate) fn collapse_whitespace(text: &str) -> String {
     let mut result = String::with_capacity(text.len());
     let mut pending = false;
 

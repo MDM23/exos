@@ -57,8 +57,11 @@ enum Kind {
     /// A count, whose domain is the plural categories of whichever language is
     /// being rendered, and therefore a different type in every arm.
     Plural,
+    /// A wrapper the call site supplies, which the words a translation puts
+    /// between `{terms}` and `{/terms}` are handed to.
+    Slot,
     /// Anything else, as the type was written. Boxed because a type dwarfs the
-    /// variant beside it.
+    /// variants beside it.
     Value(Box<Type>),
 }
 
@@ -144,11 +147,7 @@ impl Parse for Parameter {
 
         Ok(Self {
             name,
-            kind: if is_plural(&declared) {
-                Kind::Plural
-            } else {
-                Kind::Value(Box::new(declared))
-            },
+            kind: Kind::of(declared),
         })
     }
 }
@@ -188,17 +187,29 @@ impl Parse for Arm {
     }
 }
 
-/// Whether a parameter was declared as the count of a plural.
-///
-/// `Plural` is the one type name this macro reads rather than passes through,
-/// because the type it stands for is a different one in every arm: the
-/// categories German has are not the categories Arabic has.
-fn is_plural(declared: &Type) -> bool {
-    let Type::Path(path) = declared else {
-        return false;
-    };
+impl Kind {
+    /// What a parameter declared as `declared` is.
+    ///
+    /// `Plural` and `Slot` are the two type names this macro reads rather than
+    /// passes through. Neither stands for a type a message could name: the
+    /// categories German has are not the categories Arabic has, and a slot is
+    /// whatever closure the call site brings.
+    fn of(declared: Type) -> Self {
+        let named = |name| match &declared {
+            Type::Path(path) => path.qself.is_none() && path.path.is_ident(name),
+            _ => false,
+        };
 
-    path.qself.is_none() && path.path.is_ident("Plural")
+        if named("Plural") {
+            return Self::Plural;
+        }
+
+        if named("Slot") {
+            return Self::Slot;
+        }
+
+        Self::Value(Box::new(declared))
+    }
 }
 
 impl Declaration {
@@ -246,18 +257,35 @@ impl Message {
 
     /// The function this message becomes.
     fn emit(&self, locale: &Path, aliases: &Path) -> syn::Result<TokenStream> {
+        self.check_no_parameter_is_named_after_a_slot()?;
         self.check_every_arm_covers_the_parameters()?;
 
         let templates = self.templates()?;
         let branched = self.branched();
 
+        self.check_nothing_branches_on_a_slot(&branched)?;
+        self.check_every_slot_is_wrapped_around_something(&templates)?;
         self.check_every_parameter_is_read(&templates, &branched)?;
+
+        // A sentence with a slot in it is markup, and one without is text that
+        // whatever renders it escapes. It is the message rather than the arm
+        // that decides, since a function has one return type and a language
+        // that needs no emphasis is still the same message.
+        let markup = templates
+            .iter()
+            .any(|template| !template.wrapped().is_empty());
+
+        let answer = if markup {
+            quote! { ::exos::Markup }
+        } else {
+            quote! { ::std::string::String }
+        };
 
         let name = &self.name;
         let docs = self.documentation();
         let inputs = self.parameters.iter().map(Parameter::input);
         let assertions = self.assertions(&branched);
-        let arms = self.locales(locale, aliases, &templates, &branched)?;
+        let arms = self.locales(locale, aliases, &templates, &branched, markup)?;
 
         // The match carries the message's own span, so that a locale nothing
         // translated this into is reported at the message rather than at
@@ -273,7 +301,7 @@ impl Message {
 
             #(#docs)*
             #[must_use]
-            pub fn #name(#(#inputs),*) -> ::std::string::String {
+            pub fn #name(#(#inputs),*) -> #answer {
                 #resolved
             }
         })
@@ -282,10 +310,17 @@ impl Message {
     /// Each arm's text, with every placeholder checked against the parameter
     /// list.
     fn templates(&self) -> syn::Result<Vec<Template>> {
+        let slots: Vec<&Ident> = self
+            .parameters
+            .iter()
+            .filter(|parameter| matches!(parameter.kind, Kind::Slot))
+            .map(|parameter| &parameter.name)
+            .collect();
+
         let mut templates = Vec::with_capacity(self.arms.len());
 
         for arm in &self.arms {
-            let template = Template::parse(&arm.text)?;
+            let template = Template::parse(&arm.text, &slots)?;
 
             for name in template.interpolated() {
                 if !self
@@ -359,6 +394,94 @@ impl Message {
         branched
     }
 
+    /// Refuses a parameter named after a slot every message already has.
+    ///
+    /// `{b}` and `{i}` are emphasis, and a parameter of that name would take
+    /// them away from the one message that could most want them.
+    fn check_no_parameter_is_named_after_a_slot(&self) -> syn::Result<()> {
+        for parameter in &self.parameters {
+            if text::builtin(&parameter.name).is_some() {
+                return Err(syn::Error::new(
+                    parameter.name.span(),
+                    format!(
+                        "`{}` is the built-in slot for emphasis, which every message has; give \
+                         the parameter another name",
+                        parameter.name
+                    ),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Refuses an arm that tries to tell values of a slot apart.
+    ///
+    /// A slot is a wrapper rather than a value. There is nothing to compare it
+    /// against, and a language that wants different words inside the wrapper
+    /// writes different words inside the wrapper.
+    fn check_nothing_branches_on_a_slot(&self, branched: &[bool]) -> syn::Result<()> {
+        for (parameter, branched) in self.parameters.iter().zip(branched) {
+            if *branched && matches!(parameter.kind, Kind::Slot) {
+                return Err(syn::Error::new(
+                    parameter.name.span(),
+                    format!(
+                        "`{}` is a slot, which is a wrapper rather than a value, so no arm can \
+                         tell one from another; write `_` for it",
+                        parameter.name
+                    ),
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Refuses a translation that drops a slot, or uses one twice.
+    ///
+    /// The call site supplies one wrapper per slot, so a translation that
+    /// leaves the link out fails the build rather than shipping a sentence
+    /// nobody can click, and one that opens it twice would need a second
+    /// wrapper to be supplied.
+    fn check_every_slot_is_wrapped_around_something(
+        &self,
+        templates: &[Template],
+    ) -> syn::Result<()> {
+        let slots = self
+            .parameters
+            .iter()
+            .filter(|parameter| matches!(parameter.kind, Kind::Slot));
+
+        for parameter in slots {
+            for (arm, template) in self.arms.iter().zip(templates) {
+                let wrapped = template
+                    .wrapped()
+                    .iter()
+                    .filter(|name| **name == &parameter.name)
+                    .count();
+
+                let complaint = match wrapped {
+                    1 => continue,
+                    0 => format!(
+                        "this translation says nothing between `{{{name}}}` and `{{/{name}}}`, \
+                         and a slot is what keeps a sentence whole, so every language wraps \
+                         something in it",
+                        name = parameter.name
+                    ),
+                    used => format!(
+                        "`{}` is opened {used} times here, and the call site supplies one \
+                         wrapper, so a slot wraps one thing",
+                        parameter.name
+                    ),
+                };
+
+                return Err(syn::Error::new(arm.text.span(), complaint));
+            }
+        }
+
+        Ok(())
+    }
+
     /// Refuses a parameter nothing reads.
     ///
     /// Not a translation that leaves one out, which is ordinary: German says
@@ -371,15 +494,17 @@ impl Message {
         branched: &[bool],
     ) -> syn::Result<()> {
         for (index, parameter) in self.parameters.iter().enumerate() {
-            let interpolated = templates
-                .iter()
-                .any(|template| template.interpolated().contains(&&parameter.name));
+            let read = templates.iter().any(|template| {
+                template.interpolated().contains(&&parameter.name)
+                    || template.wrapped().contains(&&parameter.name)
+            });
 
-            if !branched[index] && !interpolated {
+            if !branched[index] && !read {
                 return Err(syn::Error::new(
                     parameter.name.span(),
                     format!(
-                        "nothing reads `{}`: no arm branches on it and no translation puts it in",
+                        "nothing reads `{}`: no arm branches on it and no translation puts it in \
+                         or wraps anything in it",
                         parameter.name
                     ),
                 ));
@@ -400,7 +525,16 @@ impl Message {
         aliases: &Path,
         templates: &[Template],
         branched: &[bool],
+        markup: bool,
     ) -> syn::Result<Vec<TokenStream>> {
+        let text = |template: &Template| {
+            if markup {
+                template.markup()
+            } else {
+                template.string()
+            }
+        };
+
         let mut grouped: Vec<(&Ident, Vec<usize>)> = Vec::new();
 
         for (index, arm) in self.arms.iter().enumerate() {
@@ -430,7 +564,7 @@ impl Message {
                     ));
                 }
 
-                let text = templates[arms[0]].emit();
+                let text = text(&templates[arms[0]]);
                 emitted.push(quote! { #locale::#variant => #text, });
 
                 continue;
@@ -443,7 +577,7 @@ impl Message {
                 .map(|index| {
                     let patterns = self.patterns(*index, variant, aliases, branched)?;
                     let pattern = tuple(&patterns, variant.span());
-                    let text = templates[*index].emit();
+                    let text = text(&templates[*index]);
 
                     Ok(quote_spanned! { variant.span() => #pattern => #text, })
                 })
@@ -482,8 +616,10 @@ impl Message {
                         #aliases::#variant::category(::exos::Count::magnitude(#name))
                     },
                     // By reference, so that a parameter which is matched can
-                    // still be interpolated, whatever it is.
-                    Kind::Value(_) => quote_spanned! { variant.span() => &#name },
+                    // still be interpolated, whatever it is. A slot never
+                    // reaches this, having been refused as something to
+                    // branch on above.
+                    Kind::Slot | Kind::Value(_) => quote_spanned! { variant.span() => &#name },
                 }
             })
             .collect()
@@ -511,6 +647,9 @@ impl Message {
                 let domain = match &parameter.kind {
                     Kind::Plural => quote! { #aliases::#variant::Plural },
                     Kind::Value(declared) => declared.to_token_stream(),
+                    // A slot has no values to name, which is refused above, so
+                    // there is nothing here to qualify a name with.
+                    Kind::Slot => TokenStream::new(),
                 };
 
                 qualify(&patterns[index], &domain)
@@ -602,6 +741,12 @@ impl Parameter {
 
         match &self.kind {
             Kind::Plural => quote! { #name: impl ::exos::Count },
+            // The wrapper, which is handed the words the translation put
+            // inside it and answers with them wrapped. Once, because that is
+            // how often a slot is written.
+            Kind::Slot => quote! {
+                #name: impl ::core::ops::FnOnce(::exos::Markup) -> ::exos::Markup
+            },
             Kind::Value(declared) => quote! { #name: #declared },
         }
     }
@@ -844,5 +989,101 @@ mod tests {
 
         assert!(expanded.contains("compile_error"));
         assert!(expanded.contains("already answered"));
+    }
+
+    // ---- slots --------------------------------------------------------------
+
+    /// A wrapper in and markup out, which is what lets the href, the classes
+    /// and the routing stay in Rust while the words stay in the sentence.
+    #[test]
+    fn a_slot_arrives_as_a_wrapper_and_the_message_answers_with_markup() {
+        let expanded = expand_ok(
+            r#"accept(terms: Slot) {
+                En = "Please accept the {terms}terms{/terms}.",
+            }"#,
+        );
+
+        assert!(
+            expanded.contains(
+                "terms : impl :: core :: ops :: FnOnce (:: exos :: Markup) -> :: exos :: Markup"
+            ),
+            "{expanded}"
+        );
+        assert!(expanded.contains("-> :: exos :: Markup"), "{expanded}");
+    }
+
+    /// One return type per function, so a language that needs no emphasis
+    /// answers with markup all the same.
+    #[test]
+    fn a_slot_in_one_language_makes_every_language_markup() {
+        let expanded = expand_ok(r#"greeting { De = "Hallo", En = "{b}Hello{/b}", }"#);
+
+        assert!(expanded.contains("-> :: exos :: Markup"));
+        assert!(
+            expanded.contains(
+                r#"crate :: Locale :: De => :: exos :: Markup (:: std :: string :: String :: from ("Hallo"))"#
+            ),
+            "{expanded}"
+        );
+    }
+
+    #[test]
+    fn a_message_without_a_slot_is_still_a_string() {
+        let expanded = expand_ok(r#"clear { En = "Clear", }"#);
+
+        assert!(expanded.contains("-> :: std :: string :: String"));
+        assert!(!expanded.contains("Markup"));
+    }
+
+    /// A translation that drops the link ships a sentence nobody can click, so
+    /// it fails the build instead.
+    #[test]
+    fn a_translation_that_leaves_a_slot_out_is_refused() {
+        let expanded = expand_ok(
+            r#"accept(terms: Slot) {
+                De = "Bitte akzeptieren.",
+                En = "Please accept the {terms}terms{/terms}.",
+            }"#,
+        );
+
+        assert!(expanded.contains("compile_error"));
+        assert!(expanded.contains("says nothing between"), "{expanded}");
+    }
+
+    #[test]
+    fn a_translation_that_opens_a_slot_twice_is_refused() {
+        let expanded = expand_ok(
+            r#"accept(terms: Slot) {
+                En = "{terms}these{/terms} and {terms}those{/terms}",
+            }"#,
+        );
+
+        assert!(expanded.contains("compile_error"));
+        assert!(expanded.contains("opened 2 times"), "{expanded}");
+    }
+
+    #[test]
+    fn nothing_branches_on_a_slot() {
+        let expanded = expand_ok(
+            r#"accept(terms: Slot) {
+                En { Something } = "{terms}terms{/terms}",
+            }"#,
+        );
+
+        assert!(expanded.contains("compile_error"));
+        assert!(
+            expanded.contains("wrapper rather than a value"),
+            "{expanded}"
+        );
+    }
+
+    /// Emphasis is available in every message, so a parameter cannot take the
+    /// name away from one.
+    #[test]
+    fn a_parameter_named_after_a_built_in_slot_is_refused() {
+        let expanded = expand_ok(r#"row(b: u32) { En = "{b}", }"#);
+
+        assert!(expanded.contains("compile_error"));
+        assert!(expanded.contains("built-in slot"), "{expanded}");
     }
 }

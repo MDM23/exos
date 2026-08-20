@@ -63,7 +63,7 @@ pub use crate::{
     locale::{Direction, Lang, LocaleSet, PluralCategory, lang, locale},
     message::{Count, Enumerable},
     model::{Model, ModelFields, ModelRejection, to_wire},
-    render::{AttributeValue, Flag, Markup, Render, escape_into},
+    render::{AttributeValue, Flag, Markup, Render, escape_display_into, escape_into},
     response::Page,
     scope::{Scope, detached, scope, with_scope},
     session::{Id, Session, session},

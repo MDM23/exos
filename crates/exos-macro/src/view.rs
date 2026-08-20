@@ -9,10 +9,9 @@ use rstml::{
     node::{Node, NodeAttribute, NodeElement, NodeName},
 };
 
-mod escape;
 mod signals;
 
-use self::escape::{collapse_whitespace, escape_attribute, escape_text};
+use crate::escape::{collapse_whitespace, escape_attribute, escape_text};
 
 /// Elements that must not be given a closing tag.
 ///

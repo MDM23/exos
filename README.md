@@ -150,16 +150,16 @@ carried a real application yet. Known gaps, roughly in priority order:
   with the status it deserves and an `Effect` saying what to do about it, and
   the client applies effects whatever status carries them. What is missing is
   the way rules are expressed, which is a design rather than a chore.
-- **A message cannot reach the browser, or hold a link.** `exos::locales!`
-  declares an application's languages and `exos::messages!` declares its text,
-  as ordinary Rust functions whose arms the compiler holds to every language, so
-  a locale nobody translated a message into is a build failure rather than an
-  English string in a German page. Three things are missing. A message whose
-  count comes from client state should cross as its variants and let
-  `Intl.PluralRules` pick, which is what keeps catalogs on the server; a
-  sentence with a link in it needs slots, since no part of a message is ever
-  parsed as HTML; and an interpolated number is still written the way Rust
-  writes it rather than the way the language does.
+- **A message cannot reach the browser.** `exos::locales!` declares an
+  application's languages and `exos::messages!` declares its text, as ordinary
+  Rust functions whose arms the compiler holds to every language, so a locale
+  nobody translated a message into is a build failure rather than an English
+  string in a German page. A sentence with a link in it is one message, because
+  a slot keeps it whole while the href stays in Rust. Two things are missing. A
+  message whose count comes from client state should cross as its variants and
+  let `Intl.PluralRules` pick, which is what keeps catalogs on the server, and
+  an interpolated number is still written the way Rust writes it rather than
+  the way the language does.
 - **Expressions are compiled with `new Function`**, which a strict CSP without
   `unsafe-eval` blocks. A precompiled mode is the answer.
 - **Running more than one instance.** The connection registry is a process-local

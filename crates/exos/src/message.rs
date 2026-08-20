@@ -27,6 +27,11 @@
 //!         En { One } = "{count} item selected",
 //!         En { _ }   = "{count} items selected",
 //!     }
+//!
+//!     accept_terms(terms: Slot) {
+//!         De = "Bitte die {terms}Nutzungsbedingungen{/terms} annehmen.",
+//!         En = "Please accept the {terms}terms of service{/terms}.",
+//!     }
 //! }
 //!
 //! # fn main() {
@@ -36,9 +41,31 @@
 //!     assert_eq!(t::clear_selection(), "Auswahl aufheben");
 //!     assert_eq!(t::items_selected(1), "1 Element ausgewählt");
 //!     assert_eq!(t::items_selected(3), "3 Elemente ausgewählt");
+//!
+//!     let accepted = t::accept_terms(|inner| exos::view! {
+//!         <a href="/terms">{ inner }</a>
+//!     });
+//!
+//!     assert_eq!(
+//!         accepted.as_str(),
+//!         "Bitte die <a href=\"/terms\">Nutzungsbedingungen</a> annehmen.",
+//!     );
 //! });
 //! # }
 //! ```
+//!
+//! # Slots
+//!
+//! A sentence with a link in it cannot be composed from two messages: the link
+//! lands somewhere else in the next language, and a translator handed half a
+//! sentence has been handed something they cannot check. A slot keeps the
+//! sentence whole, including the words inside the link, and asks the call site
+//! only for the wrapper, which is an `FnOnce(Markup) -> Markup`.
+//!
+//! A message with a slot in it answers with [`Markup`](crate::Markup) rather
+//! than a `String`. Its own words are escaped while this crate compiles and an
+//! interpolated value is escaped where it is written, so the only structure a
+//! translation can carry is a slot that was declared in Rust.
 
 use core::fmt::Display;
 

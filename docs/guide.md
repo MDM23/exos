@@ -551,6 +551,49 @@ interpolated, so it can be anything that implements `Display`. The two are
 independent: `{to}` in the arm above writes the assignee into the sentence, so
 that message asks `Assignee` for a `Display` as well as for this.
 
+#### Slots: a sentence with a link in it
+
+Do not build one out of two messages. The link lands somewhere else in the next
+language, and a translator handed `"Please accept the "` and `" before
+continuing"` has been handed two things that are not sentences and cannot be
+checked. Declare a slot instead:
+
+```rust
+exos::messages! {
+    accept_terms(terms: Slot) {
+        De = "Bitte die {terms}Nutzungsbedingungen{/terms} annehmen.",
+        En = "Please accept the {terms}terms of service{/terms}.",
+    }
+}
+```
+
+```rust
+t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> })
+```
+
+A slot is a wrapper, `FnOnce(Markup) -> Markup`, so the href, the classes and
+the routing stay in Rust while the words, including the ones inside the link,
+stay in the sentence. `{b}` and `{i}` are the same mechanism with the wrapper
+already written, `<strong>` and `<em>`, because emphasis falls on different
+words in different languages and there is nothing there for you to decide:
+
+```rust
+exos::messages! {
+    unread(count: Plural) {
+        En { One } = "You have {b}{count} unread{/b} message",
+        En { _ }   = "You have {b}{count} unread{/b} messages",
+    }
+}
+```
+
+A message with a slot answers with `Markup` rather than a `String`, so
+interpolating it into a template writes the elements you wrapped its words in.
+Its own words are still escaped, while your crate compiles: no part of a
+message string is ever parsed as HTML, and the only structure a translation can
+carry is a slot you declared. Every declared slot wraps something in every
+language, so a translation that drops the link fails the build rather than
+shipping a sentence nobody can click.
+
 #### What the compiler holds you to
 
 Nothing is looked up while your application runs, so all of this is a build
@@ -561,7 +604,8 @@ failure instead:
 | left a locale out of a message | non-exhaustive match on `Locale` |
 | left a category out of a locale | non-exhaustive match on `de::Plural` |
 | named a category that language has not | no variant `de::Plural::Few` |
-| added a language to `locales!` | both of the above, at every message |
+| dropped a slot from one translation | the arm that dropped it, named |
+| added a language to `locales!` | both of the first two, at every message |
 
 The last line is the guarantee and the cost in one sentence: adding a language
 breaks the build until every message is translated, and there is no fallback
@@ -572,10 +616,11 @@ that says them. The module it generates is named `t`, which makes it one block
 per module. Your languages are found at `crate::Locale` by convention; write
 `exos::messages!(in path::to::Locale { ... })` where they are somewhere else.
 
-Two things are not built. A sentence cannot hold a link, and an interpolated
-number is written the way Rust writes it rather than the way the language does.
-Both are the next change, and [the roadmap](roadmap/localization.md) says what
-they will look like, along with what happens when the count is client state.
+One thing is not built: an interpolated number is written the way Rust writes
+it rather than the way the language does, so a German page says 1000 where it
+should say 1.000. That is the next change, and [the
+roadmap](roadmap/localization.md) also says what happens when the count is
+client state rather than something the server knows.
 
 ## Routes
 

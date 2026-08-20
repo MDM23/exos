@@ -7,6 +7,7 @@ use proc_macro::TokenStream;
 
 mod asset;
 mod enumerable;
+mod escape;
 mod live;
 mod locales;
 mod messages;
@@ -260,6 +261,37 @@ pub fn locales(input: TokenStream) -> TokenStream {
 /// wherever the translation puts it, as often as it likes or not at all, and
 /// branched on where an arm names one of its values, which asks that its type
 /// derive [`Enumerable`](derive@Enumerable).
+///
+/// # Slots
+///
+/// A sentence with a link in it is one message rather than three, because the
+/// link lands somewhere else in the next language. A parameter declared as
+/// `Slot` is a wrapper, `FnOnce(Markup) -> Markup`, and the translation says
+/// which words go inside it:
+///
+/// ```ignore
+/// exos::messages! {
+///     accept_terms(terms: Slot) {
+///         De = "Bitte die {terms}Nutzungsbedingungen{/terms} annehmen.",
+///         En = "Please accept the {terms}terms of service{/terms}.",
+///     }
+/// }
+///
+/// t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> })
+/// ```
+///
+/// So the href, the classes and the routing stay in Rust while the words stay
+/// in the sentence. `{b}` and `{i}` are the same mechanism with the wrapper
+/// already written, as `<strong>` and `<em>`, since emphasis falls on
+/// different words in different languages and there is nothing there for a
+/// call site to decide.
+///
+/// A message with a slot in it answers with `exos::Markup` instead of a
+/// `String`. Its own words are escaped while your crate compiles, so no part
+/// of a message string is ever parsed as HTML and a translation cannot
+/// introduce an element by being edited. Three more things are checked here:
+/// slots are balanced, every declared slot wraps something in every arm, and
+/// nothing branches on a slot, which is a wrapper rather than a value.
 ///
 /// # What the compiler checks
 ///

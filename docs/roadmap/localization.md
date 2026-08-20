@@ -2,27 +2,24 @@
 
 Messages defined in Rust, rendered wherever the fact they need is known.
 
-Status: [stage 1](#stage-1-the-locale) is built, and so is [stage
-2](#stage-2-messages) except for slots. `exos::locales!` declares the set and
+Status: [stage 1](#stage-1-the-locale) and [stage 2](#stage-2-messages) are
+built. `exos::locales!` declares the set and
 generates each language's plural categories, out of the CLDR table
 [exos-cldr](../../crates/exos-cldr) vendors as ordinary source, and a committed
 fixture holds `cargo test` and `npm test` to the same answers. `exos::locale()`
 resolves a request through the scope, `Accept-Language` and the fallback,
 `exos::lang` puts the answer on the document, and a response that read the
 header says so with `Vary`. `exos::messages!` declares the text: a function per
-message, a `match` per language, and rustc holding every message to every
-locale. The shape below, one macro with match-like arms and one call site that
-works on both sides, predates exos: it was settled while the framework was
-still a prototype, and lived in a guide draft that was cut when the guide was
-rewritten against code that existed.
+message, a `match` per language, slots for the sentences with a link in them,
+and rustc holding every message to every locale. The shape below, one macro
+with match-like arms and one call site that works on both sides, predates exos:
+it was settled while the framework was still a prototype, and lived in a guide
+draft that was cut when the guide was rewritten against code that existed.
 
-Two things stage 2 describes are not built.
-[Slots](#slots-structure-without-half-sentences) are the next change, so a
-message returns `String` today and there is no way to put a link inside a
-sentence. An interpolated number is written the way Rust writes it rather than
-the way the language does, because the [number
-symbols](#where-the-data-comes-from) are still not vendored; that is the other
-half of the same next change.
+One thing stage 2 describes is not built. An interpolated number is written the
+way Rust writes it rather than the way the language does, because the [number
+symbols](#where-the-data-comes-from) are still not vendored, and that is the
+next change.
 
 Stage 3 and stage 5 wait on nothing. [Sessions and
 identity](sessions-and-identity.md) already supplies the one thing they need
@@ -394,11 +391,6 @@ nothing in the call site knows about it.
 
 ### Slots: structure without half sentences
 
-**Not built.** A message returns `String`, and `{` in a message string opens a
-placeholder that has to name a parameter, so the syntax below is a compile
-error today rather than something half working. `{{` and `}}` are the braces
-themselves, which is the one thing about the string that is not simply text.
-
 A sentence with a link in it cannot be composed from two messages. The link
 lands in a different place in German, and a translator handed `"Please accept
 the "` and `" before continuing"` has been handed two things that are not
@@ -427,9 +419,17 @@ t::accept_terms(|inner| view! { <a href="/terms">{inner}</a> })
 
 A `Slot` parameter is a wrapper, `FnOnce(Markup) -> Markup`, so the href, the
 classes and the routing stay in Rust while the words stay in the sentence.
-`{b}` and `{i}` are the same mechanism with a built-in wrapper, since emphasis
-falls on different words in different languages and there is nothing for a call
-site to decide about it.
+`{b}` and `{i}` are the same mechanism with a built-in wrapper, `<strong>` and
+`<em>`, since emphasis falls on different words in different languages and
+there is nothing for a call site to decide about it. Those two are the whole
+list, and a parameter cannot be named after either, because a name that takes
+emphasis away from the message it is declared in is worse than a rename.
+
+Whether a name opens a slot or writes a value in is decided by the declaration
+rather than by the string, so `{terms}` wraps where `terms: Slot` and
+interpolates where it is anything else. Slots nest, and `{{` and `}}` are the
+braces themselves, which is the one thing about a message string that is not
+simply text.
 
 **The escaping rule is not weakened, which is the point.** The macro splits the
 string at compile time into literal text and slot boundaries, and the generated
@@ -437,14 +437,25 @@ code writes escaped text and calls the wrapper. Nothing from a message string
 is ever parsed as HTML, so the only structure a translation can express is a
 slot that was declared in Rust.
 
+An interpolated value is escaped as what it displays as, rather than through
+[`Render`](../../crates/exos/src/render.rs), which asks a parameter for nothing
+it did not already have to be: adding emphasis to a sentence cannot change what
+its parameters are, and a value that carries markup goes in as the characters
+it is made of rather than as the elements they spell.
+
 Three more compile-time checks follow: slots are balanced, every declared slot
-is used exactly once in every arm, and no arm names a slot that was not
-declared. A translation that drops the link fails the build rather than
-shipping a sentence nobody can click.
+is used exactly once in every arm, and nothing branches on a slot, which is a
+wrapper rather than a value and has nothing to tell apart. A translation that
+drops the link fails the build rather than shipping a sentence nobody can
+click. An arm naming a slot nobody declared is caught by the first of the
+three, since an undeclared name is a placeholder and the `{/…}` after it closes
+nothing.
 
 A message with a slot returns `Markup` rather than `String`, and interpolates
 through the one unescaped path in
-[render.rs](../../crates/exos/src/render.rs).
+[render.rs](../../crates/exos/src/render.rs). It is the message that decides
+rather than the arm, because a function has one return type, so a language
+whose translation needs no emphasis still answers with markup.
 
 ## Stage 3: projecting a message
 
@@ -692,7 +703,9 @@ own expansion, in [messages.rs](../../crates/exos-macro/src/messages.rs), and
 what that expansion does is checked by compiling it:
 [tests/messages.rs](../../crates/exos/tests/messages.rs) declares three
 languages, one of them with all six categories, and asks a real request for a
-page in each.
+page in each. What a slot is worth checking for is that its bytes are right,
+so a sentence goes in with a link, an ampersand and a `<` in it, and what
+comes out is asserted whole.
 
 What is left is that a fragment rendering in two locales produces two topics,
 and the compile errors, which are worth a `trybuild` case each. Every one of
@@ -729,10 +742,6 @@ nothing else catches, and a hand check does not survive the next rustc.
   reads well at the call site (`locale.items_selected(3)`) and costs an import;
   a second free function (`t::items_selected_in(locale, 3)`) costs a name. The
   choice is not obvious and does not block stages 1 to 3.
-- **What the built-in slots are and what they render.** `{b}` and `{i}` as
-  `<strong>` and `<em>` is the obvious pair, and the argument against a longer
-  list is that every entry is a decision about semantics made on a
-  translator's behalf.
 - **Whether a slot can project later.** It needs the runtime to interleave text
   parts with cloned nodes rather than write a string, which is a real piece of
   machinery and worth building only if a projected sentence with a link turns

@@ -88,6 +88,41 @@ exos::messages! {
         De = "Hallo {name} & willkommen",
         En = "Hello {name} & welcome",
     }
+
+    /// A sentence with a link in it, which cannot be composed from two
+    /// messages: the link lands in a different place in each language, and
+    /// German puts a slot inside a slot to make the words bold as well.
+    accept_terms(terms: Slot) {
+        Ar = "يرجى قبول {terms}شروط الخدمة{/terms}",
+        De = "Bitte die {terms}{b}Nutzungsbedingungen{/b}{/terms} lesen & annehmen.",
+        En = "Please accept the {terms}terms of service{/terms}.",
+    }
+
+    /// Emphasis falls on different words in different languages, so there is
+    /// nothing here for a call site to decide and nothing to declare.
+    unread(count: Plural) {
+        Ar { .. } = "الرسائل غير المقروءة: {b}{count}{/b}",
+        De { One } = "Sie haben {b}{count} ungelesene{/b} Nachricht",
+        De { _ }   = "Sie haben {b}{count} ungelesene{/b} Nachrichten",
+        En { One } = "You have {b}{count} unread{/b} message",
+        En { _ }   = "You have {b}{count} unread{/b} messages",
+    }
+
+    /// The words a translation puts in a slot are escaped like all the others,
+    /// so a translator cannot introduce an element by editing one.
+    dismiss(link: Slot) {
+        Ar = "{link}<إغلاق>{/link}",
+        De = "{link}<schließen>{/link}",
+        En = "{link}<close>{/link}",
+    }
+
+    /// No slot, so a string, and the ampersand is escaped by whatever renders
+    /// it rather than by the macro.
+    save_and_close {
+        Ar = "حفظ وإغلاق",
+        De = "Speichern & schließen",
+        En = "Save & close",
+    }
 }
 
 /// The macro is usable more than once, so messages live next to the feature
@@ -115,8 +150,10 @@ async fn page() -> Page {
         <html { exos::lang(locale) }>
             <body>
                 <button>{ t::clear_selection() }</button>
+                <button>{ t::save_and_close() }</button>
                 <p>{ t::items_selected(3) }</p>
                 <p>{ t::greeting("Ada") }</p>
+                <p>{ t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> }) }</p>
             </body>
         </html>
     })
@@ -272,6 +309,59 @@ fn a_languages_categories_are_a_domain_like_any_other() {
     assert_eq!(ar::Plural::ALL.len(), 6);
 }
 
+/// The href, the classes and the routing stay in Rust; the words, including
+/// the ones inside the link, stay in the sentence.
+#[test]
+fn a_slot_keeps_the_sentence_whole_and_the_wrapper_at_the_call_site() {
+    let linked = || t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> });
+
+    assert_eq!(
+        spoken(Locale::En, linked).as_str(),
+        "Please accept the <a href=\"/terms\">terms of service</a>."
+    );
+}
+
+/// German wraps bold words in the link and puts the whole thing somewhere
+/// else, which is the reason a sentence is one message rather than three.
+#[test]
+fn a_slot_holds_whatever_the_language_puts_in_it() {
+    let linked = || t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> });
+
+    assert_eq!(
+        spoken(Locale::De, linked).as_str(),
+        "Bitte die <a href=\"/terms\"><strong>Nutzungsbedingungen</strong></a> lesen \
+         &amp; annehmen."
+    );
+}
+
+#[test]
+fn emphasis_is_a_slot_with_nothing_to_declare() {
+    assert_eq!(
+        spoken(Locale::En, || t::unread(1)).as_str(),
+        "You have <strong>1 unread</strong> message"
+    );
+    assert_eq!(
+        spoken(Locale::En, || t::unread(4)).as_str(),
+        "You have <strong>4 unread</strong> messages"
+    );
+}
+
+/// No part of a message string is ever parsed as HTML, so the only structure a
+/// translation can carry is a slot that was declared in Rust.
+#[test]
+fn the_words_inside_a_slot_are_escaped_like_all_the_others() {
+    let wrapped = || t::dismiss(|inner| view! { <b>{ inner }</b> });
+
+    assert_eq!(spoken(Locale::En, wrapped).as_str(), "<b>&lt;close&gt;</b>");
+}
+
+/// A message without a slot is text, and text is escaped once, by whatever
+/// renders it.
+#[test]
+fn a_message_without_a_slot_carries_its_words_as_they_were_written() {
+    assert_eq!(spoken(Locale::En, t::save_and_close), "Save & close");
+}
+
 #[tokio::test]
 async fn a_request_is_answered_in_the_language_it_asked_for() {
     let html = body("/messages/page", "de-CH, en;q=0.8").await;
@@ -287,4 +377,17 @@ async fn a_message_in_a_template_is_escaped_like_any_other_text() {
     let html = body("/messages/page", "en").await;
 
     assert!(html.contains("<p>Hello Ada &amp; welcome</p>"), "{html}");
+    assert!(html.contains("<button>Save &amp; close</button>"), "{html}");
+}
+
+/// One with a slot is markup, and reaches the document as the elements the
+/// call site wrapped its words in.
+#[tokio::test]
+async fn a_message_with_a_slot_reaches_the_document_as_markup() {
+    let html = body("/messages/page", "en").await;
+
+    assert!(
+        html.contains("<p>Please accept the <a href=\"/terms\">terms of service</a>.</p>"),
+        "{html}"
+    );
 }

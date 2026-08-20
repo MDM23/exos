@@ -122,6 +122,25 @@ pub fn escape_into(text: &str, out: &mut String) {
     }
 }
 
+/// Writes what `value` displays as, escaped the same way.
+///
+/// What a message's parameters take. A message is text, so a value goes in as
+/// the characters it is made of rather than as the elements those characters
+/// spell, and that holds for [`Markup`] as much as for a `&str`: the only
+/// structure a translation can carry is a slot that was declared in Rust.
+///
+/// ```
+/// # use exos::escape_display_into;
+/// let mut out = String::new();
+/// escape_display_into(&"<script>", &mut out);
+/// assert_eq!(out, "&lt;script&gt;");
+/// ```
+pub fn escape_display_into(value: &impl Display, out: &mut String) {
+    // Writing into a String is infallible, so the result carries no
+    // information worth propagating.
+    let _ = write!(Escaping(out), "{value}");
+}
+
 impl Render for Markup {
     /// The one unescaped implementation in the crate.
     fn render_to(&self, out: &mut String) {
@@ -232,6 +251,18 @@ always_present!(
     Markup, String, bool, char, f32, f64, i8, i16, i32, i64, isize, str, u8, u16, u32, u64, usize
 );
 
+/// A [`Display`] target that escapes on the way through, so a value is written
+/// once rather than formatted and then scanned.
+struct Escaping<'out>(&'out mut String);
+
+impl fmt::Write for Escaping<'_> {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        escape_into(text, self.0);
+
+        Ok(())
+    }
+}
+
 // -----------------------------------------------------------------------------
 //                                     FLAG
 // -----------------------------------------------------------------------------
@@ -312,5 +343,19 @@ mod tests {
     fn collections_render_each_item_in_order() {
         let items = vec!["a", "b", "c"];
         assert_eq!(items.render().as_str(), "abc");
+    }
+
+    /// What a message's parameters take. Markup goes in as the characters it
+    /// is made of, because a message is text and the only structure it can
+    /// carry is a slot that was declared in Rust.
+    #[test]
+    fn a_displayed_value_is_escaped_whatever_it_is() {
+        let mut out = String::new();
+        escape_display_into(&Markup(String::from("<b>bold</b>")), &mut out);
+        assert_eq!(out, "&lt;b&gt;bold&lt;/b&gt;");
+
+        let mut out = String::new();
+        escape_display_into(&-3_i32, &mut out);
+        assert_eq!(out, "-3");
     }
 }
