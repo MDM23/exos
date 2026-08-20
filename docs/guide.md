@@ -747,6 +747,35 @@ Said explicitly it wins and discovery never runs. It goes before anything is
 served, and a second one panics, whether the first was another call or a request
 that had already answered the question.
 
+### Redirecting
+
+A route answers with whatever is a response, so a page that is sometimes not one
+widens its return type:
+
+```rust
+#[exos::get("/inbox")]
+async fn inbox() -> Result<Page, Redirect> {
+    let Some(id) = exos::session().id() else {
+        return Err(Redirect::to(&sign_in::url()));
+    };
+
+    /* ... */
+}
+```
+
+`Redirect` is axum's. Its target is a URL the application writes, which makes it
+the last row of the table above: build it from the route's own `url()` and it
+carries the prefix, write `/sign-in` and it does not.
+
+The client needs to know nothing. Navigation is a fetch for the document, so the
+browser follows the redirect on its own, and what goes into history is the URL
+it landed on rather than the one asked for.
+
+**An action redirects with an effect instead.** A `303` answering a `post` is
+followed by the same fetch that sent it, and the document that comes back is
+handed to a patch, which morphs whatever ids it matches and appends the rest.
+`Effect::navigate(sign_in::url())` says the same thing to the client that asked.
+
 ## Client state: signals
 
 A signal is a piece of state in the browser, declared once in Rust:

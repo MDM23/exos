@@ -18,6 +18,10 @@ use crate::Markup;
 /// no-store document is ineligible for the back/forward cache, and keeping
 /// history restorable is worth more than refusing to store a page that must be
 /// revalidated anyway.
+///
+/// A route that sometimes answers with something else says so in its return
+/// type. `Result<Page, `[`Redirect`](axum::response::Redirect)`>` is a page
+/// that may send the browser elsewhere instead.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Page(pub Markup);
 
