@@ -30,7 +30,7 @@ futures-core = { version = "0.3", default-features = false }
 getrandom = { version = "0.3", default-features = false }
 hmac = { version = "0.12", default-features = false }
 inventory = { version = "0.3", default-features = false }
-lightningcss = { version = "1.0.0-alpha.69", default-features = false, features = ["bundler"] }
+lightningcss = { version = "1.0.0-alpha.69", default-features = false, features = ["bundler", "visitor"] }
 minifier = { version = "0.4", default-features = false }
 proc-macro2 = { version = "1", default-features = false }
 quote = { version = "1", default-features = false }

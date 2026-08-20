@@ -1,0 +1,4 @@
+.panel {
+  background: url(../images/dot.svg);
+  mask-image: url(sprite.svg#pin);
+}

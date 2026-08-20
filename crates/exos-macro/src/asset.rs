@@ -84,24 +84,36 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let file = &built.file;
     let url = quote! { ::exos::asset_url(#file) };
 
-    // A repeat reference needs the URL and nothing else: the bytes and the
+    // A stylesheet brings whatever its `url()`s named, and each of those is a
+    // file in its own right that some other call site may already have
+    // embedded. A repeat needs the URL and nothing else: the bytes and the
     // registration are already in this crate.
-    if !claim(&built.file) {
+    let assets: Vec<TokenStream> = core::iter::once(&built)
+        .chain(&built.referenced)
+        .filter(|asset| claim(&asset.file))
+        .map(|asset| {
+            let name = &asset.name;
+            let file = &asset.file;
+            let content_type = &asset.content_type;
+            let bytes = Literal::byte_string(&asset.bytes);
+
+            quote! { ::exos::Asset::new(#name, #file, #content_type, #bytes) }
+        })
+        .collect();
+
+    if assets.is_empty() {
         return url;
     }
 
     // Rebuild tracking. Cargo's `rerun-if-changed` belongs to build scripts,
     // but rustc records the files it includes, and cargo reads that. Every
-    // file the bundler actually opened is listed, so editing an `@import`ed
-    // stylesheet rebuilds and editing an unrelated file does not.
+    // file that went into the asset is listed, so editing an `@import`ed
+    // stylesheet or an image it names rebuilds, and editing an unrelated file
+    // does not.
     let sources = built
         .sources
         .iter()
         .map(|source| LitStr::new(&source.display().to_string(), Span::call_site()));
-
-    let name = &built.name;
-    let content_type = &built.content_type;
-    let bytes = Literal::byte_string(&built.bytes);
 
     // Detection reads rustc's command line, so if a future cargo changes how
     // it spells these flags, this fails loudly here instead of quietly
@@ -122,12 +134,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
             #checked
 
             ::exos::inventory::submit! {
-                ::exos::AssetSetEntry::new(::exos::AssetSet(&[::exos::Asset::new(
-                    #name,
-                    #file,
-                    #content_type,
-                    #bytes,
-                )]))
+                ::exos::AssetSetEntry::new(::exos::AssetSet(&[#(#assets),*]))
             }
 
             #url

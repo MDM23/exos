@@ -36,6 +36,14 @@ mod view;
 /// anything else is embedded byte for byte. Release builds minify and debug
 /// builds do not.
 ///
+/// A stylesheet's `url()`s are assets in their own right. Each is resolved
+/// against the stylesheet that wrote it, embedded, and rewritten to the hashed
+/// name it is served under, so a background image needs no call of its own.
+/// What this crate cannot reach is left as written: another host, a `data:`
+/// URI, a path from the server root. One inside a custom property is refused,
+/// because a browser resolves that one against the page the `var()` is used on
+/// and no URL is right on every route.
+///
 /// The extension also picks the `Content-Type`. For one the web has no name
 /// for, say so:
 ///

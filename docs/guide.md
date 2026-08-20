@@ -124,6 +124,51 @@ exos::asset!("data/blob.xyz", "application/octet-stream")
 Referencing the same file from several places is free. It is embedded and
 registered once, and every call site gets the same URL back.
 
+### What a stylesheet points at
+
+A `url()` in a stylesheet is an asset too, and is treated as one:
+
+```css
+/* css/app.css */
+body {
+  background: url(../img/paper.avif);
+}
+```
+
+The path is relative to the stylesheet that wrote it, not to the entry point,
+so an `@import`ed file can be moved without rewriting the URLs inside it. The
+file is embedded and hashed like any other asset, and the URL is rewritten to
+the hashed name. Nothing has to be declared anywhere else, and a file that is
+not there is a compile error rather than a broken background.
+
+The rewritten URL is relative, which is what makes it work under a
+[prefix](#serving-under-a-prefix): assets share one directory, so the browser
+resolves it against the stylesheet's own URL. A query or a fragment belongs to
+the URL rather than to the file, so `url(sprite.svg#pin)` keeps pointing at the
+icon it picks out. Anything the crate root cannot reach is left alone: another
+host, a `data:` URI, a path from the server root, and `url(#filter)` pointing
+into the document.
+
+One place this does not reach is inside a custom property:
+
+```css
+:root {
+  --splash: url(../img/paper.avif); /* refused */
+}
+```
+
+A browser keeps a custom property as tokens and resolves the URL where the
+`var()` is used, against **the page** rather than against the stylesheet. A page
+is any route, so there is no URL that is right everywhere, and no rewriting
+fixes it. It is a compile error rather than an image that loads on `/` and
+404s on `/files/3`. Put the `url()` in the rule that uses the variable:
+
+```css
+.hero {
+  background-image: url(../img/paper.avif);
+}
+```
+
 Release builds minify and debug builds do not, which the macro works out from
 the profile it is being compiled under. Minifying during development buys a
 slower edit cycle and unreadable stack traces.

@@ -1,0 +1,8 @@
+/* The refusal is about the last declaration. The two above it are the near
+   misses, and they come first so that mistaking either one for it would name
+   the wrong property. */
+:root {
+  --mask: url(/served/elsewhere.svg);
+  -webkit-nonsense: url(images/dot.svg);
+  --dot: url(images/dot.svg);
+}

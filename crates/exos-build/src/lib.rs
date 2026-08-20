@@ -2,9 +2,10 @@
 //!
 //! This is not a build script helper. The macro calls it while the crate is
 //! being compiled, once per asset, and embeds what comes back. Bundling a
-//! stylesheet resolves its `@import`s, bundling a script resolves its
-//! `import`s, everything else is embedded verbatim, and all of it is
-//! content-hashed so a URL changes exactly when its bytes do.
+//! stylesheet resolves its `@import`s and builds whatever its `url()`s name,
+//! bundling a script resolves its `import`s, everything else is embedded
+//! verbatim, and all of it is content-hashed so a URL changes exactly when its
+//! bytes do.
 //!
 //! ```no_run
 //! # fn main() -> Result<(), exos_build::Error> {
@@ -57,6 +58,35 @@ pub enum Error {
         path: PathBuf,
         /// What lightningcss reported.
         message: String,
+    },
+
+    /// A `url()` in a stylesheet names a file that could not be built.
+    #[error("cannot embed {url} referenced by {path}")]
+    Reference {
+        /// The stylesheet the URL was written in.
+        path: PathBuf,
+        /// The URL as it was written.
+        url: String,
+        /// What was wrong with the file it names.
+        #[source]
+        source: Box<Self>,
+    },
+
+    /// A relative `url()` inside a custom property, which no rewriting can fix.
+    #[error(
+        "cannot embed {url} in custom property {property} of {path}: a browser \
+         resolves a url() inside a custom property against the page the var() \
+         is used on rather than against the stylesheet, so no URL written here \
+         is right on every route. Put the url() in the rule that uses the \
+         variable, or write an absolute URL and serve the file yourself"
+    )]
+    CustomProperty {
+        /// The stylesheet the declaration is in.
+        path: PathBuf,
+        /// The property, such as `--splash`.
+        property: String,
+        /// The URL as it was written.
+        url: String,
     },
 
     /// A script could not be bundled or minified.
@@ -114,6 +144,12 @@ pub struct Built {
     /// Changing any of them changes this asset, so the caller has to treat all
     /// of them as inputs.
     pub sources: Vec<PathBuf>,
+    /// The assets this one refers to, built the same way and already flat.
+    ///
+    /// A stylesheet's `url()`s, and nothing else so far. Their URLs are written
+    /// into this asset, so they have to be served alongside it or it points at
+    /// nothing.
+    pub referenced: Vec<Self>,
 }
 
 /// Processes one asset, choosing the pipeline from the file extension.
@@ -122,11 +158,16 @@ pub struct Built {
 /// embedded byte for byte. Pass `content_type` to override what the extension
 /// implies, which is also how an unrecognised extension is handled.
 ///
+/// A stylesheet's `url()`s are built too and come back in
+/// [`referenced`](Built::referenced), with the URLs in the CSS rewritten to
+/// point at them. They are part of the asset and have to be served with it.
+///
 /// # Errors
 ///
 /// Returns [`Error::Io`] when a file cannot be read, [`Error::Css`] or
-/// [`Error::Javascript`] when one fails to parse, and [`Error::UnknownType`]
-/// when the extension is unknown and no content type was given.
+/// [`Error::Javascript`] when one fails to parse, [`Error::Reference`] when a
+/// `url()` names a file that cannot be built, and [`Error::UnknownType`] when
+/// the extension is unknown and no content type was given.
 pub fn build(path: &Path, content_type: Option<&str>, mode: Mode) -> Result<Built> {
     let extension = path
         .extension()
@@ -134,9 +175,12 @@ pub fn build(path: &Path, content_type: Option<&str>, mode: Mode) -> Result<Buil
         .to_string_lossy()
         .to_lowercase();
 
+    let mut referenced = Vec::new();
+
     let (bytes, sources) = match media::pipeline(&extension) {
         media::Pipeline::Css => {
-            let bundled = css::bundle(path, mode.minify())?;
+            let bundled = css::bundle(path, mode)?;
+            referenced = bundled.assets;
             (bundled.code.into_bytes(), bundled.sources)
         }
         media::Pipeline::Javascript => {
@@ -167,6 +211,7 @@ pub fn build(path: &Path, content_type: Option<&str>, mode: Mode) -> Result<Buil
         content_type,
         bytes,
         sources,
+        referenced,
     })
 }
 

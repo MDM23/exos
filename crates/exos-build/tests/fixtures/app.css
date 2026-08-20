@@ -1,0 +1,7 @@
+@import "theme/panel.css";
+
+body {
+  background: url(images/dot.svg) repeat;
+  cursor: url("images/dot.svg?v=2"), auto;
+  list-style-image: url(https://example.com/dot.svg);
+}
