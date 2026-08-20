@@ -1,10 +1,11 @@
 //! The slice of CLDR [exos](https://docs.rs/exos) vendors.
 //!
-//! Cardinal plural rules and writing direction, for every locale CLDR has
-//! rules for, as ordinary Rust rather than as data parsed at build time or at
-//! run time. [`exos_macro`](https://docs.rs/exos-macro) reads it while
-//! `locales!` expands and writes the rules of the declared locales into the
-//! application; nothing here ends up in a binary.
+//! Cardinal plural rules, writing direction and the symbols a whole number is
+//! written with, for every locale CLDR has rules for, as ordinary Rust rather
+//! than as data parsed at build time or at run time.
+//! [`exos_macro`](https://docs.rs/exos-macro) reads it while `locales!` expands
+//! and writes what the declared locales need into the application; nothing here
+//! ends up in a binary.
 //!
 //! ```
 //! # use exos_cldr::{Category, Direction, Entry};
@@ -13,6 +14,7 @@
 //!
 //! assert_eq!(entry.tag, "de");
 //! assert_eq!(entry.direction_of("de-AT"), Direction::LeftToRight);
+//! assert_eq!(entry.symbols.group, ".");
 //! assert_eq!(entry.rules.last().map(|rule| rule.category), Some(Category::Other));
 //! # Ok(())
 //! # }
@@ -39,6 +41,6 @@ mod entry;
 mod table;
 
 pub use crate::{
-    entry::{Category, Direction, Entry, Rule, Test},
+    entry::{Category, Direction, Entry, Rule, Symbols, Test},
     table::{LOCALES, VERSION},
 };

@@ -25,7 +25,7 @@
 // that reads it needs the macro, and the macro needs exos.
 
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,17 @@ const COUNTS = [
 const CATEGORIES = ["zero", "one", "two", "few", "many", "other"];
 
 /**
+ * The numbers the fixture pins, chosen to sit on the edges of grouping.
+ *
+ * 999 and 1000 straddle the first separator, 1000 and 12345 straddle the
+ * languages that want two digits before one appears, 1234567 is where an Indic
+ * pattern stops matching a Western one, and the negatives are there because a
+ * minus sign is a symbol like any other and three languages write it with a
+ * character nobody would guess.
+ */
+const NUMBERS = [0, 1, -1, 12, 999, 1000, -1000, 12345, 1234567, 12345678, 1234567890];
+
+/**
  * The tag the generated declaration marks as the fallback.
  *
  * `locales!` insists on one, and nothing the fixture checks depends on which,
@@ -77,6 +88,13 @@ function cldr(path) {
 }
 
 const version = require("cldr-core/package.json").version;
+const numbersVersion = require("cldr-numbers-full/package.json").version;
+
+// Two packages, one release. A table built from a rule in one and a separator
+// in another is a table nobody could reason about afterwards.
+if (version !== numbersVersion) {
+    throw new Error(`cldr-core is ${version} and cldr-numbers-full is ${numbersVersion}`);
+}
 const cardinals = cldr("supplemental/plurals.json").supplemental["plurals-type-cardinal"];
 const likely = cldr("supplemental/likelySubtags.json").supplemental.likelySubtags;
 const scripts = cldr("scriptMetadata.json").scriptMetadata;
@@ -308,6 +326,113 @@ function categoryOf(collapsed, count) {
 }
 
 // -----------------------------------------------------------------------------
+//                                NUMBER SYMBOLS
+// -----------------------------------------------------------------------------
+
+// What it takes to write a whole number: the digits of whichever numbering
+// system the locale uses by default, the separator between groups, how big a
+// group is, how many digits there have to be before the first separator
+// appears, and the minus sign. The decimal separator and the percent sign are
+// not here, because a count is a whole number and a column nothing reads is a
+// column nothing checks.
+
+const numberingSystems = cldr("supplemental/numberingSystems.json").supplemental.numberingSystems;
+const languageAlias = cldr("supplemental/aliases.json").supplemental.metadata.alias.languageAlias;
+const NUMBERS_MAIN = join(dirname(require.resolve("cldr-numbers-full/package.json")), "main");
+
+/**
+ * The locale CLDR keeps `tag`'s numbers under, or `und` where it keeps none.
+ *
+ * A tag is tried whole, then as whatever CLDR replaced it with, then with a
+ * subtag dropped, which is how `sh` reaches Serbian in Latin script and `jw`
+ * reaches Javanese. Four of the tags with plural rules end at the root, and
+ * they are the reason this answers rather than refusing.
+ */
+function numbersUnder(tag) {
+    let candidate = tag;
+
+    for (;;) {
+        if (existsSync(join(NUMBERS_MAIN, candidate, "numbers.json"))) {
+            return candidate;
+        }
+
+        const replacement = languageAlias[candidate.replaceAll("-", "_")]?._replacement;
+
+        if (replacement !== undefined) {
+            return numbersUnder(replacement.replaceAll("_", "-"));
+        }
+
+        const shorter = candidate.lastIndexOf("-");
+
+        if (shorter < 0) {
+            return "und";
+        }
+
+        candidate = candidate.slice(0, shorter);
+    }
+}
+
+/** How `tag` writes a whole number. */
+function symbols(tag) {
+    const under = numbersUnder(tag);
+    const path = join(NUMBERS_MAIN, under, "numbers.json");
+    const numbers = JSON.parse(readFileSync(path, "utf8")).main[under].numbers;
+
+    const system = numbers.defaultNumberingSystem;
+    const declared = numberingSystems[system];
+
+    if (declared === undefined || declared._type !== "numeric") {
+        throw new Error(`${tag} counts in ${system}, which is not ten digits`);
+    }
+
+    const digits = [...declared._digits];
+
+    if (digits.length !== 10) {
+        throw new Error(`${system} has ${digits.length} digits`);
+    }
+
+    // The pattern says how wide a group is: `#,##0.###` groups by three, and
+    // the Indic `#,##,##0.###` groups the first three and then by two.
+    const integer = numbers[`decimalFormats-numberSystem-${system}`].standard.split(".")[0];
+    const groups = integer.split(",");
+    const grouping = groups.length > 1 ? groups.at(-1).length : 0;
+    const secondary = groups.length > 2 ? groups.at(-2).length : grouping;
+
+    return {
+        under,
+        digits,
+        group: numbers[`symbols-numberSystem-${system}`].group,
+        minus: numbers[`symbols-numberSystem-${system}`].minusSign,
+        grouping,
+        secondary,
+        minimum: Number(numbers.minimumGroupingDigits ?? 1),
+    };
+}
+
+/** `value` as `symbols` writes it, which is what the fixture pins. */
+function written(symbols, value) {
+    const digits = [...String(Math.abs(value))].map((digit) => symbols.digits[Number(digit)]);
+    const sign = value < 0 ? symbols.minus : "";
+
+    // Grouping waits until there are enough digits before the separator, which
+    // is why Polish writes 1000 and then 12 345.
+    if (symbols.grouping === 0 || digits.length <= symbols.grouping + symbols.minimum - 1) {
+        return sign + digits.join("");
+    }
+
+    let cut = digits.length - symbols.grouping;
+    const grouped = [digits.slice(cut).join("")];
+
+    while (cut > 0) {
+        const start = Math.max(0, cut - symbols.secondary);
+        grouped.unshift(digits.slice(start, cut).join(""));
+        cut = start;
+    }
+
+    return sign + grouped.join(symbols.group);
+}
+
+// -----------------------------------------------------------------------------
 //                                  THE OUTPUT
 // -----------------------------------------------------------------------------
 
@@ -320,7 +445,12 @@ const tags = Object.keys(cardinals)
     .filter((tag) => tag !== "und")
     .sort();
 
-const table = tags.map((tag) => ({ tag, direction: direction(tag), rules: rules(tag) }));
+const table = tags.map((tag) => ({
+    tag,
+    direction: direction(tag),
+    symbols: symbols(tag),
+    rules: rules(tag),
+}));
 
 const upper = (word) => word[0].toUpperCase() + word.slice(1);
 const variant = (tag) => tag.split("-").map(upper).join("");
@@ -338,9 +468,15 @@ function testSource({ modulus, negated, ranges }) {
     ].join(" ");
 }
 
+function symbolsSource({ digits, group, minus, grouping, secondary, minimum }) {
+    return `Symbols { digits: ${string(digits.join(""))}, group: ${string(group)}, \
+minus: ${string(minus)}, grouping: ${grouping}, secondary_grouping: ${secondary}, \
+minimum_grouping_digits: ${minimum} }`;
+}
+
 function tableSource() {
-    const entries = table.map(({ tag, direction, rules }) => {
-        const written = rules.map(({ category, samples, clauses }) => {
+    const entries = table.map(({ tag, direction, symbols, rules }) => {
+        const emitted = rules.map(({ category, samples, clauses }) => {
             const condition = clauses
                 .map((clause) => `&[${clause.map(testSource).join(", ")}]`)
                 .join(", ");
@@ -350,13 +486,14 @@ samples: ${string(samples)}, condition: &[${condition}] }`;
         });
 
         return `Entry { tag: ${string(tag)}, direction: Direction::${direction}, \
-rules: &[${written.join(", ")}] }`;
+symbols: ${symbolsSource(symbols)}, rules: &[${emitted.join(", ")}] }`;
     });
 
     return `//! The table itself.
 //!
 //! Generated by \`generate.mjs\`, beside this crate's manifest, from cldr-core
-//! ${version}. Edit that, not this, and commit what it writes.
+//! and cldr-numbers-full ${version}. Edit that, not this, and commit what it
+//! writes.
 //!
 //! Every condition here has already been collapsed for whole-number counts: the
 //! operands that describe a fraction are zero, so the relations over them are
@@ -364,7 +501,7 @@ rules: &[${written.join(", ")}] }`;
 //! is why most languages arrive with one or two comparisons, and why the five
 //! whose "many" only ever applies to a decimal do not carry it at all.
 
-use crate::entry::{Category, Direction, Entry, Rule, Test};
+use crate::entry::{Category, Direction, Entry, Rule, Symbols, Test};
 
 /// What CLDR release the table below was generated from.
 pub const VERSION: &str = ${string(version)};
@@ -406,24 +543,34 @@ ${declared.join("\n")}
 }
 
 function fixture() {
-    const categories = {};
-
-    for (const { tag, rules } of table) {
-        categories[tag] = COUNTS.map((count) => categoryOf(rules, count)).join(" ");
-    }
-
     // Written by hand rather than through JSON.stringify's indentation, so that
     // one locale is one line and a CLDR bump that moves one language shows up
     // as one line of diff.
-    const lines = Object.entries(categories).map(
-        ([tag, row]) => `    ${string(tag)}: ${string(row)}`
-    );
+    const categories = table.map(({ tag, rules }) => {
+        const row = COUNTS.map((count) => categoryOf(rules, count)).join(" ");
+        return `    ${string(tag)}: ${string(row)}`;
+    });
+
+    // Only the languages CLDR gives numbers of their own. The four that end at
+    // the root are left out rather than pinned to it: the table writes them the
+    // way the root writes them, which is a fallback rather than a claim about
+    // the language, and ICU has data for one of them that we do not.
+    const numbers = table
+        .filter(({ symbols }) => symbols.under !== "und")
+        .map(({ tag, symbols }) => {
+            const row = NUMBERS.map((value) => string(written(symbols, value)));
+            return `    ${string(tag)}: [${row.join(", ")}]`;
+        });
 
     return `{
   "cldr": ${string(version)},
   "counts": [${COUNTS.join(", ")}],
   "categories": {
-${lines.join(",\n")}
+${categories.join(",\n")}
+  },
+  "numbers": [${NUMBERS.join(", ")}],
+  "written": {
+${numbers.join(",\n")}
   }
 }
 `;
@@ -445,10 +592,16 @@ write("crates/exos/tests/cldr/locales.rs", declarationSource());
 // formatter the repository already uses, so the committed file is what `cargo
 // fmt --check` expects and nothing here has an opinion about layout.
 try {
-    const written = join(ROOT, "crates/exos-cldr/src/table.rs");
-    execFileSync("rustfmt", ["--edition", "2024", written], { stdio: "inherit" });
+    const emitted = join(ROOT, "crates/exos-cldr/src/table.rs");
+    execFileSync("rustfmt", ["--edition", "2024", emitted], { stdio: "inherit" });
 } catch (cause) {
     throw new Error("rustfmt has to be on the path; run this inside `nix develop`", { cause });
 }
 
-console.log(`${table.length} locales from cldr-core ${version}, ${COUNTS.length} counts each`);
+const rooted = table.filter(({ symbols }) => symbols.under === "und").map(({ tag }) => tag);
+
+console.log(
+    `${table.length} locales from CLDR ${version}, ${COUNTS.length} counts and ` +
+        `${NUMBERS.length} numbers each`
+);
+console.log(`${rooted.length} of them count in the root's numbers: ${rooted.join(", ")}`);

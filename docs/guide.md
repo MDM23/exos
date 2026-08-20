@@ -520,8 +520,10 @@ binding, so `De { One }` is that category and never "call whatever this is
 A `Plural` parameter is a count. It arrives as any whole number, so `len()` and
 a literal both go in without a cast, and the categories you may name are the
 ones that language has: `de::Plural` has `One` and `Other` while `ar::Plural`
-has six. Every other parameter is written into the sentence with `{name}`,
-wherever the translation puts it and as often as it likes:
+has six. It is also written the way that language writes a number, so German
+says 1.234 where English says 1,234 and Hindi says 12,34,567. Every other
+parameter is written into the sentence with `{name}`, wherever the translation
+puts it and as often as it likes:
 
 ```rust
 exos::messages! {
@@ -616,11 +618,19 @@ that says them. The module it generates is named `t`, which makes it one block
 per module. Your languages are found at `crate::Locale` by convention; write
 `exos::messages!(in path::to::Locale { ... })` where they are somewhere else.
 
-One thing is not built: an interpolated number is written the way Rust writes
-it rather than the way the language does, so a German page says 1000 where it
-should say 1.000. That is the next change, and [the
-roadmap](roadmap/localization.md) also says what happens when the count is
-client state rather than something the server knows.
+A count is the one number a message knows is a number. Anything else you
+interpolate is written the way it displays, so format it yourself, with
+`Locale::number` where a plain whole number is what you want:
+
+```rust
+let locale: Locale = exos::locale();
+
+locale.number(1_234_567) // "1.234.567" in German
+```
+
+What is not built is the crossing: a message whose count comes from client
+state should decide in the browser rather than on the server. [The
+roadmap](roadmap/localization.md) says what that looks like.
 
 ## Routes
 

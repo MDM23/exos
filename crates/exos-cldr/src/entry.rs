@@ -12,9 +12,42 @@ pub struct Entry {
     /// [`Entry::direction_of`] is the answer to prefer, since a tag may name a
     /// script this does not know about.
     pub direction: Direction,
+    /// How the language writes a whole number.
+    pub symbols: Symbols,
     /// The categories in the order they are tried, ending in an unconditional
     /// [`Category::Other`].
     pub rules: &'static [Rule],
+}
+
+/// How a locale writes a whole number.
+///
+/// Enough to write one and no more: the decimal separator and the percent sign
+/// are not vendored, because a count is a whole number and a column nothing
+/// reads is a column nothing checks.
+///
+/// Number symbols belong to a locale rather than to a language, and these are
+/// keyed by language like everything else here, so a region that writes numbers
+/// differently from the language it belongs to is written the language's way.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Symbols {
+    /// The ten digits of whichever numbering system the locale counts in by
+    /// default, in order, which is Western Arabic for most languages and is
+    /// not for Persian, Burmese or Bengali.
+    pub digits: &'static str,
+    /// What goes between groups of digits.
+    pub group: &'static str,
+    /// What goes in front of a count below zero. Rarely a plain hyphen: three
+    /// languages put a directionality mark in front of theirs.
+    pub minus: &'static str,
+    /// How many digits are in the group furthest to the right, or zero where
+    /// the language does not group at all.
+    pub grouping: u8,
+    /// How many are in each group after that, which differs from
+    /// [`grouping`](Self::grouping) only in the Indic pattern: 12,34,567.
+    pub secondary_grouping: u8,
+    /// How many digits there have to be before the first separator appears.
+    /// Polish writes 1000 and then 12 345.
+    pub minimum_grouping_digits: u8,
 }
 
 /// One category, and what makes a count fall in it.
@@ -267,6 +300,31 @@ mod tests {
                     rule.category
                 );
             }
+        }
+    }
+
+    /// Ten of them, always. The formatter picks a digit by the value it is
+    /// writing, so a numbering system that arrived with nine would write the
+    /// wrong number rather than fail.
+    #[test]
+    fn every_locale_counts_in_ten_digits() {
+        for entry in LOCALES {
+            assert_eq!(entry.symbols.digits.chars().count(), 10, "{}", entry.tag);
+        }
+    }
+
+    /// A language that groups at all groups by something and separates with
+    /// something, since a size of zero would put a separator between every
+    /// digit and an empty separator would put none anywhere.
+    #[test]
+    fn a_language_that_groups_says_how_and_how_wide() {
+        for entry in LOCALES {
+            if entry.symbols.grouping == 0 {
+                continue;
+            }
+
+            assert!(entry.symbols.secondary_grouping > 0, "{}", entry.tag);
+            assert!(!entry.symbols.group.is_empty(), "{}", entry.tag);
         }
     }
 

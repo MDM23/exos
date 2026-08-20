@@ -118,6 +118,7 @@ impl Declaration {
             quote! { ::exos::Direction::#direction }
         });
 
+        let symbols = self.locales.iter().map(Declared::symbols);
         let languages = self.locales.iter().map(Declared::language);
 
         let version = exos_cldr::VERSION;
@@ -191,6 +192,29 @@ impl Declaration {
                         .iter()
                         .copied()
                         .find(|locale| tag.eq_ignore_ascii_case(locale.tag()))
+                }
+
+                /// The symbols this language writes a whole number with.
+                ///
+                /// CLDR's answer for the language, which is what the browser's
+                /// `Intl.NumberFormat` answers with too, so that a page and
+                /// its runtime write a number the same way.
+                #[must_use]
+                pub const fn symbols(self) -> ::exos::Symbols {
+                    match self {
+                        #(Self::#variants => #symbols,)*
+                    }
+                }
+
+                /// `count` written the way this language writes a whole
+                /// number.
+                ///
+                /// What a message does with a count it puts into a sentence.
+                /// An application formatting one itself, or formatting
+                /// anything else numeric, is the same call.
+                #[must_use]
+                pub fn number(self, count: impl ::exos::Count) -> ::std::string::String {
+                    ::exos::Symbols::number(&self.symbols(), count)
                 }
 
                 /// The plural category `count` falls in, spelled the way every
@@ -317,6 +341,34 @@ impl Declared {
     /// Which way this locale runs.
     fn direction(&self) -> Direction {
         self.checked().direction_of(&self.tag.value())
+    }
+
+    /// What this locale writes a whole number with.
+    ///
+    /// The table is keyed by language, so a locale declared with a region gets
+    /// the language's symbols. That is wrong for the handful of regions which
+    /// write numbers differently from the language they belong to, and it is
+    /// what the table has.
+    fn symbols(&self) -> TokenStream {
+        let symbols = self.checked().symbols;
+
+        let digits = symbols.digits;
+        let group = symbols.group;
+        let minus = symbols.minus;
+        let grouping = symbols.grouping;
+        let secondary = symbols.secondary_grouping;
+        let minimum = symbols.minimum_grouping_digits;
+
+        quote! {
+            ::exos::Symbols {
+                digits: #digits,
+                group: #group,
+                minus: #minus,
+                grouping: #grouping,
+                secondary_grouping: #secondary,
+                minimum_grouping_digits: #minimum,
+            }
+        }
     }
 
     /// What the locale's module is called: its tag, as an identifier.

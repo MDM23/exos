@@ -38,6 +38,16 @@ fn counts(fixture: &Value) -> Vec<u64> {
         .collect()
 }
 
+/// The numbers it pins, which go below zero where a count never does.
+fn numbers(fixture: &Value) -> Vec<i64> {
+    fixture["numbers"]
+        .as_array()
+        .expect("the fixture has numbers")
+        .iter()
+        .map(|number| number.as_i64().expect("a number is a whole number"))
+        .collect()
+}
+
 /// The table and the fixture come out of one run of the generator, and a
 /// checkout where they did not is a checkout where the rest of this file is
 /// comparing two different releases of CLDR.
@@ -88,6 +98,51 @@ fn every_count_lands_in_the_category_the_fixture_names() {
             );
         }
     }
+}
+
+/// The other half of the table: the digits, the separators and the sign every
+/// language writes a whole number with.
+#[test]
+fn every_number_is_written_the_way_the_fixture_writes_it() {
+    let fixture = fixture();
+    let numbers = numbers(&fixture);
+
+    for (tag, row) in fixture["written"].as_object().expect("written") {
+        let locale = Locale::from_tag(tag).expect("a declared locale");
+        let expected = row.as_array().expect("a row of numbers");
+
+        assert_eq!(
+            expected.len(),
+            numbers.len(),
+            "{tag} has a row of the wrong length"
+        );
+
+        for (number, expected) in numbers.iter().zip(expected) {
+            assert_eq!(
+                locale.number(*number),
+                expected.as_str().expect("a written number"),
+                "{tag} disagrees about {number}, against CLDR {}",
+                Locale::CLDR_VERSION,
+            );
+        }
+    }
+}
+
+/// Four languages have no numbers of their own in CLDR and count in the root's
+/// instead. They are left out of the fixture rather than pinned to a fallback,
+/// so what is written here is the number of claims nobody is making.
+#[test]
+fn the_languages_with_no_numbers_of_their_own_are_the_ones_expected() {
+    let fixture = fixture();
+    let written = fixture["written"].as_object().expect("written");
+
+    let missing: Vec<&str> = Locale::ALL
+        .iter()
+        .map(|locale| locale.tag())
+        .filter(|tag| !written.contains_key(*tag))
+        .collect();
+
+    assert_eq!(missing, ["ars", "guw", "nah", "smi"]);
 }
 
 /// A category is typed to the language it belongs to, which is what makes a

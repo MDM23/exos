@@ -97,9 +97,10 @@ instead of excluding one another.
   your crate compiles: bundle CSS, bundle and minify JS, content-hash, embed.
   There is no build script.
 - [`exos-cldr`](crates/exos-cldr) is the slice of CLDR `locales!` reads while it
-  expands: cardinal plural rules and writing direction, vendored as committed
-  source by a script a maintainer runs. No build reaches the network for it, and
-  nothing of it reaches a binary except the languages an application declared.
+  expands: cardinal plural rules, writing direction and the symbols a whole
+  number is written with, vendored as committed source by a script a maintainer
+  runs. No build reaches the network for it, and nothing of it reaches a binary
+  except the languages an application declared.
 
 The [guide](docs/guide.md) walks through the whole surface.
 [`examples/playlist`](examples/playlist) is a listening room several browsers
@@ -155,11 +156,11 @@ carried a real application yet. Known gaps, roughly in priority order:
   Rust functions whose arms the compiler holds to every language, so a locale
   nobody translated a message into is a build failure rather than an English
   string in a German page. A sentence with a link in it is one message, because
-  a slot keeps it whole while the href stays in Rust. Two things are missing. A
-  message whose count comes from client state should cross as its variants and
-  let `Intl.PluralRules` pick, which is what keeps catalogs on the server, and
-  an interpolated number is still written the way Rust writes it rather than
-  the way the language does.
+  a slot keeps it whole while the href stays in Rust, and a count in one is
+  written the way that language writes a number. What is missing is the
+  crossing: a message whose count comes from client state should cross as its
+  variants and let `Intl.PluralRules` pick, which is what keeps catalogs on the
+  server.
 - **Expressions are compiled with `new Function`**, which a strict CSP without
   `unsafe-eval` blocks. A precompiled mode is the answer.
 - **Running more than one instance.** The connection registry is a process-local

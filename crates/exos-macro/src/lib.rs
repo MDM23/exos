@@ -190,6 +190,8 @@ pub fn live(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 ///   mapping a count to one of them. Those categories are an
 ///   [`Enumerable`](derive@Enumerable) domain like any other a message branches
 ///   on.
+/// - Per locale, the symbols it writes a whole number with, and `number`,
+///   which writes one: `Locale::De.number(1_234_567)` is `1.234.567`.
 /// - An implementation of `exos::LocaleSet`, which is how
 ///   `exos::locale::<Locale>()` answers with a type exos has never seen. It
 ///   delegates to the items above, so nothing has to be imported to ask a
@@ -208,10 +210,12 @@ pub fn live(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// to right and `pa-Arab` is not. A language CLDR has no rules for is a
 /// compile error here rather than a wrong plural later.
 ///
-/// Counts are whole numbers in this stage. The operands CLDR uses to describe
-/// the digits after a decimal point are therefore zero, which is what collapses
-/// most languages to one or two comparisons, and why the five whose `many`
-/// applies only to a fraction do not carry that category at all.
+/// Counts are whole numbers. The operands CLDR uses to describe the digits
+/// after a decimal point are therefore zero, which is what collapses most
+/// languages to one or two comparisons, why the five whose `many` applies only
+/// to a fraction do not carry that category at all, and why the symbols
+/// vendored alongside are the ones a whole number needs and not the decimal
+/// separator.
 #[proc_macro]
 pub fn locales(input: TokenStream) -> TokenStream {
     locales::expand(input.into()).into()
@@ -257,7 +261,9 @@ pub fn locales(input: TokenStream) -> TokenStream {
 /// A parameter declared as `Plural` is a count. It arrives as any whole number
 /// and is branched on through the categories of the language being rendered,
 /// which are that language's own: `de::Plural` has `One` and `Other` while
-/// `ar::Plural` has six. Any other parameter is interpolated by `{name}`
+/// `ar::Plural` has six. It is also written into the sentence the way that
+/// language writes a number, so German says 1.234 where English says 1,234.
+/// Any other parameter is interpolated by `{name}`
 /// wherever the translation puts it, as often as it likes or not at all, and
 /// branched on where an arm names one of its values, which asks that its type
 /// derive [`Enumerable`](derive@Enumerable).

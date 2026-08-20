@@ -527,11 +527,11 @@ impl Message {
         branched: &[bool],
         markup: bool,
     ) -> syn::Result<Vec<TokenStream>> {
-        let text = |template: &Template| {
+        let text = |template: &Template, formatted: text::Written<'_>| {
             if markup {
-                template.markup()
+                template.markup(formatted)
             } else {
-                template.string()
+                template.string(formatted)
             }
         };
 
@@ -552,6 +552,7 @@ impl Message {
         for (variant, arms) in grouped {
             let alone = arms.len() == 1 && self.arms[arms[0]].patterns.is_none();
             let subjects = self.subjects(variant, aliases, branched);
+            let counted = self.counted(locale, variant);
 
             if subjects.is_empty() || alone {
                 if let Some(second) = arms.get(1) {
@@ -564,7 +565,7 @@ impl Message {
                     ));
                 }
 
-                let text = text(&templates[arms[0]]);
+                let text = text(&templates[arms[0]], &counted);
                 emitted.push(quote! { #locale::#variant => #text, });
 
                 continue;
@@ -577,7 +578,7 @@ impl Message {
                 .map(|index| {
                     let patterns = self.patterns(*index, variant, aliases, branched)?;
                     let pattern = tuple(&patterns, variant.span());
-                    let text = text(&templates[*index]);
+                    let text = text(&templates[*index], &counted);
 
                     Ok(quote_spanned! { variant.span() => #pattern => #text, })
                 })
@@ -593,6 +594,27 @@ impl Message {
         }
 
         Ok(emitted)
+    }
+
+    /// How this locale writes the counts the message puts into a sentence.
+    ///
+    /// A count is the one number a message knows is a number, so it is the one
+    /// that goes in with the language's own digits and separators rather than
+    /// with Rust's. Everything else a call site interpolates is written the way
+    /// it displays, since a message cannot tell a quantity from an identifier.
+    fn counted(&self, locale: &Path, variant: &Ident) -> Vec<(&Ident, TokenStream)> {
+        self.parameters
+            .iter()
+            .filter(|parameter| matches!(parameter.kind, Kind::Plural))
+            .map(|parameter| {
+                let name = &parameter.name;
+
+                (
+                    name,
+                    quote_spanned! { variant.span() => #locale::#variant.number(#name) },
+                )
+            })
+            .collect()
     }
 
     /// What one locale's inner `match` looks at, one term per branched
@@ -862,6 +884,33 @@ mod tests {
             "{expanded}"
         );
         assert!(expanded.contains("crate :: __locales :: De :: Plural :: One =>"));
+    }
+
+    /// A count is the one number a message knows is a number, so it goes into
+    /// the sentence through the language rather than through `Display`.
+    #[test]
+    fn a_count_is_written_the_way_the_language_being_rendered_writes_one() {
+        let expanded = expand_ok(
+            r#"items(count: Plural) {
+                De { _ } = "{count} Elemente",
+            }"#,
+        );
+
+        assert!(
+            expanded.contains(
+                r#"format ! ("{count} Elemente" , count = crate :: Locale :: De . number (count))"#
+            ),
+            "{expanded}"
+        );
+    }
+
+    /// Anything else is written the way it displays, because a message cannot
+    /// tell a quantity from an identifier.
+    #[test]
+    fn a_number_that_is_not_a_count_is_left_to_display_itself() {
+        let expanded = expand_ok(r#"row(id: u32) { En = "no. {id}", }"#);
+
+        assert!(expanded.contains(r#"format ! ("no. {id}")"#), "{expanded}");
     }
 
     /// The whole of what a call site says about a count is that it is a whole

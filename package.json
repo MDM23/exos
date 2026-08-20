@@ -10,6 +10,7 @@
   "type": "module",
   "devDependencies": {
     "cldr-core": "^48.2.0",
+    "cldr-numbers-full": "^48.2.0",
     "jsdom": "^30.0.1"
   }
 }

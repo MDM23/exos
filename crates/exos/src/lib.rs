@@ -37,6 +37,7 @@ mod live;
 mod locale;
 mod message;
 mod model;
+mod number;
 mod render;
 mod response;
 mod scope;
@@ -63,6 +64,7 @@ pub use crate::{
     locale::{Direction, Lang, LocaleSet, PluralCategory, lang, locale},
     message::{Count, Enumerable},
     model::{Model, ModelFields, ModelRejection, to_wire},
+    number::Symbols,
     render::{AttributeValue, Flag, Markup, Render, escape_display_into, escape_into},
     response::Page,
     scope::{Scope, detached, scope, with_scope},

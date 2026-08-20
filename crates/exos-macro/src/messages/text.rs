@@ -30,6 +30,13 @@ struct Slot {
     parts: Vec<Part>,
 }
 
+/// What a placeholder writes, where the parameter's own name is not it.
+///
+/// A count is written the way the language writes a whole number, which is
+/// something only the arm being emitted knows, since it is the arm that knows
+/// which language it is in.
+pub(crate) type Written<'arm> = &'arm [(&'arm Ident, TokenStream)];
+
 /// The slots every message has, whatever it declares.
 ///
 /// Emphasis falls on different words in different languages and there is
@@ -198,7 +205,7 @@ impl Template {
     /// function has in scope, so what `format!` is handed reads the way the
     /// message was written. It carries the literal's span, so that a parameter
     /// which cannot be written into a sentence is reported at the sentence.
-    pub(crate) fn string(&self) -> TokenStream {
+    pub(crate) fn string(&self, formatted: Written<'_>) -> TokenStream {
         if self.interpolated().is_empty() {
             let text = written(&self.parts);
 
@@ -225,7 +232,15 @@ impl Template {
             Part::Slot(_) => {}
         });
 
-        quote_spanned! { self.span => ::std::format!(#format) }
+        // A parameter the arm writes differently arrives as an argument of its
+        // own name, so the format string still reads the way the message does.
+        let arguments = self.interpolated().into_iter().filter_map(|name| {
+            let value = rewritten(name, formatted)?;
+
+            Some(quote! { #name = #value })
+        });
+
+        quote_spanned! { self.span => ::std::format!(#format #(, #arguments)*) }
     }
 
     /// The one expression that builds this text as `Markup`.
@@ -234,9 +249,17 @@ impl Template {
     /// here, while this crate compiles, and an interpolated value is escaped
     /// where it is written, so the only structure the markup can carry is a
     /// slot that was declared in Rust.
-    pub(crate) fn markup(&self) -> TokenStream {
-        markup(&self.parts, self.span)
+    pub(crate) fn markup(&self, formatted: Written<'_>) -> TokenStream {
+        markup(&self.parts, self.span, formatted)
     }
+}
+
+/// What `name` writes, which is the name itself unless the arm says otherwise.
+fn rewritten<'arm>(name: &Ident, formatted: Written<'arm>) -> Option<&'arm TokenStream> {
+    formatted
+        .iter()
+        .find(|(parameter, _)| *parameter == name)
+        .map(|(_, value)| value)
 }
 
 /// Hands every part to `visit`, slots included, outermost first.
@@ -278,7 +301,7 @@ fn written(parts: &[Part]) -> String {
 }
 
 /// Builds these parts into a `Markup`.
-fn markup(parts: &[Part], span: Span) -> TokenStream {
+fn markup(parts: &[Part], span: Span, formatted: Written<'_>) -> TokenStream {
     // Nothing to put in, so nothing to build: the sentence is its own escaped
     // text, and a `String` nothing pushes to would only warn about being `mut`.
     if parts.iter().all(|part| matches!(part, Part::Text(_))) {
@@ -287,7 +310,7 @@ fn markup(parts: &[Part], span: Span) -> TokenStream {
         return quote_spanned! { span => ::exos::Markup(::std::string::String::from(#text)) };
     }
 
-    let written = writes(parts, span);
+    let written = writes(parts, span, formatted);
 
     quote_spanned! { span =>
         {
@@ -299,7 +322,7 @@ fn markup(parts: &[Part], span: Span) -> TokenStream {
 }
 
 /// What one level of a sentence writes into the string being built.
-fn writes(parts: &[Part], span: Span) -> Vec<TokenStream> {
+fn writes(parts: &[Part], span: Span, formatted: Written<'_>) -> Vec<TokenStream> {
     parts
         .iter()
         .map(|part| match part {
@@ -311,9 +334,14 @@ fn writes(parts: &[Part], span: Span) -> Vec<TokenStream> {
             // Escaped as it is written, and asked for nothing but a `Display`,
             // so that adding emphasis to a sentence cannot change what its
             // parameters have to be.
-            Part::Value(name) => quote! { ::exos::escape_display_into(&#name, &mut __text); },
+            Part::Value(name) => {
+                let value = rewritten(name, formatted)
+                    .map_or_else(|| quote! { #name }, |written| quote! { #written });
+
+                quote! { ::exos::escape_display_into(&#value, &mut __text); }
+            }
             Part::Slot(slot) => {
-                let inner = writes(&slot.parts, span);
+                let inner = writes(&slot.parts, span, formatted);
 
                 match builtin(&slot.name) {
                     // A tag this macro wrote, so there is nothing to call and
@@ -328,7 +356,7 @@ fn writes(parts: &[Part], span: Span) -> Vec<TokenStream> {
                     // the same trust `Markup` is everywhere else.
                     None => {
                         let name = &slot.name;
-                        let inner = markup(&slot.parts, span);
+                        let inner = markup(&slot.parts, span, formatted);
 
                         quote_spanned! { span =>
                             ::exos::Render::render_to(&#name(#inner), &mut __text);
@@ -380,14 +408,14 @@ mod tests {
     fn emitted(text: &str) -> String {
         template(text)
             .expect("a message this test wrote")
-            .string()
+            .string(&[])
             .to_string()
     }
 
     fn rendered(text: &str, slots: &[&str]) -> String {
         with(text, slots)
             .expect("a message this test wrote")
-            .markup()
+            .markup(&[])
             .to_string()
     }
 

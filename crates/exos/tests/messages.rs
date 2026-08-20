@@ -237,6 +237,29 @@ fn a_negative_count_is_singular_where_its_magnitude_is() {
     );
 }
 
+/// A count is the one number a message knows is a number, so it goes into the
+/// sentence the way the language writes one rather than the way Rust does.
+#[test]
+fn a_count_is_written_the_way_the_language_writes_a_number() {
+    assert_eq!(
+        spoken(Locale::De, || t::items_selected(1_234_567)),
+        "1.234.567 Elemente ausgewählt"
+    );
+    assert_eq!(
+        spoken(Locale::En, || t::items_selected(1_234_567)),
+        "1,234,567 items selected"
+    );
+}
+
+/// Including one inside a slot, which is the other path the same value takes.
+#[test]
+fn a_count_inside_a_slot_is_written_the_same_way() {
+    assert_eq!(
+        spoken(Locale::De, || t::unread(12_345)).as_str(),
+        "Sie haben <strong>12.345 ungelesene</strong> Nachrichten"
+    );
+}
+
 /// Six categories, reached through a message rather than through the
 /// evaluator, which is what proves the two matches line up.
 #[test]

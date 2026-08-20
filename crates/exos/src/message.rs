@@ -98,11 +98,17 @@ pub trait Count: Copy + Display + sealed::Count {
     /// The count without its sign, which is CLDR's `n`.
     ///
     /// A plural rule asks about the absolute value: a language that has a
-    /// singular puts -1 in it just as it puts 1 there. The sign survives
-    /// anyway, because a count that is interpolated into a message is written
-    /// out as it arrived.
+    /// singular puts -1 in it just as it puts 1 there.
     #[must_use]
     fn magnitude(self) -> u64;
+
+    /// Whether the count is below zero.
+    ///
+    /// The sign decides nothing about which arm a message takes, and only
+    /// which character the number is written with; see
+    /// [`Symbols`](crate::Symbols), where that is not always a hyphen.
+    #[must_use]
+    fn is_negative(self) -> bool;
 }
 
 /// Implements [`Count`] for the whole numbers a count arrives as.
@@ -119,6 +125,10 @@ macro_rules! counts {
                 fn magnitude(self) -> u64 {
                     u64::from(self)
                 }
+
+                fn is_negative(self) -> bool {
+                    false
+                }
             }
         )*
     };
@@ -129,6 +139,10 @@ macro_rules! counts {
             impl Count for $number {
                 fn magnitude(self) -> u64 {
                     u64::from(self.unsigned_abs())
+                }
+
+                fn is_negative(self) -> bool {
+                    self < 0
                 }
             }
         )*
@@ -146,6 +160,10 @@ impl Count for usize {
     fn magnitude(self) -> u64 {
         self as u64
     }
+
+    fn is_negative(self) -> bool {
+        false
+    }
 }
 
 impl sealed::Count for isize {}
@@ -153,6 +171,10 @@ impl sealed::Count for isize {}
 impl Count for isize {
     fn magnitude(self) -> u64 {
         self.unsigned_abs() as u64
+    }
+
+    fn is_negative(self) -> bool {
+        self < 0
     }
 }
 

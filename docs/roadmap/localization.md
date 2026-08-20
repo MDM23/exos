@@ -11,15 +11,11 @@ resolves a request through the scope, `Accept-Language` and the fallback,
 `exos::lang` puts the answer on the document, and a response that read the
 header says so with `Vary`. `exos::messages!` declares the text: a function per
 message, a `match` per language, slots for the sentences with a link in them,
-and rustc holding every message to every locale. The shape below, one macro
-with match-like arms and one call site that works on both sides, predates exos:
-it was settled while the framework was still a prototype, and lived in a guide
-draft that was cut when the guide was rewritten against code that existed.
-
-One thing stage 2 describes is not built. An interpolated number is written the
-way Rust writes it rather than the way the language does, because the [number
-symbols](#where-the-data-comes-from) are still not vendored, and that is the
-next change.
+counts written the way each language writes a number, and rustc holding every
+message to every locale. The shape below, one macro with match-like arms and
+one call site that works on both sides, predates exos: it was settled while the
+framework was still a prototype, and lived in a guide draft that was cut when
+the guide was rewritten against code that existed.
 
 Stage 3 and stage 5 wait on nothing. [Sessions and
 identity](sessions-and-identity.md) already supplies the one thing they need
@@ -378,12 +374,15 @@ and for nothing else, so a `len()` and a literal both go in without a cast, and
 what a rule is asked about is the magnitude: -1 is singular wherever 1 is, and
 the text still says -1.
 
-Interpolated numbers will be formatted with the locale's symbols, generated
-from the same vendored table, which is the server half of the agreement stage 3
-makes with `Intl.NumberFormat`. Today they are written the way Rust writes
-them, so a German page says 1000 where it should say 1.000. Those symbols are
-the [one slice](#where-the-data-comes-from) of the table still not vendored,
-and they arrive with the change that vendors them.
+A count is formatted with the locale's symbols, generated from the same
+vendored table, which is the server half of the agreement stage 3 makes with
+`Intl.NumberFormat`. It is the *only* number a message formats: a count is
+declared as one, and everything else a call site interpolates is written the
+way it displays, because a message cannot tell a quantity from an identifier
+and a page numbering its rows does not want 1.234 in row one thousand two
+hundred and thirty-four. `Locale::number` is the same formatting for an
+application that wants it, and formatting money is still the application's,
+which is [what this will not do](#what-exos-will-not-do).
 
 An interpolated parameter appears wherever the translation puts it, as many
 times as it likes, or not at all. Word order is the translation's business and
@@ -626,9 +625,18 @@ Three slices, and nothing else:
   operands `n, i, v, w, f, t, c`. With integer counts only, `v` through `c` are
   zero and most languages collapse to one or two comparisons.
 - **Writing direction**, for `dir` on the document.
-- **Number symbols**: decimal separator, group separator, minus sign, percent,
-  grouping sizes. Not vendored yet. They arrive with the number interpolation in
-  stage 2, since a column nothing reads is a column nothing checks.
+- **Number symbols**: the ten digits of whichever numbering system the language
+  counts in, the group separator, how wide a group is, how many digits there
+  have to be before the first separator appears, and the minus sign. Not the
+  decimal separator and not the percent sign: a count is a whole number, and a
+  column nothing reads is a column nothing checks.
+
+The symbols come out of `cldr-numbers-full` rather than `cldr-core`, which is a
+second package pinned at the same release, and the generator refuses to run
+where the two disagree. A language CLDR keeps no numbers for is looked up
+through CLDR's own aliases, which is how `sh` reaches Serbian in Latin script
+and `jw` reaches Javanese; four tags end at the root and are written the root's
+way.
 
 ### What the first two slices measured
 
@@ -642,7 +650,7 @@ actually came to, against cldr-core 48.2.0:
   category and never look at the count, 120 ask one question, 33 ask two. The
   tail is Slavic and Celtic: Polish, Russian, Belarusian and Ukrainian ask
   seven, Breton eight, and Cornish ten.
-- **The whole table is 5,400 lines of Rust**, 160 KB, and takes about 100 ms to
+- **The whole table is 7,200 lines of Rust**, and takes about 100 ms to
   compile. That is the reason it is its own crate rather than a module of
   [exos-macro](../../crates/exos-macro): the data changes twice a year and the
   macro changes whenever it is worked on, so the two should not recompile each
@@ -671,6 +679,16 @@ rules have: a run through the first hundred, runs around 100 and 1000 for the
 teens exceptions Slavic and Celtic rules carry, and a tail for the millions rule
 French and Breton use.
 
+It holds eleven numbers as well, and how each language writes them. They sit on
+the edges grouping has: 999 and 1000 straddle the first separator, 1000 and
+12345 straddle the languages that want a digit before one appears, 1234567 is
+where an Indic pattern stops matching a Western one, and the negatives are
+there because a minus sign is a symbol like any other and some languages write
+it with a character nobody would guess. The four tags CLDR keeps no numbers for
+are left out rather than pinned to the root's: what the table writes for them
+is a fallback rather than a claim about the language, and one of the four is a
+tag ICU has data for that CLDR does not.
+
 Both suites read it and neither needs the other to have run.
 [crates/exos/tests/cldr.rs](../../crates/exos/tests/cldr.rs) declares every tag
 in one `locales!` and asserts the generated evaluator reproduces the file, which
@@ -679,17 +697,21 @@ for the two an example would carry. It sits in the exos crate rather than beside
 the table because reading the fixture from Rust takes the macro, and the macro
 takes exos.
 [fixture.test.js](../../crates/exos-cldr/fixture.test.js) asserts
-`Intl.PluralRules` reproduces it, in plain node rather than in jsdom, since
-`Intl` belongs to the language rather than to the document. Both name the
-language and the count they
+`Intl.PluralRules` and `Intl.NumberFormat` reproduce it, in plain node rather
+than in jsdom, since `Intl` belongs to the language rather than to the document.
+Both name the language and the count they
 disagreed about, and both name the CLDR release they were reading. A tag ICU has
 never heard of is skipped rather than failed, because a vendored CLDR newer than
-the runtime's ICU is a legitimate state to be in, and the number skipped is
-asserted so that the check cannot quietly degrade to checking nothing. Today it
-skips none.
+the runtime's ICU is a legitimate state to be in, and the share checked is
+asserted so that the check cannot quietly degrade to checking nothing. Plural
+rules reach every tag in the table; numbers reach seven eighths of them, which
+is why the two halves assert different shares rather than the same number
+written twice.
 
-The fixture holds no formatted numbers yet. It will when the symbols are
-vendored, and a fixture half that only one side can check would not be one.
+Neither half proves much if every language in it writes numbers the same way,
+so the fixture is asked for the shapes it should contain: a language that
+leaves a thousand ungrouped, one that groups the Indic way, one that counts in
+digits of its own, and one whose minus sign is not a hyphen.
 
 Beyond that, negotiation is a unit test, and is one:
 [locale.rs](../../crates/exos/src/locale.rs) declares a set by hand, so that
@@ -751,6 +773,14 @@ nothing else catches, and a hand check does not survive the next rustc.
   says no and the answer would have to be one of the two, picked by declaration
   order, which is a coin toss wearing a rule. Declaring `pt` is the answer
   today, and the question is whether anybody trips over it.
+- **Whether number symbols should be vendored per region.** They belong to a
+  locale rather than to a language, and the table is keyed by language, so an
+  application declaring `de-CH` gets Swiss plural rules, a Swiss `lang` on the
+  document, and German separators: 12.345 where Switzerland writes 12’345. The
+  data is there to vendor and it is a bigger table, but the reason to wait is
+  the fixture rather than the size. Eight of CLDR's script and region variants
+  disagree with the ICU node is on today, and a fixture that fails on eight
+  rows out of the box is a fixture nobody reads.
 - **Ordinals** ("3rd"), a separate CLDR table and a second parameter type.
 - **Decimal counts** ("1.5 hours"), which need the full operand set rather than
   the integer collapse in stage 1, and which would hand `many` back to the five
