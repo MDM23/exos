@@ -43,6 +43,7 @@ mod response;
 mod scope;
 mod session;
 mod signal;
+mod welcome;
 
 pub use crate::{
     asset::{Asset, AssetSet, asset_url, routes as asset_routes, runtime},

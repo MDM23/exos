@@ -91,6 +91,16 @@ fn asset_sets() -> Vec<AssetSet> {
 /// Several routes may share a path, which is how `GET` and `POST` on the same
 /// URL are written, and their method routers are merged.
 ///
+/// # Before there is anything to serve
+///
+/// A dev build that discovered no routes at all mounts a
+/// [welcome](../../src/welcome.rs) page as its fallback, since a binary with
+/// none is somebody's first run and a bare 404 tells them nothing about which
+/// part of it went wrong. A release build never does: an application that lost
+/// its routes in production should fail like one. So can a test binary that
+/// declares none, which is what [`tests/welcome.rs`](../../tests/welcome.rs)
+/// relies on.
+///
 /// # Panics
 ///
 /// If two handlers claim the same method on the same path. Finding that out at
@@ -109,11 +119,23 @@ pub fn app() -> Router {
         by_path.insert(entry.path, merged);
     }
 
-    by_path
+    let first_run = by_path.is_empty() && cfg!(debug_assertions);
+
+    let router = by_path
         .into_iter()
         .fold(Router::new(), |router, (path, methods)| {
             router.route(path, methods)
-        })
+        });
+
+    // Before the merges below, which carry axum's default fallback: two real
+    // ones would be a conflict, and a default one loses to this.
+    let router = if first_run {
+        router.fallback(crate::welcome::page)
+    } else {
+        router
+    };
+
+    router
         .merge(crate::asset_routes(asset_sets()))
         .merge(crate::live::routes())
         // Inside the scope, which it reads, and outside everything else: the
