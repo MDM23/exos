@@ -41,9 +41,28 @@ pub fn asset_url(file: &str) -> String {
 ///
 /// It ships inside this crate, so there is nothing to copy into a project and
 /// no version to keep in step.
+///
+/// # The query a dev build adds
+///
+/// `?dev`, which is how the runtime finds out it is one. It cannot read a
+/// `cfg!`, and it is the same file in both builds, so the answer has to arrive
+/// from the server. The URL of its own script is the channel already there: the
+/// runtime reads it to work out the [base](crate::base), and it cannot be
+/// looking at anybody else's. Nothing routes on a query, so where the file is
+/// served from does not change.
+///
+/// What the runtime does with it is keep its stream open on a page with nothing
+/// live on it, and answer a reconnect with a reload rather than a repair, so
+/// that a rebuilt server reaches the tab looking at it.
 #[must_use]
 pub fn runtime() -> String {
-    crate::asset!("js/exos.js")
+    let url = crate::asset!("js/exos.js");
+
+    if cfg!(debug_assertions) {
+        format!("{url}?dev")
+    } else {
+        url
+    }
 }
 
 /// One asset built by [`asset!`](crate::asset).

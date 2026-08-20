@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { JSDOM } from "jsdom";
+import { JSDOM, VirtualConsole } from "jsdom";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const read = (name) => readFileSync(join(HERE, "..", `${name}.js`), "utf8");
@@ -17,6 +17,16 @@ const read = (name) => readFileSync(join(HERE, "..", `${name}.js`), "utf8");
 /** A page with the runtime loaded, the markup bound, and `plugins` applied. */
 export function boot(body, ...plugins) {
     return booted(body, "", plugins);
+}
+
+/**
+ * The same page as a dev build serves it.
+ *
+ * `exos::runtime()` puts `?dev` on the runtime's URL in a debug build, and that
+ * query is the whole of what tells the client which build it is running under.
+ */
+export function bootDev(body, ...plugins) {
+    return booted(body, "", plugins, "?dev");
 }
 
 /**
@@ -30,14 +40,24 @@ export function bootUnder(base, body, ...plugins) {
     return booted(body, base, plugins);
 }
 
-function booted(body, base, plugins) {
+function booted(body, base, plugins, query = "") {
     // The tag the runtime reads its base out of. A real page gets this from
     // `exos::runtime()`, which is the same string with the same prefix on it.
-    const script = `<script defer src="${base}/_exos/exos-0123456789ab.js"></script>`;
+    const script = `<script defer src="${base}/_exos/exos-0123456789ab.js${query}"></script>`;
+
+    // Leaving the page is the one thing a test cannot watch directly: jsdom's
+    // `location` is unforgeable, so nothing can stand in for it. What it does
+    // instead is refuse, here, and that refusal is the only trace a reload
+    // leaves. Genuine exceptions still reach the console; this one would only
+    // read as a failure.
+    const navigations = [];
+    const virtualConsole = new VirtualConsole();
+    virtualConsole.forwardTo(console, { jsdomErrors: ["unhandled-exception"] });
+    virtualConsole.on("jsdomError", (error) => navigations.push(error.message));
 
     const dom = new JSDOM(
         `<!DOCTYPE html><html><head>${script}</head><body>${body}</body></html>`,
-        { runScripts: "outside-only", url: "http://localhost/" },
+        { runScripts: "outside-only", url: "http://localhost/", virtualConsole },
     );
 
     const { window } = dom;
@@ -53,7 +73,7 @@ function booted(body, base, plugins) {
     // Installed before the runtime is evaluated, because a page that arrives
     // with a live fragment already in it opens its stream on the last line of
     // the runtime rather than waiting for a mutation.
-    window.transport = transports(window);
+    window.transport = transports(window, navigations);
 
     window.eval(read("runtime"));
     for (const plugin of plugins) window.eval(read(plugin));
@@ -70,7 +90,7 @@ function booted(body, base, plugins) {
  * asserting anything about it, so a test reads the traffic the way a network
  * tab would.
  */
-function transports(window) {
+function transports(window, navigations) {
     const streams = [];
     const requests = [];
 
@@ -135,7 +155,7 @@ function transports(window) {
         });
     };
 
-    return { requests, responses, streams };
+    return { navigations, requests, responses, streams };
 }
 
 /**

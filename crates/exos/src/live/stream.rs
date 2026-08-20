@@ -85,7 +85,19 @@ const CAPACITY: usize = 64;
 /// whatever each browser happens to default to. Three seconds is roughly what
 /// they already pick, and a lost connection is usually a network that needs a
 /// moment rather than one that needs asking again immediately.
-const RETRY: Duration = Duration::from_secs(3);
+///
+/// A dev build waits half a second, because there a dropped stream is a
+/// rebuild and this is most of the delay between saving a file and seeing it.
+/// It is not a pause between two attempts either: a watcher kills the process
+/// before it starts compiling, so this is how often a tab knocks on a closed
+/// port for the length of a build. Shorter buys a fraction of a second and a
+/// browser console full of refused connections, which is where the error the
+/// developer was actually reading used to be.
+const RETRY: Duration = if cfg!(debug_assertions) {
+    Duration::from_millis(500)
+} else {
+    Duration::from_secs(3)
+};
 
 /// How long it waits after a stream the server ended on purpose.
 ///
@@ -397,6 +409,12 @@ fn open(session: Option<Id>, audiences: HashSet<String>) -> (String, broadcast::
 /// browser holds by then, and a greeting that is not the first makes the
 /// runtime re-fetch the page, so the tab ends up correctly identified and
 /// showing the right markup with no reload.
+///
+/// A dev build does reload, because there a reconnect means the binary was
+/// rebuilt and only a fresh document picks that up; see
+/// [`runtime`](crate::runtime). So a rotation costs a reload in development
+/// that it does not cost in production, which is the cheaper half of the
+/// trade.
 ///
 /// A connection that opened under no name is never matched, whatever `name`
 /// is: see [`Connection::session`].

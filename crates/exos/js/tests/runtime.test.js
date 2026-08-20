@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { boot, bootUnder, settled } from "./harness.js";
+import { boot, bootDev, bootUnder, settled } from "./harness.js";
 
 /** One row, declaring a signal and binding a class to it. */
 const row = (id = "row") =>
@@ -506,6 +506,47 @@ test("a reconnect fetches the page back to repair what the gap lost", async () =
     await settled();
 
     assert.equal(window.document.getElementById("count").textContent, "2");
+});
+
+// A dev build treats the same reconnect as a rebuild, because that is what it
+// is: a watcher kills the process, compiles, and starts a binary whose assets
+// are hashed differently. Morphing the body would leave the head pointing at
+// the build that is gone.
+test("a dev build keeps a stream open with nothing live on the page", () => {
+    const window = bootDev(`<p>nothing live here</p>`);
+
+    assert.equal(window.transport.streams.length, 1, "or it would never notice a restart");
+    assert.equal(boot(`<p>nothing live here</p>`).transport.streams.length, 0, "a release build does not");
+});
+
+test("a dev build reloads on a reconnect rather than repairing", async () => {
+    const window = bootDev(`<main>${live()}<p id="count">1</p></main>`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    window.transport.responses.body = served(`<main>${live()}<p id="count">2</p></main>`);
+    stream.emit("connection", "second");
+    await settled();
+
+    assert.equal(window.transport.navigations.length, 1, "the whole document comes back");
+    assert.deepEqual(
+        window.transport.requests.map((request) => request.url),
+        ["/_exos/subscribe", "/_exos/subscribe"],
+        "and nothing was fetched to morph in its place",
+    );
+});
+
+// The failure that would make the whole thing unusable: a page that reloads on
+// the greeting it gets for being loaded never finishes loading.
+test("a dev build's first connection reloads nothing", async () => {
+    const window = bootDev(`<p>nothing live here</p>`);
+
+    window.transport.streams[0].emit("connection", "first");
+    await settled();
+
+    assert.deepEqual(window.transport.navigations, []);
 });
 
 test("the first connection repairs nothing, because nothing was missed", async () => {

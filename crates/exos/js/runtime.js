@@ -37,16 +37,17 @@
     // cannot be out of step with the server, because a wrong URL would not have
     // loaded this script at all.
 
-    const BASE = (() => {
-        const src =
-            document.currentScript?.src ??
-            document.querySelector('script[src*="/_exos/"]')?.src;
+    const SCRIPT =
+        document.currentScript?.src ??
+        document.querySelector('script[src*="/_exos/"]')?.src ??
+        "";
 
-        if (!src) return "";
+    const BASE = (() => {
+        if (!SCRIPT) return "";
 
         // Last rather than first, so a base that happens to contain the segment
         // is still read as a base.
-        const { pathname } = new URL(src, location.href);
+        const { pathname } = new URL(SCRIPT, location.href);
         const cut = pathname.lastIndexOf("/_exos/");
 
         return cut === -1 ? "" : pathname.slice(0, cut);
@@ -974,6 +975,17 @@
     // another client can guess, and naming a connection is what replaces the
     // topics it watches.
 
+    // Whether this is a dev build, which the server says by adding `?dev` to
+    // the runtime's own URL.
+    //
+    // There is no `cfg!` to read here and the file is the same bytes either
+    // way, so the answer has to come from the server, and the script URL is the
+    // channel already there for the base. It changes two things and nothing
+    // else: a dev tab keeps a stream open on a page with nothing live on it, so
+    // that it notices its server being rebuilt, and it answers a reconnect with
+    // a reload rather than a repair.
+    const DEV = new URL(SCRIPT, location.href).searchParams.has("dev");
+
     let connection = null;
     let greeted = false;
     let source = null;
@@ -1013,7 +1025,16 @@
             // A second name means this tab was dropped and the server forgot
             // it, so something may have been published into the gap. The first
             // name has no gap behind it: the document arrived a moment ago.
-            if (greeted) repair();
+            //
+            // In a dev build the gap is a rebuild, and repairing one is the
+            // wrong shape twice over: it morphs the body, where a rebuild
+            // changes the head, and it keeps the stylesheet and the runtime the
+            // previous build hashed. The whole document has to come back.
+            if (greeted) {
+                if (DEV) location.reload();
+                else repair();
+            }
+
             greeted = true;
         });
     }
@@ -1080,7 +1101,11 @@
 
     async function syncSubscriptions() {
         const live = [...document.querySelectorAll("exos-live[id][data-token]")];
-        if (!live.length && !source) return;
+
+        // A dev build opens one whatever the page holds, because the stream
+        // going away is how it learns the server was rebuilt, and a page under
+        // development is exactly the page with nothing live on it yet.
+        if (!live.length && !source && !DEV) return;
 
         openStream();
 

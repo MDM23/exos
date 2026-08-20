@@ -114,11 +114,29 @@ async fn one_file_referenced_twice_gives_one_url() {
 
 /// Editing a plugin has to change the runtime's URL, or a browser holding a
 /// year-long cache entry would never see the change.
+///
+/// The path is what carries the hash. A dev build hangs `?dev` off it, which is
+/// how the client tells which build it is running under, so the assertion is
+/// about the file rather than about the whole string.
 #[tokio::test]
 async fn the_runtime_url_carries_a_content_hash() {
     let url = exos::runtime();
+    let (path, _) = url.split_once('?').unwrap_or((&url, ""));
 
-    assert!(url.starts_with("/_exos/exos-"), "{url}");
-    assert!(url.ends_with(".js"), "{url}");
-    assert_ne!(url, "/_exos/exos.js");
+    assert!(path.starts_with("/_exos/exos-"), "{url}");
+    assert!(path.ends_with(".js"), "{url}");
+    assert_ne!(path, "/_exos/exos.js");
+}
+
+/// The query says which build this is, and it has to be gone from the one that
+/// ships: a release tab that opened a stream on every page would hold a
+/// connection open for nothing.
+#[tokio::test]
+async fn only_a_dev_build_marks_the_runtime_as_one() {
+    assert_eq!(
+        exos::runtime().contains("?dev"),
+        cfg!(debug_assertions),
+        "{}",
+        exos::runtime()
+    );
 }
