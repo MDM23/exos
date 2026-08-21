@@ -13,12 +13,31 @@
 //!
 //!     #[valid(required, email)]
 //!     email: String,
+//!
+//!     invoice: bool,
+//!
+//!     #[valid(required_with = invoice)]
+//!     vat: String,
 //! }
 //! ```
 //!
 //! What arrives broken never reaches the handler. It comes back as a `422`
 //! carrying an [`Effect`](crate::Effect) that writes the messages into the
 //! model's own record, which a template reads through the handle.
+//!
+//! # A rule under a condition
+//!
+//! `required_with` is the ordinary `required` rule with the named field's
+//! [`Presence`] in front of it, on both sides, so a section a checkbox reveals
+//! is checked while it is showing and silent while it is not. It is not a rule
+//! of its own: a rule sees one value, and letting one read a sibling would put
+//! a model type parameter on every rule that never uses one.
+//!
+//! Nothing holds a gate and whatever `show`s the section together. A section
+//! revealed on more than the gate names is validated while hidden, and the
+//! submit then fails with a message nobody can see. That is the application's
+//! to watch, and it is what buys the gate out of being a second concept only
+//! forms would have.
 //!
 //! # exos ships no text
 //!

@@ -13,6 +13,9 @@ use syn::{Expr, ExprRange, FieldsNamed, Ident, ItemStruct, Meta, RangeLimits, To
 pub(crate) struct Rules {
     /// The field it is about.
     pub(crate) field: Ident,
+    /// What that field is called on the wire, which is also the key its
+    /// message is written under.
+    pub(crate) key: String,
     /// Its type, which decides which impl answers each question.
     pub(crate) ty: Type,
     /// What was declared, in the order it was written.
@@ -23,6 +26,11 @@ pub(crate) struct Rules {
 pub(crate) enum Rule {
     /// Filled in at all.
     Required,
+    /// Filled in whenever a sibling field is.
+    RequiredWith {
+        /// The field that arms it.
+        sibling: Ident,
+    },
     /// Between `least` and `most`, counted the way JavaScript counts.
     Length {
         /// The shortest this may be.
@@ -35,7 +43,10 @@ pub(crate) enum Rule {
 }
 
 /// Reads every field's `#[valid(...)]`.
-pub(crate) fn rules(fields: &FieldsNamed) -> syn::Result<Vec<Rules>> {
+pub(crate) fn rules(
+    fields: &FieldsNamed,
+    key: impl Fn(&Ident) -> String,
+) -> syn::Result<Vec<Rules>> {
     let mut declared = Vec::new();
 
     for field in &fields.named {
@@ -57,14 +68,18 @@ pub(crate) fn rules(fields: &FieldsNamed) -> syn::Result<Vec<Rules>> {
             }
         }
 
-        if !rules.is_empty() {
-            declared.push(Rules {
-                field: ident,
-                ty: field.ty.clone(),
-                rules,
-            });
-        }
+        // Every field lands here, not only the ones carrying rules: a gate
+        // names a sibling, and both halves of it are built from that
+        // sibling's type and wire name.
+        declared.push(Rules {
+            key: key(&ident),
+            field: ident,
+            ty: field.ty.clone(),
+            rules,
+        });
     }
+
+    gates(&declared)?;
 
     Ok(declared)
 }
@@ -74,6 +89,22 @@ fn rule(meta: &Meta) -> syn::Result<Rule> {
     match meta {
         Meta::Path(path) if path.is_ident("required") => Ok(Rule::Required),
         Meta::Path(path) if path.is_ident("email") => Ok(Rule::Email),
+
+        Meta::NameValue(pair) if pair.path.is_ident("required_with") => {
+            let sibling = match &pair.value {
+                Expr::Path(path) => path.path.get_ident().cloned(),
+                _ => None,
+            };
+
+            sibling
+                .map(|sibling| Rule::RequiredWith { sibling })
+                .ok_or_else(|| {
+                    syn::Error::new_spanned(
+                        &pair.value,
+                        "a gate names one field of this model, as in `required_with = invoice`",
+                    )
+                })
+        }
 
         Meta::NameValue(pair) if pair.path.is_ident("length") => {
             let Expr::Range(range) = &pair.value else {
@@ -89,9 +120,33 @@ fn rule(meta: &Meta) -> syn::Result<Rule> {
 
         other => Err(syn::Error::new_spanned(
             other,
-            "unknown rule; this macro knows `required`, `email` and `length = a..=b`",
+            "unknown rule; this macro knows `required`, `required_with = other`, \
+             `email` and `length = a..=b`",
         )),
     }
+}
+
+/// Refuses a gate naming something this model has no field for.
+///
+/// Checked here rather than left to the expansion, where a typo would come
+/// back as a missing field on a struct the author cannot see.
+fn gates(declared: &[Rules]) -> syn::Result<()> {
+    for Rules { rules, .. } in declared {
+        for rule in rules {
+            let Rule::RequiredWith { sibling } = rule else {
+                continue;
+            };
+
+            if !declared.iter().any(|other| other.field == *sibling) {
+                return Err(syn::Error::new_spanned(
+                    sibling,
+                    format!("`{sibling}` is not a field of this model"),
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Both ends of a length range, each defaulting to no limit at all.
@@ -161,7 +216,11 @@ pub(crate) fn strip(input: &mut ItemStruct) {
 /// declaration. A field with no rules answers `None` and shows only whatever
 /// the server said about it.
 pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
-    let Some(Rules { ty, rules, .. }) = declared.iter().find(|rules| rules.field == *field) else {
+    let Some(Rules { ty, rules, .. }) = declared
+        .iter()
+        .find(|rules| rules.field == *field)
+        .filter(|rules| !rules.rules.is_empty())
+    else {
         return quote! { ::core::option::Option::None };
     };
 
@@ -174,6 +233,29 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
                 ::exos::complaint(#label, ::exos::Violation::Required),
             )
         }],
+
+        // The same question with the sibling's presence in front of it, which
+        // is the whole of a gate: a rule under a condition rather than a rule
+        // that can see the model. The sibling is read as an expression rather
+        // than through a handle, because `signals()` is still building the one
+        // that would hand it over.
+        Rule::RequiredWith { sibling } => declared
+            .iter()
+            .find(|gate| gate.field == *sibling)
+            .map(|gate| {
+                let armed = &gate.ty;
+                let source = format!("$.{}", gate.key);
+
+                quote! {
+                    (
+                        <#armed as ::exos::Presence>::present(::exos::Js::raw(#source))
+                            .and(!<#ty as ::exos::Presence>::present(__signal.get())),
+                        ::exos::complaint(#label, ::exos::Violation::Required),
+                    )
+                }
+            })
+            .into_iter()
+            .collect(),
 
         // Guarded by presence exactly as the server's half is, so an empty
         // optional field is silent on both sides. Two entries rather than one,
@@ -210,14 +292,24 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
 }
 
 /// The server's half: what runs inside `Validate::validate`.
-pub(crate) fn check(declared: &[Rules], key: impl Fn(&Ident) -> String) -> TokenStream {
-    let checks = declared.iter().map(|Rules { field, ty, rules }| {
-        let key = key(field);
-        let label = field.to_string();
+pub(crate) fn check(declared: &[Rules]) -> TokenStream {
+    let checks = declared.iter().map(
+        |Rules {
+             field, key, rules, ..
+         }| {
+            let label = field.to_string();
 
-        let questions = rules.iter().map(|rule| match rule {
+            let questions = rules.iter().map(|rule| match rule {
             Rule::Required => quote! {
                 if !::exos::Presence::is_present(&self.#field) {
+                    __errors.add(#key, #label, ::exos::Violation::Required);
+                }
+            },
+
+            Rule::RequiredWith { sibling } => quote! {
+                if ::exos::Presence::is_present(&self.#sibling)
+                    && !::exos::Presence::is_present(&self.#field)
+                {
                     __errors.add(#key, #label, ::exos::Violation::Required);
                 }
             },
@@ -245,12 +337,9 @@ pub(crate) fn check(declared: &[Rules], key: impl Fn(&Ident) -> String) -> Token
             },
         });
 
-        // Named so that a rule on a field whose type cannot answer the
-        // question points at the field rather than at the expansion.
-        let _ = ty;
-
-        quote! { #(#questions)* }
-    });
+            quote! { #(#questions)* }
+        },
+    );
 
     quote! { #(#checks)* }
 }

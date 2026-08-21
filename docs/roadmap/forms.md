@@ -3,11 +3,14 @@
 Rules written once, checked on both sides, and the one round trip that carries
 what only the server knows.
 
-Status: stage 0 is built and nothing else is.
+Status: stages 0, 1, 2 and the gate half of 4 are built. What is left is
+patterns (1a), the debounce (3) and repeating groups (5).
+
 [`examples/signup`](../../examples/signup) is the form written by hand against
-today's surface, so what the stages below are worth is measured rather than
-argued: each one now says what it saves and what it was wrong about. It moves an
-edge the [guide](../guide.md) had already closed, which is the next section.
+the surface that existed before any of this, so what the stages are worth is
+measured rather than argued: each one says what it saves and what it was wrong
+about, and each one that lands takes something back out of the example. It moves
+an edge the [guide](../guide.md) had already closed, which is the next section.
 
 ## What this reopens
 
@@ -92,8 +95,8 @@ bit. None needs a document:
   attribute for a true boolean, and `aria-invalid=""` is read as false, so the
   hook [stage 2](#stage-2-the-same-rule-in-the-browser) commits to cannot be
   said today. That makes it the binding's to write directly rather than an
-  expression's, which is what that stage says. The example marks its invalid
-  controls with a class instead.
+  expression's, which is what that stage says; the example marked its invalid
+  controls with a class until stage 2 landed.
 
 And one thing stage 1 has to change rather than extend: **`ModelRejection`
 answers with a text body.** A malformed body comes back as `missing field
@@ -103,8 +106,8 @@ exists.
 
 ## Stage 1: a rule is a value the server checks
 
-Rules are declared on the model, because that is the one place the template, the
-body and the handler already agree on:
+**Done.** Rules are declared on the model, because that is the one place the
+template, the body and the handler already agree on:
 
 ```rs
 #[exos::model]
@@ -131,33 +134,36 @@ whose shape held, and a rule cannot be forgotten at a call site because there is
 no call site. Where a handler wants to see what failed, `Result<Model<T>, _>` is
 axum's existing escape hatch and costs exos nothing.
 
-A rule is a value with two evaluators:
-
-```rs
-pub trait Rule<T> {
-    /// Checked on the server, against the value that arrived.
-    fn check(&self, value: &T) -> bool;
-
-    /// The same question as an expression, for the browser to answer while it
-    /// is being typed. A rule with no client half returns `None` and is
-    /// checked on the server alone.
-    fn js(&self, value: Js<T>) -> Option<Js<bool>> {
-        let _ = value;
-        None
-    }
-}
-```
-
-The client half is already affordable: `trim`, `is_empty`, `len`, `eq`, `gt` and
-the rest of [combinator.rs](../../crates/exos/src/js/combinator.rs) are what
-shape rules are made of. And "server-only" needs no separate concept, since it
-is a rule that did not implement the second method. One vocabulary, two tiers.
-
 **exos ships no message text.** It cannot: an application's languages are its
 own, and [localization](localization.md) exists so that a string in a page is a
 `messages!` arm the compiler holds to every locale. So a violation is a value
-(`Required`, `TooShort { min }`) and the application turns it into text in one
+(`Required`, `TooShort { least }`) and the application turns it into text in one
 function it writes, once, with the same macro as everything else it says.
+
+### What it found
+
+**A rule is not a trait object with two evaluators.** This stage drew a
+`Rule<T>` with a `check` and an optional `js`, and there is no such trait in
+[valid.rs](../../crates/exos/src/valid.rs). The declarations are read by the
+macro and never become values, so a rule needs no runtime representation at all:
+what the two halves share is not a rule type but a *question about a type*.
+[`Presence`](../../crates/exos/src/valid.rs) and `Length` are those questions,
+each answering twice in one impl block, and that is what a shape rule is made
+of. The vocabulary is smaller than the trait would have been and the two halves
+still cannot drift, which was the whole requirement.
+
+**A length has to be counted the way JavaScript counts.** `String::len` is
+bytes, `chars().count()` is scalar values, and the browser counts UTF-16 code
+units. The three agree until the first emoji, at which point a form accepts what
+it had already shown as too long. `Length for String` counts `encode_utf16()`
+for that reason, which is the kind of thing only building it finds.
+
+**A handler still refuses, and it has to look identical when it does.** A rule
+the model cannot hold, such as whether a discount code is spent, ends in a
+`Refusal<Signup>` that writes the same record with the same status and the same
+caret move, so nothing a viewer sees says which side decided. That was not in
+this stage's drawing, and it is most of what makes the extractor's own refusal
+usable rather than a second mechanism beside it.
 
 ## Stage 1a: patterns, and the subset that makes them safe
 
@@ -223,13 +229,12 @@ pattern's can ever be.
 
 ## Stage 2: the same rule in the browser
 
-**Nothing here is declared by hand, and that is the requirement rather than a
-nicety.** Writing [`examples/signup`](../../examples/signup) against today's
-surface cost thirteen model fields for a form with six, a `report` function
-rewriting every message on every reply including the empty ones, and a table
-pairing each field with the id its input was rendered under so that a refusal
-could move the caret. None of that is the form's doing. It is the shape of what
-is missing.
+**Done.** Nothing here is declared by hand, and that was the requirement rather
+than a nicety. Writing [`examples/signup`](../../examples/signup) by hand cost
+thirteen model fields for a form with six, a `report` function rewriting every
+message on every reply including the empty ones, and a table pairing each field
+with the id its input was rendered under so that a refusal could move the caret.
+None of that was the form's doing. It was the shape of what was missing.
 
 **AngularJS had this right and it is worth naming what it had.** An `ngModel`
 kept a record per field, `$error`, `$dirty`, `$touched`, `$pending` and
@@ -269,14 +274,12 @@ to name one to a function.
 value transforming into each other in both directions was the most confusing
 part of that API, and here the server is the authority anyway.
 
-**Two stores, because there are two owners.** The errors are the server's word
-and live in the model's state signal, written by one `Effect::set` carrying the
-whole record, so a reply that fixes a field clears it by not mentioning it and
-nobody has to remember to. Dirty is the client's and never leaves the browser:
-the binding already knows a control changed, so it keeps that beside its own
-bookkeeping rather than in anything the model sends. A reply then cannot clobber
-what somebody is typing, and a submission does not carry state the server would
-throw away.
+**One record, written by whichever side last judged the value.** The server
+writes it with a single `Effect::set` carrying the whole thing, so a reply that
+fixes a field clears it by not mentioning it. The control writes its own slot as
+it is typed into. Dirty is the client's alone and never leaves the browser: the
+binding already knows a control changed, so a reply cannot clobber what somebody
+is typing and a submission does not carry state the server would throw away.
 
 **Which is what makes `error()` gated rather than the template gating it.** A
 client rule says nothing until its field is dirty, because an untouched field is
@@ -286,21 +289,13 @@ server speaks only after a submission, so the arrival of a message is already
 the evidence that one happened. AngularJS needed `$submitted` for exactly this
 and exos needs no flag for it.
 
-Two more rules, and the first is the one an implementation gets wrong:
-
-- **Editing a field clears the server's error for it.** Otherwise "that email is
-  taken" hangs under a field while somebody types a different one, and the
-  client cannot answer a rule it does not own.
-- **Precedence is the client's answer first**, because it is the fresher of the
-  two.
-
-**Validity aggregates, and it costs nothing.** `form.valid()` is every rule of
-every field folded into one expression, and the macro can write it because the
-macro is where the rules are. No new runtime concept: it is an ordinary recorded
-expression like any other, so `{attr("disabled", ...)}` on the submit button is
-the whole of what AngularJS needed a form controller for. What it deliberately
-does not do is disable a form that has never been touched, which would hide the
-button before anybody has had a chance to be wrong.
+**Validity aggregates, and it costs nothing.** Not built, and still true when it
+is: `form.valid()` is every rule of every field folded into one expression, and
+the macro can write it because the macro is where the rules are. No new runtime
+concept, so `{attr("disabled", ...)}` on the submit button is the whole of what
+AngularJS needed a form controller for. What it deliberately would not do is
+disable a form that has never been touched, which hides the button before
+anybody has had a chance to be wrong.
 
 **A bound control marks itself, and the marking is not exos's to name.**
 [`bind`](../../crates/exos/src/attributes/helper.rs) already carries the field's
@@ -327,6 +322,28 @@ that is the rule above and this is the same state seen from the DOM. And it does
 not write `aria-describedby` at the error element, which would complete the
 accessible pairing and needs an id on both halves; that is a second decision and
 probably belongs to whatever helper renders the message.
+
+### What it found
+
+**Two owners do not need two stores.** This stage drew the client's verdict and
+the server's as separate things, which is where the two rules above came from:
+one to clear a stale server message on edit, one to decide which of the two
+wins. Neither survived. The control writes its answer into the same slot the
+refusal writes, so recomputing it *is* clearing the old one, and there is
+nothing for a precedence rule to choose between. That deleted a `forget()`
+helper, a `dirty` parameter threaded through the expression, and the second
+error element per field the stage-0 example needed.
+
+**Dirty has to be a signal.** Held in a plain `Set`, it is not reactive: an
+effect subscribes to what it reads, so a rule gated on one evaluates once and
+never again. It lives in the signal store under a `~dirty/` prefix for that
+reason, which a client test caught and nothing else would have.
+
+**`aria-invalid` is written out rather than toggled**, which is stage 0's fourth
+finding landing where it was aimed. `toggleAttribute` produces `aria-invalid=""`
+and an empty token attribute reads as *false*, so the binding sets the literal
+string. The example's stylesheet dropped its `.invalid` class for the standard
+selector and the template dropped the `class(...)` block with it.
 
 ## Stage 3: one debounce, three features
 
@@ -359,9 +376,9 @@ is happening.
 
 ## Stage 4: rules that only sometimes apply
 
-A section that appears when a box is ticked has to be checked while it is
-showing and ignored while it is not. That is a gate on a rule, and it is written
-on the field it gates:
+**Done, as `required_with`.** A section that appears when a box is ticked has to
+be checked while it is showing and ignored while it is not. That is a gate on a
+rule, and it is written on the field it gates:
 
 ```rs
 #[exos::model]
@@ -397,13 +414,13 @@ while hidden, and the submit fails with an error nobody can see. The backstop is
 stage 2's open question rather than a rule here: a violation on a field with no
 error element on screen is worth a debug-build complaint.
 
-**The gate is not a rule, and that matters for the trait.** A `Rule<T>` sees one
-field's value, and giving it the whole model to read a sibling would put a model
-type parameter on every rule that never uses one. So `required_with` expands in
-the macro to the ordinary `required` rule under a condition, on both sides:
-`check` runs it only when the sibling is present, and the recorded expression is
-the same question with the same guard in front of it. The trait stays as stage 1
-draws it.
+**The gate is not a rule, and that is what keeps the vocabulary small.** A rule
+asks one question about one value, and letting one read a sibling would drag the
+model into every rule that never looks at one. So `required_with` expands to the
+ordinary `required` rule under a condition, on both sides: the server runs it
+only when the sibling is present, and the recorded expression is the same
+question with the same guard in front of it. `Presence` answers the guard, so
+the gate needed nothing that shape rules had not already brought.
 
 **Presence is defined per type, explicitly, and this is where it can go wrong.**
 An empty `String` is absent, and trimmed, so whitespace does not arm a gate. A
@@ -420,6 +437,26 @@ a gate at all. `Option<T>` is how a number opts in.
 as an attribute should go. Anything that wants the combinators wants a
 [server-only rule](#stage-1-a-rule-is-a-value-the-server-checks) and a round
 trip, which is the same answer this document gives everywhere else.
+
+**It is not built, and waits for something that wants it.** The machinery is the
+gate above with a comparison in place of the presence test, so it is a rule arm
+and no new concept, and nothing in the tree needs one yet. Building it now would
+be a second spelling of a stage that already works, tested against a field
+invented to test it.
+
+### What it found
+
+**A gate needs every field, not only the ruled ones.** The macro had been
+collecting rules per field and dropping the fields that declared none, which is
+exactly the set a gate points into: `invoice` carries no rules and is what two
+other fields are gated on. Reading every field and keeping its wire name beside
+it is also what let the key function move to one caller, so the server's half
+and the browser's half stopped each deriving it.
+
+**And it has to check the name it was given.** `required_with = invioce` would
+otherwise expand into a field access on a struct the author never wrote, and
+rustc would point at the expansion. It is refused at the attribute instead,
+which is the promise the rest of the macro makes.
 
 ## Stage 5: repeating groups
 
@@ -502,10 +539,6 @@ path.
   too many" needs a count that only the browser has. That is exactly the
   crossing [localization](localization.md) still owes, so client-side messages
   are fixed strings until it lands, and this is the second thing that wants it.
-- **Whether `Model<T>` validating is one extractor or two.** One means a handler
-  cannot accidentally skip it. Two (`Model<T>` and a checked wrapper) means the
-  refusal is visible in the signature. `Result<Model<T>, _>` may make the
-  question moot.
 - **What a form does with a rule it cannot show.** A violation on a field with
   no error element in the template is silent today by construction. A debug
   build should probably say so, the way `Effect::set` already asserts against a

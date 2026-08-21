@@ -19,7 +19,7 @@ use crate::{
 ///
 /// The rules a value can be judged on alone are declared here and checked by
 /// the extractor, so nothing below calls a validator. What is left in the
-/// handler is the two rules that need something this struct does not hold.
+/// handler is the rules that need something this struct does not hold.
 #[exos::model]
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Signup {
@@ -31,10 +31,11 @@ pub(crate) struct Signup {
     pub(crate) email: String,
     /// Whether the billing section applies at all.
     pub(crate) invoice: bool,
-    /// Who the invoice is made out to. Required only with an invoice, which is
-    /// a gate the macro cannot express yet, so the handler asks.
+    /// Who the invoice is made out to, needed only when one is asked for.
+    #[valid(required_with = invoice)]
     pub(crate) company: String,
     /// The tax id it needs, on the same terms.
+    #[valid(required_with = invoice)]
     pub(crate) vat: String,
     /// A code only the server can rule on.
     pub(crate) code: String,
@@ -122,10 +123,9 @@ fn field(
 /// Accepts a registration, or says what is wrong with it.
 ///
 /// Every rule about a single value was checked by the extractor, so a body
-/// that broke one never reached this line. What is left is the three kinds a
+/// that broke one never reached this line. What is left is the two kinds a
 /// rule on a field cannot express: one that needs a fact this model does not
-/// hold, one about data that is not in it at all, and one gated on another
-/// field.
+/// hold, and one about data that is not in it at all.
 #[exos::post("/register")]
 async fn register(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>> {
     let mut refusal = Refusal::new();
@@ -140,18 +140,6 @@ async fn register(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>>
     // message goes on the field invented to hold it.
     if let Some(message) = store::roster_fault(&data::<Roster>().snapshot()) {
         refusal.add(Signup::ATTENDEES, message);
-    }
-
-    // A gate the macro cannot express yet, spelled here and again in the
-    // template's `show`. Stage 4 of the roadmap is exactly this pair.
-    if form.invoice {
-        if form.company.trim().is_empty() {
-            refusal.add(Signup::COMPANY, "An invoice needs a company.");
-        }
-
-        if form.vat.trim().is_empty() {
-            refusal.add(Signup::VAT, "An invoice needs a VAT id.");
-        }
     }
 
     // The round trip this form exists to have.
@@ -283,15 +271,54 @@ mod tests {
         assert!(!search.contains("data-bind-state="), "{search}");
     }
 
-    /// The billing section is shown by one signal and its rules read the same
-    /// one, spelled once per place. Nothing checks that they agree, which is
-    /// what stage 4 is for.
+    /// The billing section is shown by one signal and gated on the same one,
+    /// spelled once per place. Nothing holds the two together, which is the
+    /// coupling stage 4 decided against buying.
     #[tokio::test]
     async fn the_billing_section_is_shown_by_the_signal_its_rules_read() {
         let html = get("/").await;
         let invoice = Signup::signals().invoice;
 
         assert!(html.contains(&format!("data-show=\"$.{}\"", invoice.name())));
+    }
+
+    /// A gated field is silent until its sibling arms it, on the server.
+    #[tokio::test]
+    async fn a_gate_is_shut_until_the_field_that_arms_it_is_filled_in() {
+        let stream = post("/register", &exos::to_wire(&draft())).await;
+        assert!(stream.contains("You are registered"), "{stream}");
+
+        let stream = post(
+            "/register",
+            &exos::to_wire(&Signup {
+                invoice: true,
+                ..draft()
+            }),
+        )
+        .await;
+
+        assert!(stream.contains("An invoice needs a company."), "{stream}");
+        assert!(stream.contains("An invoice needs a VAT id."), "{stream}");
+    }
+
+    /// And in the browser, where the gate is the sibling's own presence in
+    /// front of the rule rather than a second thing to keep in step.
+    #[tokio::test]
+    async fn the_same_gate_is_carried_to_the_control() {
+        let html = get("/").await;
+        let signals = Signup::signals();
+
+        let company = html
+            .split_once(r#"id="company""#)
+            .and_then(|(_, rest)| rest.split_once('>'))
+            .map(|(tag, _)| tag)
+            .expect("the company field is on the page");
+
+        assert!(
+            company.contains(&format!("$.{}", signals.invoice.name())),
+            "{company}"
+        );
+        assert!(company.contains("An invoice needs a company."), "{company}");
     }
 
     /// Nothing calls the validator, so a body that breaks a declared rule

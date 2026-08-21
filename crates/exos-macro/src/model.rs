@@ -26,9 +26,11 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         return error;
     }
 
+    let name = input.ident.clone();
+
     // Read before the struct is emitted, and taken off it: `valid` is this
     // macro's word and rustc knows nothing about it.
-    let rules = match valid::rules(fields) {
+    let rules = match valid::rules(fields, |field| signal_name(&name, field)) {
         Ok(rules) => rules,
         Err(error) => return error.to_compile_error(),
     };
@@ -39,7 +41,6 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         unreachable!("the fields were named a moment ago")
     };
 
-    let name = &input.ident;
     let visibility = &input.vis;
     let handle = Ident::new(&format!("{name}Signals"), name.span());
 
@@ -51,7 +52,10 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
 
     let types: Vec<syn::Type> = fields.named.iter().map(|field| field.ty.clone()).collect();
     let labels: Vec<String> = names.iter().map(ToString::to_string).collect();
-    let keys: Vec<String> = names.iter().map(|field| signal_name(name, field)).collect();
+    let keys: Vec<String> = names
+        .iter()
+        .map(|field| signal_name(&name, field))
+        .collect();
 
     let tokens = names.iter().zip(&labels).map(|(ident, label)| {
         let constant = Ident::new(&ident.to_string().to_uppercase(), ident.span());
@@ -67,8 +71,8 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
 
     // Where this model's errors live. Hashed like a field so it looks like
     // nothing special, off a name no field can spell.
-    let state = signal_name(name, &format_ident!("__state"));
-    let checks = valid::check(&rules, |field| signal_name(name, field));
+    let state = signal_name(&name, &format_ident!("__state"));
+    let checks = valid::check(&rules);
 
     // The same rules, asked the other way round. One list, two readers, which
     // is the whole reason they are declared rather than written twice.
@@ -343,6 +347,36 @@ mod tests {
 
         assert!(on_field.contains("compile_error"));
         assert!(on_struct.contains("compile_error"));
+    }
+
+    /// A gate names a sibling, so a typo is a message at the attribute rather
+    /// than a missing field in an expansion nobody wrote.
+    #[test]
+    fn a_gate_naming_no_field_is_refused() {
+        let expanded = expand_ok(
+            "struct Draft { invoice: bool, #[valid(required_with = invioce)] vat: String }",
+        );
+
+        assert!(expanded.contains("compile_error"));
+    }
+
+    /// And when it names one, both halves read it: the server through the
+    /// sibling field, the browser through that field's signal.
+    #[test]
+    fn a_gate_reaches_both_halves() {
+        let expanded = expand_ok(
+            "struct Draft { invoice: bool, #[valid(required_with = invoice)] vat: String }",
+        );
+        let armed = signal_name(&format_ident!("Draft"), &format_ident!("invoice"));
+
+        assert!(
+            expanded.contains("is_present (& self . invoice)"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains(&format!(r#"raw ("$.{armed}")"#)),
+            "{expanded}"
+        );
     }
 
     /// Other serde attributes are none of this macro's business.

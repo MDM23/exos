@@ -1,18 +1,20 @@
 //! A registration form, with every rule written by hand.
 //!
 //! The other three examples are about state that changes under you. This one
-//! is about a form, and it exists to be the thing the forms roadmap is
-//! designed against: it is written entirely with what exos has today, so what
-//! it costs is visible rather than argued about.
+//! is about a form. It was written by hand first, against what exos had before
+//! any of the forms roadmap, so that the stages could be designed against a
+//! cost that was visible rather than argued about; each one that has since
+//! landed took something back out of it.
 //!
-//! Four things it does, and each of them twice or by hand:
+//! Four things it does:
 //!
-//! * **A shape rule** is a Rust condition in [`form`] and the same question as
-//!   an expression in the template. Nothing holds the two together.
-//! * **A message** lives in a model field per field, because a handler can
-//!   only write what sits on the document.
-//! * **A conditional section** is shown by one signal and its rules read that
-//!   same signal, spelled once in each place.
+//! * **A shape rule** is declared on the model in [`form`], and that one
+//!   declaration answers on both sides: the extractor refuses a body that
+//!   breaks it, and the control asks it again while it is being typed.
+//! * **A message** goes into one record per model, keyed by field, whichever
+//!   side decided what is in it.
+//! * **A conditional section** is shown by one signal and gated on that same
+//!   signal, which is the one pair nothing holds together.
 //! * **A searchable multi-select** is in [`workshops`], and needs no
 //!   client-side loop: every option is rendered once and decides for itself
 //!   whether it is on screen.
@@ -55,7 +57,9 @@ fn boot() {
     // sentence; in an application with more than one language every arm here
     // would be a `messages!` call instead of a literal.
     exos::complaints(|field, violation| match (field, violation) {
+        ("company", Violation::Required) => String::from("An invoice needs a company."),
         ("email", Violation::Malformed) => String::from("That is not an email address."),
+        ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
         ("workshops", Violation::Required) => String::from("Pick at least one workshop."),
         (_, Violation::Required) => String::from("This is needed."),
         (_, Violation::TooShort { least }) => format!("At least {least} characters."),
