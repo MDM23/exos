@@ -34,14 +34,65 @@ impl IntoAttributes for Class {
     }
 }
 
-/// Both halves of a binding: the signal's name and its type.
+/// A binding: the signal's name, its type, and what may be wrong with it.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Bind(String, &'static str);
+pub struct Bind {
+    name: String,
+    kind: &'static str,
+    /// The record a message about this field lives in.
+    state: Option<&'static str>,
+    /// The field's own rules, for the control to answer as it is typed into.
+    rules: Option<String>,
+}
 
 impl IntoAttributes for Bind {
     fn write(self, attributes: &mut Attributes) {
-        attributes.set("data-bind", self.0);
-        attributes.set("data-bind-kind", self.1);
+        attributes.set("data-bind", self.name);
+        attributes.set("data-bind-kind", self.kind);
+
+        // Only a model field has either. The control answers its own rules and
+        // writes the verdict into the record, which is the same slot a refusal
+        // writes, so a template reads one place whoever decided it.
+        if let Some(state) = self.state {
+            attributes.set("data-bind-state", state);
+        }
+
+        if let Some(rules) = self.rules {
+            attributes.set("data-bind-rules", rules);
+        }
+    }
+}
+
+/// Something a control can be bound to.
+///
+/// Two implementors and one difference between them: a `#[model]` field knows
+/// its rules and the record they are written into, and a plain
+/// [`signal`](crate::signal) has neither, because nothing off the page can say
+/// anything about one.
+pub trait Bindable {
+    /// The attributes this binding needs.
+    fn binding(&self) -> Bind;
+}
+
+impl<T: BindKind> Bindable for Signal<T> {
+    fn binding(&self) -> Bind {
+        Bind {
+            name: self.name().to_owned(),
+            kind: T::KIND,
+            state: None,
+            rules: None,
+        }
+    }
+}
+
+impl<T: BindKind> Bindable for crate::Bound<T> {
+    fn binding(&self) -> Bind {
+        Bind {
+            name: self.name().to_owned(),
+            kind: T::KIND,
+            state: Some(self.state()),
+            rules: self.checked().map(|rules| rules.source().to_owned()),
+        }
     }
 }
 
@@ -118,8 +169,8 @@ pub fn prop<T>(name: &'static str, value: Js<T>) -> Attr {
 /// `value` into the array, which is what lets selecting many rows work with no
 /// per-row bookkeeping.
 #[must_use]
-pub fn bind<T: BindKind>(signal: &Signal<T>) -> Bind {
-    Bind(signal.name().to_owned(), T::KIND)
+pub fn bind(value: &impl Bindable) -> Bind {
+    value.binding()
 }
 
 /// Never morph this element: a media player, a third-party widget.

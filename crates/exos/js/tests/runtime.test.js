@@ -159,6 +159,94 @@ test("a control keeps what the viewer typed when a patch lands on it", async () 
     assert.equal(window.document.getElementById("field").value, "half typed");
 });
 
+/**
+ * A control carrying rules and the record they are written into.
+ *
+ * The record is declared the way a model handle declares it, so that reading a
+ * field out of it never lands on an undefined.
+ */
+const validated = (rules = `$.draft.length === 0 ? "needed" : ""`) =>
+    `<input id="field" data-signals-root='{"errors":{}}' data-bind="draft" ` +
+    `data-bind-kind="string" data-bind-state="errors" data-bind-rules='${rules}'>`;
+
+/** Types into the control and lets the effects settle. */
+async function type(window, value) {
+    const field = window.document.getElementById("field");
+    field.value = value;
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await settled();
+}
+
+// A form that is red before it is read is worse than no validation, so nothing
+// a field says about itself is written until it has been edited.
+test("a field says nothing about itself until it is edited", async () => {
+    const window = boot(validated());
+    await settled();
+
+    assert.deepEqual({ ...window.exos.signals.errors }, {});
+    assert.equal(window.document.getElementById("field").hasAttribute("aria-invalid"), false);
+
+    await type(window, "");
+
+    assert.equal(window.exos.signals.errors.draft, "needed");
+});
+
+// The mark is what a stylesheet and a screen reader both read, and it has to
+// say `true`: an empty aria-invalid means false, so a merely present attribute
+// says the opposite of what it is there to say.
+test("an invalid control marks itself in the attribute the language has", async () => {
+    const window = boot(validated());
+
+    await type(window, "");
+    assert.equal(window.document.getElementById("field").getAttribute("aria-invalid"), "true");
+
+    await type(window, "filled in");
+    assert.equal(window.document.getElementById("field").hasAttribute("aria-invalid"), false);
+});
+
+// One slot per field, whichever side decided what is in it. Editing recomputes
+// it, which is what takes a stale verdict away: the client cannot answer a rule
+// it does not own, and a message about a value that is no longer there is
+// worse than none.
+test("editing a control replaces what the server said about it", async () => {
+    const window = boot(validated());
+
+    window.exos.signals.errors = { draft: "taken", other: "kept" };
+    await settled();
+
+    assert.equal(window.document.getElementById("field").getAttribute("aria-invalid"), "true");
+
+    await type(window, "something else");
+
+    assert.equal(window.exos.signals.errors.draft, undefined, "the stale verdict is gone");
+    assert.equal(window.exos.signals.errors.other, "kept", "and nobody else's is touched");
+});
+
+// A control bound to a plain signal has no rules and no record, and must not go
+// looking for either.
+test("a binding with no rules survives being edited", async () => {
+    const window = boot(`<input id="field" data-bind="draft" data-bind-kind="string">`);
+
+    await type(window, "typed");
+
+    assert.equal(window.exos.signals.draft, "typed");
+    assert.equal(window.document.getElementById("field").hasAttribute("aria-invalid"), false);
+});
+
+// A patch re-delivering a control must not wipe the message that arrived with
+// it, which is the whole reason the rules wait for an edit.
+test("a message survives a patch over the control it is about", async () => {
+    const window = boot(`<div id="host">${validated()}</div>`);
+
+    window.exos.signals.errors = { draft: "taken" };
+    await settled();
+
+    window.exos.applyPatch(`<div id="host">${validated()}</div>`);
+    await settled();
+
+    assert.equal(window.exos.signals.errors.draft, "taken");
+});
+
 test("a handler on markup that arrived later still fires", () => {
     const window = boot(`<div id="host"></div>`);
 

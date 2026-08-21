@@ -6,7 +6,7 @@
 //! somebody types. That is what the framework should be writing, and doing it
 //! by hand is what this example is for.
 
-use exos::{Bound, Effect, Markup, Model, Refusal, bind, class, data, on_submit, show, text, view};
+use exos::{Bound, Effect, Markup, Model, Refusal, bind, data, on_submit, show, text, view};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -113,14 +113,7 @@ fn field(
     view! {
         <div class="field">
             <label for={ id }>{ label }</label>
-
-            <input
-                id={ id }
-                type={ kind }
-                {bind(value)}
-                {class("invalid", value.invalid())}
-            >
-
+            <input id={ id } type={ kind } {bind(value)}>
             <p class="error" {show(value.invalid())} {text(value.error())}></p>
         </div>
     }
@@ -243,25 +236,51 @@ mod tests {
         }
     }
 
-    /// One element, reading one record. The template says nothing about which
-    /// rules the field has or which side answered them.
+    /// The control carries its own rules and the record it writes them into.
+    /// The message is baked in at render time, because that is when the locale
+    /// is known and where the application's own wording lives.
     #[tokio::test]
-    async fn a_field_reads_its_message_out_of_the_record() {
+    async fn a_control_carries_the_rules_it_answers_for_itself() {
+        let html = get("/").await;
+        let state = <Signup as exos::Validate>::STATE;
+
+        assert!(html.contains("data-bind-rules="), "{html:.2000}");
+        assert!(html.contains("At least 2 characters."));
+        assert!(html.contains(&format!("data-bind-state=\"{state}\"")));
+    }
+
+    /// And whatever reads the message reads one slot, whichever side decided
+    /// what is in it. No template knows there were ever two.
+    #[tokio::test]
+    async fn a_message_is_read_from_one_place() {
         let html = get("/").await;
         let signals = Signup::signals();
         let state = <Signup as exos::Validate>::STATE;
 
-        assert!(
-            html.contains(&format!(
-                "data-text=\"($.{state}[&quot;{}&quot;] ?? &quot;&quot;)\"",
-                signals.name.name()
-            )),
-            "{html:.2000}"
-        );
+        assert!(html.contains(&format!(
+            "data-text=\"($.{state}[&quot;{}&quot;] ?? &quot;&quot;)\"",
+            signals.name.name()
+        )));
 
-        // And the record is declared with the fields, so the index it is read
-        // by cannot land on an undefined.
+        // The record is declared with the fields, so the index cannot land on
+        // an undefined before anything has been written.
         assert!(html.contains(&format!("&quot;{state}&quot;:{{}}")));
+    }
+
+    /// A plain signal has no record, because nothing off the page can say
+    /// anything about one. The dropdown's search box is the case in this page.
+    #[tokio::test]
+    async fn a_signal_that_is_not_a_field_carries_none() {
+        let html = get("/").await;
+
+        let search = html
+            .split_once("type=\"search\"")
+            .and_then(|(_, rest)| rest.split_once('>'))
+            .map(|(tag, _)| tag)
+            .expect("the search box is on the page");
+
+        assert!(search.contains("data-bind="), "{search}");
+        assert!(!search.contains("data-bind-state="), "{search}");
     }
 
     /// The billing section is shown by one signal and its rules read the same

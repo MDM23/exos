@@ -155,6 +155,60 @@ pub(crate) fn strip(input: &mut ItemStruct) {
     }
 }
 
+/// The browser's half: the same rules, as one expression yielding a message.
+///
+/// Built from the list [`check`] reads, so the two questions are one
+/// declaration. A field with no rules answers `None` and shows only whatever
+/// the server said about it.
+pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
+    let Some(Rules { ty, rules, .. }) = declared.iter().find(|rules| rules.field == *field) else {
+        return quote! { ::core::option::Option::None };
+    };
+
+    let label = field.to_string();
+
+    let asked = rules.iter().flat_map(|rule| match rule {
+        Rule::Required => vec![quote! {
+            (
+                !<#ty as ::exos::Presence>::present(__signal.get()),
+                ::exos::complaint(#label, ::exos::Violation::Required),
+            )
+        }],
+
+        // Guarded by presence exactly as the server's half is, so an empty
+        // optional field is silent on both sides. Two entries rather than one,
+        // because the two ends of a range do not say the same thing.
+        Rule::Length { least, most } => vec![
+            quote! {
+                (
+                    <#ty as ::exos::Presence>::present(__signal.get()).and(
+                        <#ty as ::exos::Length>::length(__signal.get()).lt(#least as u32)
+                    ),
+                    ::exos::complaint(#label, ::exos::Violation::TooShort { least: #least }),
+                )
+            },
+            quote! {
+                (
+                    <#ty as ::exos::Presence>::present(__signal.get()).and(
+                        <#ty as ::exos::Length>::length(__signal.get()).gt(#most as u32)
+                    ),
+                    ::exos::complaint(#label, ::exos::Violation::TooLong { most: #most }),
+                )
+            },
+        ],
+
+        Rule::Email => vec![quote! {
+            (
+                <#ty as ::exos::Presence>::present(__signal.get())
+                    .and(!::exos::email_js(&__signal.get())),
+                ::exos::complaint(#label, ::exos::Violation::Malformed),
+            )
+        }],
+    });
+
+    quote! { ::exos::chain(::std::vec![#(#asked),*]) }
+}
+
 /// The server's half: what runs inside `Validate::validate`.
 pub(crate) fn check(declared: &[Rules], key: impl Fn(&Ident) -> String) -> TokenStream {
     let checks = declared.iter().map(|Rules { field, ty, rules }| {

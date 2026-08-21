@@ -190,7 +190,12 @@ impl IntoResponse for ModelRejection {
 
             return (
                 StatusCode::UNPROCESSABLE_ENTITY,
-                Effect::set(&record, errors),
+                // The caret goes to the first thing wrong, and the selector is
+                // the same attribute the control marks itself with, so nothing
+                // here has to know an id. The record is written first and the
+                // effects that read it flush on a microtask queued before the
+                // focus step's, so the mark is in place when focus looks.
+                Effect::set(&record, errors).focus("[aria-invalid=\"true\"]"),
             )
                 .into_response();
         }

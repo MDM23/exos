@@ -317,6 +317,16 @@
         );
     }
 
+    // Whether a field has been edited, kept in the store like everything else
+    // an effect reads.
+    //
+    // A set beside the store would have been smaller and would go stale: an
+    // effect subscribes to what it reads, so dirtiness has to be readable the
+    // same way or the rules gated on it never run again. The prefix is one no
+    // generated name can wear, and nothing declares or sends these: what
+    // somebody has typed so far is the client's alone.
+    const dirtyKey = (key) => `~dirty/${key}`;
+
     // -------------------------------------------------------------------------
     //                                 BINDINGS
     // -------------------------------------------------------------------------
@@ -355,6 +365,52 @@
             } else if (el.value !== String(value ?? "")) {
                 el.value = String(value ?? "");
             }
+        },
+
+        // data-bind-rules="<expr>" is the field's own rules, answered here and
+        // written into the record its model's messages live in. One slot per
+        // field, whichever side decided what is in it, which is what lets a
+        // template read one place and lets this mark the control below.
+        //
+        // Nothing is written until the field has been edited. A form that is
+        // red before it is read is worse than no validation, and without the
+        // guard a patch re-inserting a control would wipe the message that
+        // arrived with it.
+        "data-bind-rules": (el, source) => () => {
+            const name = el.getAttribute("data-bind");
+            const state = el.getAttribute("data-bind-state");
+            if (!name || !state) return;
+
+            const key = resolve(el, name);
+            if (read(dirtyKey(key)) !== true) return;
+
+            const said = String(evaluate(source, el, null, false) ?? "");
+            const slot = resolve(el, state);
+            const record = read(slot) ?? {};
+
+            if ((record[name] ?? "") === said) return;
+
+            // A fresh object rather than a write in place, for the reason a
+            // collection is reassigned rather than pushed into.
+            if (said) write(slot, { ...record, [name]: said });
+            else {
+                const { [name]: _gone, ...rest } = record;
+                write(slot, rest);
+            }
+        },
+
+        // The control says what is wrong with it, in the attribute the
+        // language already had for it. A stylesheet needs no class of ours and
+        // a screen reader is told what the border says.
+        // Spelled out rather than toggled: aria-invalid is a token attribute
+        // whose empty value means `false`, so an attribute that is merely
+        // present says the opposite of what it is here to say.
+        "data-bind-state": (el, state) => () => {
+            const name = el.getAttribute("data-bind");
+            const record = read(resolve(el, state)) ?? {};
+
+            if (record[name]) el.setAttribute("aria-invalid", "true");
+            else el.removeAttribute("aria-invalid");
         },
 
         // data-class="{active: $.open}"
@@ -535,9 +591,15 @@
             const el = ev.target.closest?.("[data-bind]");
             if (!el || bindingEvent(el) !== type) return;
 
-            const key = resolve(el, el.getAttribute("data-bind"));
+            const name = el.getAttribute("data-bind");
+            const key = resolve(el, name);
             const current = read(key);
             const kind = el.getAttribute("data-bind-kind");
+
+            // Edited, so this control's own rules may speak. What they answer
+            // replaces whatever the server last said, because a verdict on a
+            // value that is no longer there is worse than none.
+            write(dirtyKey(key), true);
 
             if (el.type === "checkbox" && Array.isArray(current)) {
                 const value = el.value;

@@ -70,6 +70,13 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     let state = signal_name(name, &format_ident!("__state"));
     let checks = valid::check(&rules, |field| signal_name(name, field));
 
+    // The same rules, asked the other way round. One list, two readers, which
+    // is the whole reason they are declared rather than written twice.
+    let asked: Vec<TokenStream> = names
+        .iter()
+        .map(|field| valid::ask(&rules, field))
+        .collect();
+
     quote! {
         #input
 
@@ -96,8 +103,8 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
 
                 #handle {
                     #(
-                        #names: ::exos::Bound::new(
-                            ::exos::Signal::with_value(
+                        #names: {
+                            let __signal = ::exos::Signal::with_value(
                                 #keys,
                                 __initial
                                     .get(#labels)
@@ -108,9 +115,12 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
                                 // Effect::set, which the client applies against
                                 // the document root.
                                 ::exos::Placement::Document,
-                            ),
-                            #state,
-                        ),
+                            );
+
+                            let __asked = #asked;
+
+                            ::exos::Bound::new(__signal, #state, __asked)
+                        },
                     )*
                 }
             }

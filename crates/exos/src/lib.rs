@@ -77,7 +77,7 @@ pub use crate::{
 
 // Named by the `#[model]` expansion, which has to reach them from anywhere.
 #[doc(hidden)]
-pub use crate::valid::{email_js, is_email};
+pub use crate::valid::{chain, complaint, email_js, is_email};
 
 #[doc(inline)]
 pub use exos_macro::{

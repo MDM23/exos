@@ -90,9 +90,9 @@ input[type="search"] {
   border-radius: var(--radius);
 }
 
-/* Written by hand, because nothing marks a bound control for us. The framework
-   would say aria-invalid here, which is also what a screen reader wants. */
-input.invalid {
+/* The control marks itself. A screen reader is told what the border says, and
+   nothing in this stylesheet knows a class exos invented. */
+[aria-invalid="true"] {
   border-color: var(--error);
 }
 

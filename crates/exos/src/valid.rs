@@ -227,6 +227,41 @@ pub fn complaints(say: impl Fn(&str, Violation) -> String + Send + Sync + 'stati
     drop(COMPLAINTS.set(Box::new(say)));
 }
 
+/// What to say about one violation, for the `#[model]` expansion.
+///
+/// The browser's copy of a message is baked in at render time, which is when
+/// the locale is known and where the application's own wording lives.
+#[doc(hidden)]
+#[must_use]
+pub fn complaint(field: &str, violation: Violation) -> String {
+    complain(field, violation)
+}
+
+/// Folds a field's rules into one expression yielding its message.
+///
+/// A chain of ternaries rather than combinators, because there is no
+/// conditional in the vocabulary and this is generated rather than written.
+/// First match wins, which is the rule [`Errors::add`] follows on the server.
+#[doc(hidden)]
+#[must_use]
+pub fn chain(rules: Vec<(Js<bool>, String)>) -> Option<Js<String>> {
+    if rules.is_empty() {
+        return None;
+    }
+
+    let mut chain = String::from("\"\"");
+
+    for (broken, message) in rules.into_iter().rev() {
+        chain = format!(
+            "{} ? {} : {chain}",
+            broken.source(),
+            crate::quote_js(&message)
+        );
+    }
+
+    Some(Js::raw(chain))
+}
+
 /// What to say about one violation.
 fn complain(field: &str, violation: Violation) -> String {
     match COMPLAINTS.get() {

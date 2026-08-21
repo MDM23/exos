@@ -272,24 +272,47 @@ pub fn signal<T: Serialize>(initial: T) -> Signal<T> {
 pub struct Bound<T> {
     signal: Signal<T>,
     state: &'static str,
+    checked: Option<Js<String>>,
 }
 
 impl<T> Bound<T> {
-    /// Wraps a signal in the name of the record its model's errors live in.
+    /// Wraps a signal in the record its model's errors live in and in its own
+    /// rules, as the browser will ask them.
     ///
     /// Called by the `#[model]` expansion, which is the only thing that knows
-    /// both.
+    /// all three.
     #[doc(hidden)]
     #[must_use]
-    pub const fn new(signal: Signal<T>, state: &'static str) -> Self {
-        Self { signal, state }
+    pub const fn new(signal: Signal<T>, state: &'static str, checked: Option<Js<String>>) -> Self {
+        Self {
+            signal,
+            state,
+            checked,
+        }
+    }
+
+    /// The name of the record this field's message is written into.
+    #[must_use]
+    pub const fn state(&self) -> &'static str {
+        self.state
+    }
+
+    /// This field's own rules, as the browser asks them.
+    ///
+    /// Carried to the control by [`bind`](crate::bind) rather than read here:
+    /// the runtime evaluates them and writes the answer into the record, so
+    /// there is one slot a message lives in whoever decided it.
+    #[must_use]
+    pub const fn checked(&self) -> Option<&Js<String>> {
+        self.checked.as_ref()
     }
 
     /// What is wrong with this field, or the empty string.
     ///
-    /// An index into the model's record rather than a signal of its own, so
-    /// one write from a handler says everything about every field and a field
-    /// that now passes is cleared by not being mentioned.
+    /// One index into one record, whichever side put the message there. The
+    /// server writes it on a refusal; the control writes it as it is typed
+    /// into, which is also what takes a stale verdict away, since a value
+    /// nobody has judged since it changed cannot have a message about it.
     #[must_use]
     pub fn error(&self) -> Js<String> {
         Js::raw(format!(
