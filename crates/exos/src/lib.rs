@@ -43,6 +43,7 @@ mod response;
 mod scope;
 mod session;
 mod signal;
+mod valid;
 mod welcome;
 
 pub use crate::{
@@ -70,8 +71,13 @@ pub use crate::{
     response::Page,
     scope::{Scope, detached, scope, with_scope},
     session::{Id, Session, session},
-    signal::{Field, Placement, Signal, signal},
+    signal::{Bound, Field, Placement, Signal, signal},
+    valid::{Errors, Length, Presence, Refusal, Validate, Violation, complaints},
 };
+
+// Named by the `#[model]` expansion, which has to reach them from anywhere.
+#[doc(hidden)]
+pub use crate::valid::{email_js, is_email};
 
 #[doc(inline)]
 pub use exos_macro::{

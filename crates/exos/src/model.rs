@@ -38,6 +38,8 @@ use axum::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
+use crate::{Effect, Errors, Placement, Signal, Validate};
+
 /// The wire name of every field of a model.
 ///
 /// Implemented by `#[model]`, which is the only thing that can implement it
@@ -66,7 +68,7 @@ pub struct Model<T>(pub T);
 impl<S, T> FromRequest<S> for Model<T>
 where
     S: Send + Sync,
-    T: DeserializeOwned + ModelFields,
+    T: DeserializeOwned + Validate,
 {
     type Rejection = ModelRejection;
 
@@ -78,9 +80,21 @@ where
             return Err(ModelRejection::NotAnObject);
         };
 
-        Ok(Self(serde_json::from_value(Value::Object(
-            from_wire::<T>(wire),
-        ))?))
+        let model: T = serde_json::from_value(Value::Object(from_wire::<T>(wire)))?;
+
+        // Checked here rather than in the handler, so that there is no call
+        // site to forget and a body runs only against a value whose shape
+        // held. What a rule cannot answer, the handler still can.
+        let errors = model.validate();
+
+        if errors.is_empty() {
+            Ok(Self(model))
+        } else {
+            Err(ModelRejection::Refused {
+                state: T::STATE,
+                errors,
+            })
+        }
     }
 }
 
@@ -151,15 +165,41 @@ pub enum ModelRejection {
     /// arrived, because the keys are renamed before serde sees them.
     #[error(transparent)]
     Invalid(#[from] serde_json::Error),
+
+    /// The body arrived intact and broke a rule the model declares.
+    ///
+    /// The only variant a viewer is meant to see, and the only one that
+    /// answers with something to do about it rather than with a sentence for a
+    /// log.
+    #[error("the body broke a rule this model declares")]
+    Refused {
+        /// The signal the record is written to.
+        state: &'static str,
+        /// What is wrong, per field.
+        errors: Errors,
+    },
 }
 
 impl IntoResponse for ModelRejection {
     fn into_response(self) -> Response {
+        // A refusal a page can act on. Everything else here is a body nobody
+        // wrote by hand and no page can do anything about, so it stays a
+        // sentence the console prints.
+        if let Self::Refused { state, errors } = self {
+            let record = Signal::with_value(state, Value::Null, Placement::Document);
+
+            return (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Effect::set(&record, errors),
+            )
+                .into_response();
+        }
+
         let status = match self {
             // Nothing arrived to be understood, so this is not the body being
             // wrong.
             Self::Unreadable(_) => StatusCode::BAD_REQUEST,
-            Self::Invalid(_) | Self::NotAnObject => StatusCode::UNPROCESSABLE_ENTITY,
+            _ => StatusCode::UNPROCESSABLE_ENTITY,
         };
 
         (status, self.to_string()).into_response()

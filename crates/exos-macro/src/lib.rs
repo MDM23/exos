@@ -14,6 +14,7 @@ mod messages;
 mod model;
 mod profile;
 mod route;
+mod valid;
 mod view;
 
 /// Builds an asset and returns the URL it is served from.

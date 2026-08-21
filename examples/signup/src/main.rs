@@ -19,6 +19,8 @@
 //!
 //! Run it with `cargo run -p signup`.
 
+use exos::Violation;
+
 use crate::store::{Programme, Registrations, Roster};
 
 mod attendees;
@@ -40,11 +42,26 @@ async fn main() -> Result<(), std::io::Error> {
     axum::serve(listener, exos::app()).await
 }
 
-/// Seeds the programme. Separate from `main` so tests can call it.
+/// Seeds the programme and says how this form words a refusal.
+///
+/// Separate from `main` so tests can call it.
 fn boot() {
     exos::provide(Programme::seed());
     exos::provide(Registrations::default());
     exos::provide(Roster::seed());
+
+    // exos ships no text, because an application's languages are its own. A
+    // violation is a value and this is the one function that turns one into a
+    // sentence; in an application with more than one language every arm here
+    // would be a `messages!` call instead of a literal.
+    exos::complaints(|field, violation| match (field, violation) {
+        ("email", Violation::Malformed) => String::from("That is not an email address."),
+        ("workshops", Violation::Required) => String::from("Pick at least one workshop."),
+        (_, Violation::Required) => String::from("This is needed."),
+        (_, Violation::TooShort { least }) => format!("At least {least} characters."),
+        (_, Violation::TooLong { most }) => format!("At most {most} characters."),
+        (_, _) => String::from("That does not look right."),
+    });
 }
 
 /// What the modules' own tests are written against.

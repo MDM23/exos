@@ -1,13 +1,15 @@
 //! Expansion of the `#[model]` attribute.
 
 use proc_macro2::TokenStream;
-use quote::{ToTokens, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::{Fields, Ident, ItemStruct};
+
+use crate::valid;
 
 /// Expands a struct into itself plus its signal handle, field tokens and
 /// payload implementations.
 pub(crate) fn expand(item: TokenStream) -> TokenStream {
-    let input = match syn::parse2::<ItemStruct>(item) {
+    let mut input = match syn::parse2::<ItemStruct>(item) {
         Ok(input) => input,
         Err(error) => return error.to_compile_error(),
     };
@@ -23,6 +25,19 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     if let Some(error) = renamed(&input) {
         return error;
     }
+
+    // Read before the struct is emitted, and taken off it: `valid` is this
+    // macro's word and rustc knows nothing about it.
+    let rules = match valid::rules(fields) {
+        Ok(rules) => rules,
+        Err(error) => return error.to_compile_error(),
+    };
+
+    valid::strip(&mut input);
+
+    let Fields::Named(fields) = &input.fields else {
+        unreachable!("the fields were named a moment ago")
+    };
 
     let name = &input.ident;
     let visibility = &input.vis;
@@ -50,6 +65,11 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
 
     let handle_docs = format!("Signal handles for every field of [`{name}`].");
 
+    // Where this model's errors live. Hashed like a field so it looks like
+    // nothing special, off a name no field can spell.
+    let state = signal_name(name, &format_ident!("__state"));
+    let checks = valid::check(&rules, |field| signal_name(name, field));
+
     quote! {
         #input
 
@@ -57,8 +77,8 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         #[derive(::core::clone::Clone, ::core::fmt::Debug)]
         #visibility struct #handle {
             #(
-                #[doc = concat!("The `", #labels, "` signal.")]
-                pub #names: ::exos::Signal<#types>,
+                #[doc = concat!("The `", #labels, "` field.")]
+                pub #names: ::exos::Bound<#types>,
             )*
         }
 
@@ -76,17 +96,20 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
 
                 #handle {
                     #(
-                        #names: ::exos::Signal::with_value(
-                            #keys,
-                            __initial
-                                .get(#labels)
-                                .cloned()
-                                .unwrap_or(::exos::serde_json::Value::Null),
-                            // On the document, not on whichever element
-                            // declares the handle: a handler answers with
-                            // Effect::set, which the client applies against
-                            // the document root.
-                            ::exos::Placement::Document,
+                        #names: ::exos::Bound::new(
+                            ::exos::Signal::with_value(
+                                #keys,
+                                __initial
+                                    .get(#labels)
+                                    .cloned()
+                                    .unwrap_or(::exos::serde_json::Value::Null),
+                                // On the document, not on whichever element
+                                // declares the handle: a handler answers with
+                                // Effect::set, which the client applies against
+                                // the document root.
+                                ::exos::Placement::Document,
+                            ),
+                            #state,
                         ),
                     )*
                 }
@@ -96,6 +119,30 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         impl ::exos::IntoAttributes for &#handle {
             fn write(self, __attributes: &mut ::exos::Attributes) {
                 #(::exos::IntoAttributes::write(&self.#names, __attributes);)*
+
+                // The record every field's error is read out of. Declared
+                // beside them rather than as a field of its own, because it is
+                // not one: nothing sends it and nothing binds to it.
+                ::exos::IntoAttributes::write(
+                    &::exos::Signal::<::exos::Errors>::with_value(
+                        #state,
+                        ::exos::serde_json::Value::Object(
+                            ::exos::serde_json::Map::new()
+                        ),
+                        ::exos::Placement::Document,
+                    ),
+                    __attributes,
+                );
+            }
+        }
+
+        impl ::exos::Validate for #name {
+            const STATE: &'static str = #state;
+
+            fn validate(&self) -> ::exos::Errors {
+                let mut __errors = ::exos::Errors::default();
+                #checks
+                __errors
             }
         }
 
@@ -213,8 +260,8 @@ mod tests {
         let expanded = expand_ok("struct Selection { picked: Vec<u32>, fail: bool }");
 
         assert!(expanded.contains("struct SelectionSignals"));
-        assert!(expanded.contains("picked : :: exos :: Signal"));
-        assert!(expanded.contains("fail : :: exos :: Signal"));
+        assert!(expanded.contains("picked : :: exos :: Bound"));
+        assert!(expanded.contains("fail : :: exos :: Bound"));
     }
 
     #[test]

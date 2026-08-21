@@ -6,12 +6,14 @@
 //! is that the whole programme is in the document whether or not it is on
 //! screen, which is right for nine workshops and wrong for nine thousand.
 
-use exos::{IntoJs as _, Js, Markup, Signal, bind, data, on_click, show, signal, text, view};
+use exos::{
+    Bound, IntoJs as _, Js, Markup, Signal, bind, data, on_click, show, signal, text, view,
+};
 
 use crate::store::Programme;
 
 /// The dropdown: what is picked, a search box, and one checkbox per workshop.
-pub(crate) fn picker(picked: &Signal<Vec<u32>>, error: &Signal<String>) -> Markup {
+pub(crate) fn picker(picked: &Bound<Vec<u32>>) -> Markup {
     let open = signal(false);
     let query = signal(String::new());
     let programme = data::<Programme>();
@@ -98,7 +100,7 @@ pub(crate) fn picker(picked: &Signal<Vec<u32>>, error: &Signal<String>) -> Marku
                 </button>
             </div>
 
-            <p class="error" {show(!error.get().is_empty())} {text(error.get())}></p>
+            <p class="error" {show(picked.invalid())} {text(picked.error())}></p>
         </div>
     }
 }

@@ -86,9 +86,12 @@ mod tests {
         let title = Draft::signals().title;
         let html = composer().into_string();
 
+        // The record a model's messages land in is declared beside its fields,
+        // whether or not this model has any rules to produce one.
         assert!(html.contains(&format!(
-            "<form data-signals-root=\"{{&quot;{}&quot;:&quot;&quot;}}\"",
-            title.name()
+            "<form data-signals-root=\"{{&quot;{}&quot;:&quot;&quot;,&quot;{}&quot;:{{}}}}\"",
+            title.name(),
+            <Draft as exos::Validate>::STATE,
         )));
     }
 

@@ -6,11 +6,7 @@
 //! somebody types. That is what the framework should be writing, and doing it
 //! by hand is what this example is for.
 
-use axum::http::StatusCode;
-use exos::{
-    Effect, Js, Markup, Model, Signal, bind, class, data, on_focusout, on_submit, show, signal,
-    text, view,
-};
+use exos::{Bound, Effect, Markup, Model, Refusal, bind, class, data, on_submit, show, text, view};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -19,48 +15,41 @@ use crate::{
     workshops::picker,
 };
 
-/// Everything the form holds, and everything it can be told.
+/// Everything the form holds.
 ///
-/// The six `_error` fields are the shape of what is missing: a message has to
-/// live on the document for a handler to be able to write it, and there is
-/// nowhere else to put one, so each field carries its own by hand.
+/// The rules a value can be judged on alone are declared here and checked by
+/// the extractor, so nothing below calls a validator. What is left in the
+/// handler is the two rules that need something this struct does not hold.
 #[exos::model]
 #[derive(Debug, Default, Deserialize, Serialize)]
 pub(crate) struct Signup {
     /// Who is registering.
+    #[valid(required, length = 2..=40)]
     pub(crate) name: String,
     /// Where the confirmation goes.
+    #[valid(required, email)]
     pub(crate) email: String,
     /// Whether the billing section applies at all.
     pub(crate) invoice: bool,
-    /// Who the invoice is made out to.
+    /// Who the invoice is made out to. Required only with an invoice, which is
+    /// a gate the macro cannot express yet, so the handler asks.
     pub(crate) company: String,
-    /// The tax id it needs.
+    /// The tax id it needs, on the same terms.
     pub(crate) vat: String,
     /// A code only the server can rule on.
     pub(crate) code: String,
     /// Which workshops were picked.
+    #[valid(required)]
     pub(crate) workshops: Vec<u32>,
-
-    /// What is wrong with [`name`](Self::name).
-    pub(crate) name_error: String,
-    /// What is wrong with [`email`](Self::email).
-    pub(crate) email_error: String,
-    /// What is wrong with [`company`](Self::company).
-    pub(crate) company_error: String,
-    /// What is wrong with [`vat`](Self::vat).
-    pub(crate) vat_error: String,
-    /// What is wrong with [`code`](Self::code).
-    pub(crate) code_error: String,
-    /// What is wrong with [`workshops`](Self::workshops).
-    pub(crate) workshops_error: String,
-    /// What is wrong with the attendee rows, which are not a field of this
-    /// model at all: they live on the server, and this is here only because a
-    /// message has to be somewhere a handler can write it.
-    pub(crate) attendees_error: String,
+    /// Never filled in, and here so that a message has a field to hang on.
+    ///
+    /// The rows live on the server, so this model does not hold them, and the
+    /// record is keyed by field. A message about something that is not a field
+    /// has no home, and inventing one is the cheapest way to give it one.
+    pub(crate) attendees: String,
 }
 
-/// The form, with every rule it can answer without asking.
+/// The form.
 pub(crate) fn registration() -> Markup {
     let form = Signup::signals();
 
@@ -69,46 +58,24 @@ pub(crate) fn registration() -> Markup {
             <form {&form} {on_submit(|_| register::post(&form))}>
                 <h1>"Register"</h1>
 
-                {
-                    field(
-                        "name",
-                        "Your name",
-                        "text",
-                        &form.name,
-                        &form.name_error,
-                        Some((form.name.get().trim().is_empty(), "A name is needed.")),
-                    )
-                }
-
-                {
-                    field(
-                        "email",
-                        "Email",
-                        "email",
-                        &form.email,
-                        &form.email_error,
-                        Some((
-                            !form.email.get().contains("@"),
-                            "That is not an email address.",
-                        )),
-                    )
-                }
+                { field("name", "Your name", "text", &form.name) }
+                { field("email", "Email", "email", &form.email) }
 
                 <div class="field">
                     <span class="label">"Workshops"</span>
-                    { picker(&form.workshops, &form.workshops_error) }
+                    { picker(&form.workshops) }
                 </div>
 
                 <div class="field">
                     <span class="label">"Who is coming"</span>
                     { roster() }
 
-                    // One message for the whole group, because an error has
-                    // nowhere row-shaped to go.
+                    // One message for the whole group, because an error still
+                    // has nowhere row-shaped to go.
                     <p
                         class="error"
-                        {show(!form.attendees_error.get().is_empty())}
-                        {text(form.attendees_error.get())}
+                        {show(form.attendees.invalid())}
+                        {text(form.attendees.error())}
                     ></p>
                 </div>
 
@@ -117,45 +84,14 @@ pub(crate) fn registration() -> Markup {
                     "I need an invoice"
                 </label>
 
-                // The section and the rules under it are gated on one signal,
-                // spelled here and again in each rule below. Nothing checks
-                // that the three agree.
                 <fieldset class="billing" {show(form.invoice.get())}>
                     <legend>"Billing"</legend>
 
-                    {
-                        field(
-                            "company",
-                            "Company",
-                            "text",
-                            &form.company,
-                            &form.company_error,
-                            Some((
-                                form.invoice.get().and(form.company.get().trim().is_empty()),
-                                "An invoice needs a company.",
-                            )),
-                        )
-                    }
-
-                    {
-                        field(
-                            "vat",
-                            "VAT id",
-                            "text",
-                            &form.vat,
-                            &form.vat_error,
-                            Some((
-                                form.invoice.get().and(form.vat.get().trim().is_empty()),
-                                "An invoice needs a VAT id.",
-                            )),
-                        )
-                    }
+                    { field("company", "Company", "text", &form.company) }
+                    { field("vat", "VAT id", "text", &form.vat) }
                 </fieldset>
 
-                // No client rule at all: whether a code exists is a fact only
-                // the server holds, so this field can be wrong in exactly one
-                // way and only after a round trip.
-                { field("code", "Discount code", "text", &form.code, &form.code_error, None) }
+                { field("code", "Discount code", "text", &form.code) }
 
                 <button type="submit">"Register"</button>
             </form>
@@ -163,207 +99,75 @@ pub(crate) fn registration() -> Markup {
     }
 }
 
-/// One labelled field, its control, and both of the ways it complains.
+/// One labelled field, its control, and whatever is wrong with it.
 ///
-/// `broken` is the browser's copy of the rule, and it is optional because a
-/// rule the server alone can answer has no browser copy to give.
+/// Nothing here knows which rules the field has or where they were checked. A
+/// message is a message, whether a declared rule produced it or the handler
+/// did.
 fn field(
     id: &'static str,
     label: &'static str,
     kind: &'static str,
-    value: &Signal<String>,
-    error: &Signal<String>,
-    broken: Option<(Js<bool>, &'static str)>,
+    value: &Bound<String>,
 ) -> Markup {
-    // Gating the client's complaint on having left the field once is what
-    // keeps a form from being red before it is read. A plain signal is enough,
-    // because nothing off the page ever writes it, and it is declared on the
-    // wrapper so every field gets its own.
-    let touched = signal(false);
-
-    // The server's message wins where there is one, which is the precedence a
-    // framework would apply rather than each field arranging it.
-    let said = !error.get().is_empty();
-
-    let wrong = match &broken {
-        Some((rule, _)) => rule.clone().and(touched.get()).or(said.clone()),
-        None => said.clone(),
-    };
-
     view! {
-        <div class="field" {&touched}>
+        <div class="field">
             <label for={ id }>{ label }</label>
 
             <input
                 id={ id }
                 type={ kind }
                 {bind(value)}
-                {class("invalid", wrong)}
-                {on_focusout(|_| touched.set(true))}
+                {class("invalid", value.invalid())}
             >
 
-            <p class="error" {show(said.clone())} {text(error.get())}></p>
-
-            {
-                match broken {
-                    Some((rule, complaint)) => view! {
-                        <p class="error" {show(rule.and(touched.get()).and(!said))}>
-                            { complaint }
-                        </p>
-                    },
-                    None => Markup::default(),
-                }
-            }
+            <p class="error" {show(value.invalid())} {text(value.error())}></p>
         </div>
     }
 }
 
-/// Something wrong with the form.
-struct Fault {
-    /// The signal the message is written to.
-    error: Signal<String>,
-    /// Where the caret should go. Spelled again here because nothing connects
-    /// a field to the id its input was rendered with.
-    id: &'static str,
-    /// What to say about it.
-    message: &'static str,
-}
-
-/// Whether this fault is about `error`.
-///
-/// A signal has no identity beyond its name, so the two are compared by it.
-impl Fault {
-    fn is_about(&self, error: &Signal<String>) -> bool {
-        self.error.name() == error.name()
-    }
-}
-
-/// Every shape rule, asked a second time against what arrived.
-///
-/// These are the same questions the template asks in the browser, and keeping
-/// the two in step is nobody's job but the author's.
-fn faults(form: &Signup) -> Vec<Fault> {
-    let signals = Signup::signals();
-    let mut faults = Vec::new();
-
-    if form.name.trim().is_empty() {
-        faults.push(Fault {
-            error: signals.name_error,
-            id: "name",
-            message: "A name is needed.",
-        });
-    }
-
-    if !form.email.contains('@') {
-        faults.push(Fault {
-            error: signals.email_error,
-            id: "email",
-            message: "That is not an email address.",
-        });
-    }
-
-    if form.workshops.is_empty() {
-        faults.push(Fault {
-            error: signals.workshops_error,
-            id: "workshops",
-            message: "Pick at least one workshop.",
-        });
-    }
-
-    // Read from the store rather than from what arrived, because the rows are
-    // not part of the submission. A message about them can therefore not say
-    // which row, and `#attendees` is a div, so the caret does not go there
-    // either: the focus step finds it and nothing happens.
-    if let Some(message) = store::roster_fault(&data::<Roster>().snapshot()) {
-        faults.push(Fault {
-            error: signals.attendees_error,
-            id: "attendees",
-            message,
-        });
-    }
-
-    if form.invoice && form.company.trim().is_empty() {
-        faults.push(Fault {
-            error: signals.company_error,
-            id: "company",
-            message: "An invoice needs a company.",
-        });
-    }
-
-    if form.invoice && form.vat.trim().is_empty() {
-        faults.push(Fault {
-            error: signals.vat_error,
-            id: "vat",
-            message: "An invoice needs a VAT id.",
-        });
-    }
-
-    faults
-}
-
-/// Writes every error signal, the ones that now pass included.
-///
-/// Clearing what passes is not optional and is the easiest thing here to
-/// forget: a message left behind describes a value that is no longer there.
-fn report(faults: &[Fault]) -> Effect {
-    let signals = Signup::signals();
-    let mut effect = Effect::none();
-
-    for error in [
-        signals.attendees_error,
-        signals.code_error,
-        signals.company_error,
-        signals.email_error,
-        signals.name_error,
-        signals.vat_error,
-        signals.workshops_error,
-    ] {
-        let message = faults
-            .iter()
-            .find(|fault| fault.is_about(&error))
-            .map_or_else(String::new, |fault| fault.message.to_owned());
-
-        effect = effect.and_set(&error, message);
-    }
-
-    effect
-}
-
 /// Accepts a registration, or says what is wrong with it.
+///
+/// Every rule about a single value was checked by the extractor, so a body
+/// that broke one never reached this line. What is left is the three kinds a
+/// rule on a field cannot express: one that needs a fact this model does not
+/// hold, one about data that is not in it at all, and one gated on another
+/// field.
 #[exos::post("/register")]
-async fn register(Model(form): Model<Signup>) -> Result<Effect, (StatusCode, Effect)> {
-    let mut faults = faults(&form);
+async fn register(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>> {
+    let mut refusal = Refusal::new();
 
-    // Ids arrive from checkboxes, and markup is not a promise. This is a rule
-    // no browser copy could ever stand in for, and it is not a message anybody
-    // should see: a well-behaved page cannot produce it.
+    // Ids arrive from checkboxes, and markup is not a promise. Not a message
+    // anybody should see: a well-behaved page cannot produce it.
     if !data::<Programme>().holds(&form.workshops) {
-        faults.push(Fault {
-            error: Signup::signals().workshops_error,
-            id: "workshops",
-            message: "That is not on the programme.",
-        });
+        refusal.add(Signup::WORKSHOPS, "That is not on the programme.");
     }
 
-    // The round trip this form exists to have. Asked only once the shape
-    // holds, so a form with an empty name does not also argue about a code.
-    if faults.is_empty() && !form.code.trim().is_empty() && !store::accepts(&form.code) {
-        faults.push(Fault {
-            error: Signup::signals().code_error,
-            id: "code",
-            message: "That code is not one of ours.",
-        });
+    // The rows are not part of the submission, so this reads the store and the
+    // message goes on the field invented to hold it.
+    if let Some(message) = store::roster_fault(&data::<Roster>().snapshot()) {
+        refusal.add(Signup::ATTENDEES, message);
     }
 
-    if let Some(first) = faults.first() {
-        let caret = format!("#{}", first.id);
+    // A gate the macro cannot express yet, spelled here and again in the
+    // template's `show`. Stage 4 of the roadmap is exactly this pair.
+    if form.invoice {
+        if form.company.trim().is_empty() {
+            refusal.add(Signup::COMPANY, "An invoice needs a company.");
+        }
 
-        // A refusal says what the outcome was and what to do about it, and the
-        // client applies the second whatever the first says.
-        return Err((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            report(&faults).focus(caret),
-        ));
+        if form.vat.trim().is_empty() {
+            refusal.add(Signup::VAT, "An invoice needs a VAT id.");
+        }
+    }
+
+    // The round trip this form exists to have.
+    if !form.code.trim().is_empty() && !store::accepts(&form.code) {
+        refusal.add(Signup::CODE, "That code is not one of ours.");
+    }
+
+    if !refusal.is_empty() {
+        return Err(refusal);
     }
 
     // Read rather than taken, so this example stays one an ordinary test can
@@ -439,70 +243,92 @@ mod tests {
         }
     }
 
-    /// Both copies of one rule are on the page: the client's is an expression
-    /// over the signal, the server's arrives as a message in another.
+    /// One element, reading one record. The template says nothing about which
+    /// rules the field has or which side answered them.
     #[tokio::test]
-    async fn a_field_carries_both_of_its_complaints() {
+    async fn a_field_reads_its_message_out_of_the_record() {
         let html = get("/").await;
         let signals = Signup::signals();
+        let state = <Signup as exos::Validate>::STATE;
 
-        assert!(html.contains(&format!("($.{}.trim()).length === 0", signals.name.name())));
-        assert!(html.contains(&format!("data-text=\"$.{}\"", signals.name_error.name())));
+        assert!(
+            html.contains(&format!(
+                "data-text=\"($.{state}[&quot;{}&quot;] ?? &quot;&quot;)\"",
+                signals.name.name()
+            )),
+            "{html:.2000}"
+        );
+
+        // And the record is declared with the fields, so the index it is read
+        // by cannot land on an undefined.
+        assert!(html.contains(&format!("&quot;{state}&quot;:{{}}")));
     }
 
-    /// The billing rules and the section that shows them are gated on the same
-    /// signal, spelled once per place. Nothing checks that they agree.
+    /// The billing section is shown by one signal and its rules read the same
+    /// one, spelled once per place. Nothing checks that they agree, which is
+    /// what stage 4 is for.
     #[tokio::test]
-    async fn the_billing_section_is_shown_by_the_same_signal_its_rules_read() {
+    async fn the_billing_section_is_shown_by_the_signal_its_rules_read() {
         let html = get("/").await;
         let invoice = Signup::signals().invoice;
 
         assert!(html.contains(&format!("data-show=\"$.{}\"", invoice.name())));
-        assert!(html.contains(&format!("$.{} &amp;&amp; ", invoice.name())));
     }
 
+    /// Nothing calls the validator, so a body that breaks a declared rule
+    /// never reaches the handler and comes back as the record anyway.
     #[tokio::test]
-    async fn an_empty_form_is_refused_with_a_message_per_field() {
+    async fn a_declared_rule_is_checked_before_the_handler_runs() {
         let stream = post("/register", &exos::to_wire(&Signup::default())).await;
         let signals = Signup::signals();
 
-        assert!(stream.contains("A name is needed."), "{stream}");
-        assert!(stream.contains("Pick at least one workshop."), "{stream}");
-        assert!(stream.contains(&format!("\"{}\"", signals.name_error.name())));
+        assert!(stream.contains("This is needed."), "{stream}");
+        assert!(
+            stream.contains(&format!("\"{}\"", signals.name.name())),
+            "{stream}"
+        );
+
+        // The handler's own rules did not run: the roster is fine and the
+        // extractor refused before anything could ask about it.
+        assert!(!stream.contains("attendee"), "{stream}");
     }
 
-    /// The caret goes to the first thing wrong, which is what makes a refusal
-    /// something to act on rather than something to read.
+    /// A field that now passes is cleared by not being in the record, which is
+    /// what removes the writing-every-message-every-time of the old version.
     #[tokio::test]
-    async fn a_refusal_moves_the_caret_to_the_first_fault() {
-        let stream = post("/register", &exos::to_wire(&Signup::default())).await;
-
-        assert!(stream.contains("event: focus"), "{stream}");
-        assert!(stream.contains("#name"), "{stream}");
-    }
-
-    /// Every error signal is written, including the ones that now pass, or a
-    /// message about a value somebody has since fixed stays on screen.
-    #[tokio::test]
-    async fn a_report_clears_what_no_longer_applies() {
+    async fn a_record_says_only_what_is_wrong() {
         let signals = Signup::signals();
-        let stream = post("/register", &exos::to_wire(&draft())).await;
-
-        assert!(!stream.contains("A name is needed."), "{stream}");
 
         let stream = post(
             "/register",
             &exos::to_wire(&Signup {
-                name: String::new(),
+                email: String::from("not-an-address"),
                 ..draft()
             }),
         )
         .await;
 
+        assert!(stream.contains("That is not an email address."), "{stream}");
         assert!(
-            stream.contains(&format!("\"{}\":\"\"", signals.email_error.name())),
+            !stream.contains(&format!("\"{}\"", signals.name.name())),
             "{stream}"
         );
+    }
+
+    /// A length is counted in UTF-16 code units on both sides, so a value the
+    /// browser called too long is too long here too.
+    #[tokio::test]
+    async fn a_length_is_refused_the_way_the_browser_counts_it() {
+        let stream = post(
+            "/register",
+            &exos::to_wire(&Signup {
+                name: String::from("A"),
+                ..draft()
+            }),
+        )
+        .await;
+
+        assert!(stream.contains("At least 2 characters."), "{stream}");
     }
 
     /// The rule that has to be a round trip.

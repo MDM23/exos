@@ -33,12 +33,38 @@ fn a_model_handle_declares_itself_on_the_document() {
     let gone = signal(false);
     let markup = view! { <li id="row" {(&draft, &gone)}></li> };
 
+    // The record every field's error is read out of is declared with them, and
+    // starts empty. A field reads it by index, so it has to be there before
+    // anything reads one.
     assert_eq!(
         markup.as_str(),
         format!(
             "<li id=\"row\" data-signals=\"{{&quot;{}&quot;:false}}\" \
-             data-signals-root=\"{{&quot;{}&quot;:&quot;&quot;}}\"></li>",
+             data-signals-root=\"{{&quot;{}&quot;:&quot;&quot;,&quot;{}&quot;:{{}}}}\"></li>",
             gone.name(),
+            draft.title.name(),
+            <Draft as exos::Validate>::STATE,
+        )
+    );
+}
+
+/// A field's error is an index into its model's record rather than a signal of
+/// its own, so one write from a handler says everything about every field.
+#[test]
+fn a_field_reads_its_message_out_of_the_models_record() {
+    #[exos::model]
+    #[derive(Debug, Default, Deserialize, Serialize)]
+    struct Draft {
+        title: String,
+    }
+
+    let draft = Draft::signals();
+
+    assert_eq!(
+        draft.title.error().source(),
+        format!(
+            "($.{}[\"{}\"] ?? \"\")",
+            <Draft as exos::Validate>::STATE,
             draft.title.name()
         )
     );
