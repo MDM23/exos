@@ -151,7 +151,10 @@ function transports(window, navigations) {
             // Server-sent events arrive as bytes off a reader rather than as
             // text, because that is what lets the runtime apply a slow
             // handler's steps as they land instead of after the last one.
-            body: { getReader: () => reader(window, text) },
+            //
+            // `cancel` is here because a real body has one: a reply the runtime
+            // has decided not to read is let go rather than left open.
+            body: { getReader: () => reader(window, text), cancel: () => Promise.resolve() },
         });
     };
 

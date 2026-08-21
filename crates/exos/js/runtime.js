@@ -198,6 +198,19 @@
         return name;
     }
 
+    // The nearest element that declares anything, without making one the way
+    // `scopeOf` does. `debounce` keys off this so that a helper called once per
+    // row gives every row its own timer, exactly as `resolve` gives every row
+    // its own signal.
+    function declaring(el) {
+        for (let node = el; node; node = node.parentElement) {
+            const scope = scopes.get(node);
+            if (scope) return scope;
+        }
+
+        return "";
+    }
+
     function namespace(el) {
         return new Proxy(
             {},
@@ -233,7 +246,7 @@
             fn = new Function(
                 "$", "el", "ev",
                 "get", "post", "put", "patch", "del",
-                "attr", "append", "focus",
+                "attr", "append", "focus", "debounce",
                 statement ? source : `return (${source})`,
             );
         } catch (error) {
@@ -297,6 +310,36 @@
         queueMicrotask(() => document.querySelector(selector)?.focus());
     }
 
+    // A handler on `input` runs per keystroke, which is right for a signal
+    // write and wrong for anything that leaves the machine. `timers` holds the
+    // pending call per key; `issued` counts what has gone out under one, so a
+    // reply older than the newest can be dropped.
+    const timers = new Map();
+    const issued = new Map();
+    let arming = null;
+
+    function debounceCall(el, key, delay, body) {
+        const scoped = `${declaring(el)}/${key}`;
+
+        clearTimeout(timers.get(scoped));
+        timers.set(
+            scoped,
+            setTimeout(() => {
+                timers.delete(scoped);
+
+                // `request` reads this synchronously, before its first await,
+                // so the key reaches the fetch without being threaded through
+                // every helper an expression might call in between.
+                arming = scoped;
+                try {
+                    body();
+                } finally {
+                    arming = null;
+                }
+            }, delay),
+        );
+    }
+
     function evaluate(source, el, ev, statement) {
         const action = (method) => (url, data) => request(method, url, el, data);
 
@@ -314,6 +357,7 @@
             (name, value) => speculate(el, name, value),
             appendTemplate,
             focusLater,
+            (key, delay, body) => debounceCall(el, key, delay, body),
         );
     }
 
@@ -649,6 +693,12 @@
     }
 
     async function request(method, url, el, data) {
+        // Claimed synchronously, before anything awaits, so a call made under a
+        // debounce key is stamped with the turn it went out on.
+        const key = arming;
+        const turn = key ? (issued.get(key) ?? 0) + 1 : 0;
+        if (key) issued.set(key, turn);
+
         const init = { method, headers: { "X-Exos": "true" } };
         let target = url;
 
@@ -675,6 +725,17 @@
 
         try {
             const response = await fetch(target, init);
+
+            // A newer call went out under this key while this one was in
+            // flight, so its answer is the one that counts. Debouncing alone
+            // does not give this: two requests can still overlap on a slow
+            // connection, and the older landing last paints the answer for a
+            // prefix of what is in the box now.
+            if (key && issued.get(key) !== turn) {
+                response.body?.cancel();
+                return response;
+            }
+
             const type = response.headers?.get("content-type") ?? "";
 
             // An effect is applied whatever the status, and everything else is

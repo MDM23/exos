@@ -3,8 +3,9 @@
 Rules written once, checked on both sides, and the one round trip that carries
 what only the server knows.
 
-Status: stages 0, 1, 2 and the gate half of 4 are built. What is left is
-patterns (1a), the debounce (3) and repeating groups (5).
+Status: stages 0, 1, 2, 3 and the gate half of 4 are built. What is left is
+patterns (1a) and repeating groups (5), and 5 is now the one three other
+stages have run into.
 
 [`examples/signup`](../../examples/signup) is the form written by hand against
 the surface that existed before any of this, so what the stages are worth is
@@ -348,8 +349,8 @@ selector and the template dropped the `class(...)` block with it.
 
 ## Stage 3: one debounce, three features
 
-The mechanism is a debounced call, and it reads like the recorder's existing
-`when`:
+**Done.** The mechanism is a debounced call, and it reads like the recorder's
+existing `when`:
 
 ```rs
 on_input(|_| debounce(300, || search::post(&query)))
@@ -359,10 +360,11 @@ The key is the call site, hashed the way
 [`signal`](../../crates/exos/src/signal.rs) hashes its own, so nothing invents a
 name for it.
 
-That one thing delivers three of this document's wishes, which is the sign it is
-the right shape rather than three features wearing a coat: a search field that
-submits as it is typed, a server rule that answers while a field is still being
-edited, and any other action that should not fire per keystroke.
+That one thing was drawn as delivering three of this document's wishes, which
+was the sign it is the right shape rather than three features wearing a coat: a
+search field that submits as it is typed, a server rule that answers while a
+field is still being edited, and any other action that should not fire per
+keystroke.
 
 **Debouncing alone is not enough and this is the part that gets forgotten.** Two
 requests in flight can answer in the other order, and the older one then paints
@@ -374,6 +376,32 @@ connection, which is a bug nobody can reproduce.
 Nothing else about a search field is new. The query is a model field, the
 handler patches a fragment, and `aria-busy` on the element already says the work
 is happening.
+
+### What it found
+
+**A call site is not enough of a key.** It had to be the call site *and* the
+element, resolved through the same DOM scopes a signal resolves through. A
+helper called once per row is one call site, so a key that stopped there would
+put every row on one timer, and typing in the second row would cancel the save
+the first was about to make. That is the same thing
+[`signal`](../../crates/exos/src/signal.rs) already says about names, arrived at
+from the other direction, so the runtime walks to the nearest declaring element
+and prefixes with what it finds. A client test fails without it.
+
+**It delivers two of the three wishes, and the third is stage 5's wall.** A
+server rule cannot answer while one field is being edited, because the generated
+caller sends a model and only a model: checking the discount code alone would
+mean posting the whole form, which runs every declared rule and lights up every
+field somebody has not reached yet. That is not the debounce's doing. It is
+[the missing projection](#stage-5-repeating-groups) seen from a third side, and
+it is now an edge in the guide rather than a claim this stage can make.
+
+**The key reaches the request through the frame it was armed in.** A debounced
+body runs synchronously inside the timer, and a request reads the key before its
+first `await`, so last-response-wins needed no plumbing through every helper an
+expression might call on the way. The example the roadmap reached for is the
+attendee rows, which now save as they are typed rather than on the way out, and
+each row's timer is its own.
 
 ## Stage 4: rules that only sometimes apply
 

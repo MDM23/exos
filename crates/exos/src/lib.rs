@@ -59,7 +59,8 @@ pub use crate::{
     effect::{Effect, EffectStream, Step},
     identity::{Audience, Audiences, Resolution, identify},
     js::{
-        IntoJs, IntoPayload, Js, append, attr_now, call, emit, focus_now, quote_js, record, when,
+        IntoJs, IntoPayload, Js, append, attr_now, call, debounce, emit, focus_now, quote_js,
+        record, when,
     },
     keys::{Keys, keys},
     live::{Fragment, Topic, connected, connection_count, publish, send},

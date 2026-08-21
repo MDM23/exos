@@ -9,10 +9,11 @@
 //!
 //! So the rows live on the server and each edit is a round trip of its own,
 //! through a one-field model that exists to be a transport and for no other
-//! reason.
+//! reason. What keeps that from being a request per keystroke is [`debounce`],
+//! and every row gets its own timer because every row is its own scope.
 
 use axum::extract::Path;
-use exos::{Effect, Markup, Model, bind, data, on_click, on_focusout, signal, view};
+use exos::{Effect, Markup, Model, bind, data, debounce, on_click, on_input, signal, view};
 use serde::{Deserialize, Serialize};
 
 use crate::store::{self, Attendee, Roster};
@@ -64,13 +65,13 @@ fn line(attendee: &Attendee) -> Markup {
                 aria-label="Attendee"
                 placeholder="Name"
                 {bind(&draft)}
-                {on_focusout(|_| {
+                {on_input(|_| debounce(400, || {
                     // Two statements because there is no third: the row's own
                     // signal cannot be sent, so it is copied into the model the
                     // caller does know how to send.
                     row.name.set(draft.get());
                     rename::put(id, &row);
-                })}
+                }))}
             >
 
             <button
@@ -90,7 +91,7 @@ async fn add() -> Effect {
     Effect::patch(roster())
 }
 
-/// Writes one row's name, on the way out of its field.
+/// Writes one row's name, once the typing in it has stopped.
 #[exos::put("/attendees/{id}")]
 async fn rename(Path(id): Path<u32>, Model(row): Model<Row>) -> Effect {
     data::<Roster>().update(|rows| store::rename_attendee(rows, id, &row.name));
@@ -124,6 +125,30 @@ mod tests {
         assert!(!html.contains(&format!("data-bind=\"{}\"", name.name())));
         assert!(html.contains(&format!("$.{} = $.", name.name())));
         assert!(html.contains("put(&quot;/attendees/1&quot;"));
+    }
+
+    /// Saving happens as it is typed rather than on the way out, which is only
+    /// bearable because the call is held back. Every row carries the same key,
+    /// since one call site renders them all, and the runtime resolves it
+    /// against each row's own scope so that one row cannot cancel another.
+    #[tokio::test]
+    async fn a_row_saves_while_it_is_typed_without_a_call_per_keystroke() {
+        let html = get("/").await;
+
+        assert!(html.contains("data-on-input=\"debounce("), "{html:.4000}");
+        assert!(!html.contains("data-on-focusout"), "{html:.4000}");
+
+        let keys: Vec<&str> = html.matches("debounce(&quot;").collect();
+        assert_eq!(keys.len(), 2, "one per row");
+
+        let first = html.split("data-on-input=\"debounce(&quot;").nth(1);
+        let second = html.split("data-on-input=\"debounce(&quot;").nth(2);
+
+        assert_eq!(
+            first.map(|rest| &rest[..9]),
+            second.map(|rest| &rest[..9]),
+            "one call site is one key"
+        );
     }
 
     /// Every row declares the same generated name, because it comes from one

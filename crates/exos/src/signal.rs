@@ -398,7 +398,10 @@ impl<M> Field<M> {
 /// exactly right, because each row is its own scope. Two signals collide only
 /// when one element declares both, and that is the clash a hand-written name
 /// could always have.
-fn generated(at: &Location<'_>) -> String {
+///
+/// Shared with [`debounce`](crate::debounce), which needs a key with exactly
+/// these properties and resolves it against the same scopes.
+pub(crate) fn generated(at: &Location<'_>) -> String {
     // The same hash a topic gets, for the same reason it is written down
     // rather than borrowed. Truncated to 32 bits: a collision has to survive
     // landing on the same element to matter at all.

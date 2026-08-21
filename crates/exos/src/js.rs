@@ -207,6 +207,46 @@ pub fn when(condition: impl IntoJs<bool>, body: impl FnOnce(())) {
     ));
 }
 
+/// Waits for the typing to stop before doing what is inside.
+///
+/// A handler on `input` runs per keystroke, which is right for a signal write
+/// and wrong for anything that leaves the machine. This holds the body back
+/// until `millis` have passed with no further call:
+///
+/// ```ignore
+/// on_input(|_| debounce(300, || search::post(&filter)))
+/// ```
+///
+/// # One key per call site, per element
+///
+/// The key is generated from where this is written, exactly as
+/// [`signal`](crate::signal) names itself, and resolved against the same DOM
+/// scopes. So a helper called once per row gives every row its own timer,
+/// because a row is its own scope, and typing in one row cannot cancel what
+/// another row was about to save.
+///
+/// # Two replies cannot arrive in the wrong order
+///
+/// A key also carries last-response-wins: once a newer call has gone out under
+/// it, an older reply is dropped rather than applied. Debouncing alone does not
+/// give that, because two requests can still be in flight together on a slow
+/// connection, and the older one landing last paints the results for a prefix
+/// of what is now in the box.
+///
+/// # Panics
+///
+/// If called outside a handler; see [`emit`].
+#[track_caller]
+pub fn debounce(millis: u32, body: impl FnOnce()) {
+    let key = crate::signal::generated(core::panic::Location::caller());
+    let script = record(body);
+
+    emit(format!(
+        "debounce({}, {millis}, () => {{ {script} }})",
+        quote_js(&key)
+    ));
+}
+
 // -----------------------------------------------------------------------------
 //                                  STATEMENTS
 // -----------------------------------------------------------------------------
@@ -323,6 +363,35 @@ mod tests {
     #[should_panic(expected = "only works inside a handler")]
     fn emitting_outside_a_handler_says_so() {
         emit("orphan()");
+    }
+
+    /// A held-back body records into its own frame, like a branch, and carries
+    /// the key the runtime resolves against the DOM.
+    #[test]
+    fn a_debounced_body_is_held_back_under_a_key() {
+        let script = record(|| debounce(300, || emit("post(\"/search\")")));
+
+        assert!(script.starts_with("debounce(\"s"), "{script}");
+        assert!(
+            script.ends_with(", 300, () => { post(\"/search\") })"),
+            "{script}"
+        );
+    }
+
+    /// Two call sites are two keys, so one debounced action cannot cancel
+    /// another. The same call site reached twice is one key, which is what
+    /// gives a row-per-call-site helper its own timer per row instead.
+    #[test]
+    fn a_key_follows_the_call_site() {
+        fn held() -> String {
+            record(|| debounce(100, || emit("go()")))
+        }
+
+        let first = record(|| debounce(100, || emit("go()")));
+        let second = record(|| debounce(100, || emit("go()")));
+
+        assert_ne!(first, second);
+        assert_eq!(held(), held());
     }
 
     #[test]

@@ -10,6 +10,33 @@ async fn favorite(Path(id): Path<u32>, Model(body): Model<Selection>) -> Effect
 gives you `favorite::post(id, selection)`. The URL, the path parameter type and
 the payload type are all checked, so changing the route breaks every call site.
 
+## Not on every keystroke
+
+A handler on `input` runs per keystroke, which is right for a signal write and
+wrong for anything that leaves the machine. `debounce` holds the body back
+until the typing stops:
+
+```rust
+on_input(|_| debounce(300, || search::post(&filter)))
+```
+
+**The key is where it is written, resolved against the DOM.** It is generated
+from the call site exactly as [`signal`](signals) names itself, and looked up
+through the same scopes, so a helper called once per row gives every row its own
+timer. Typing in one row cannot cancel what another row was about to save, and
+nothing has to invent a name.
+
+**A key also carries last-response-wins.** Once a newer call has gone out under
+it, an older reply is dropped rather than applied. Debouncing alone does not
+give you that: two requests can still be in flight together on a slow
+connection, and the older one landing last paints the answer for a prefix of
+what is now in the box. That is a bug nobody can reproduce, so it is not left to
+the application.
+
+Nothing else about a search field is new. The query is a model field, the
+handler patches a fragment, and `aria-busy` on the element already says the work
+is happening.
+
 ## Optimistic updates
 
 Paint first and let the server correct it:

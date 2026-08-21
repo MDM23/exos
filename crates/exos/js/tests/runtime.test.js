@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { boot, bootDev, bootUnder, settled } from "./harness.js";
+import { after, boot, bootDev, bootUnder, settled } from "./harness.js";
 
 /** One row, declaring a signal and binding a class to it. */
 const row = (id = "row") =>
@@ -486,6 +486,113 @@ test("html arriving with a failure is left where it is", async () => {
 
     assert.equal(window.document.getElementById("slot").textContent, "before");
 });
+
+// A handler on `input` runs per keystroke, so anything that leaves the machine
+// has to be held back. The key is generated per call site on the server and
+// resolved against the DOM here, which is the half only a document can check.
+
+/** A field whose input debounces a call, under the key one call site produces. */
+const box = (id, key = "k1", delay = 10) =>
+    `<input id="${id}" data-on-input="debounce('${key}', ${delay}, () => post('/search'))">`;
+
+/** Types into a field, however many times, without waiting between. */
+function types(window, id, times = 1) {
+    const field = window.document.getElementById(id);
+    for (let i = 0; i < times; i += 1) {
+        field.dispatchEvent(new window.Event("input", { bubbles: true }));
+    }
+}
+
+test("typing sends one request rather than one per keystroke", async () => {
+    const window = boot(box("query"));
+
+    types(window, "query", 4);
+    assert.equal(window.transport.requests.length, 0, "and nothing before the wait is over");
+
+    await after(30);
+    assert.equal(window.transport.requests.length, 1);
+});
+
+// The bug this is here to prevent: a key that is only the call site collapses
+// every row onto one timer, because a helper called once per row is one call
+// site. Typing in the second row would then cancel the first row's save.
+test("two rows debounce apart, because each row is its own scope", async () => {
+    const window = boot(
+        `<li id="one" data-signals='{"draft":""}'>${box("a")}</li>` +
+            `<li id="two" data-signals='{"draft":""}'>${box("b")}</li>`,
+    );
+
+    types(window, "a");
+    types(window, "b");
+
+    await after(30);
+    assert.equal(window.transport.requests.length, 2);
+});
+
+test("one row typed into twice is still one request", async () => {
+    const window = boot(`<li id="one" data-signals='{"draft":""}'>${box("a")}</li>`);
+
+    types(window, "a", 3);
+
+    await after(30);
+    assert.equal(window.transport.requests.length, 1);
+});
+
+// Debouncing alone is not enough, and this is the part that gets forgotten.
+// Two requests can be in flight together on a slow connection, and the older
+// one answering last paints the results for a prefix of what is in the box.
+test("a reply older than the newest request under its key is dropped", async () => {
+    const window = boot(`${box("query")}<p id="slot">before</p>`);
+
+    const answers = [];
+    const said = (text) =>
+        `event: patch\ndata: <p id="slot">${text}</p>\n\n`;
+
+    window.fetch = () =>
+        new Promise((resolve) => {
+            answers.push((text) =>
+                resolve({
+                    ok: true,
+                    status: 200,
+                    headers: { get: () => "text/event-stream" },
+                    body: {
+                        getReader: () => oneChunk(window, said(text)),
+                        cancel: () => Promise.resolve(),
+                    },
+                }),
+            );
+        });
+
+    types(window, "query");
+    await after(30);
+
+    types(window, "query");
+    await after(30);
+
+    assert.equal(answers.length, 2, "both went out, so they can answer out of order");
+
+    // The older one answers last, which is the whole failure mode.
+    answers[1]("second");
+    await settled();
+    answers[0]("first");
+    await settled();
+    await settled();
+
+    assert.equal(window.document.getElementById("slot").textContent, "second");
+});
+
+/** A body handed over whole, for a test whose subject is not the chunking. */
+function oneChunk(window, text) {
+    let sent = false;
+
+    return {
+        read() {
+            if (sent) return Promise.resolve({ done: true });
+            sent = true;
+            return Promise.resolve({ done: false, value: new window.TextEncoder().encode(text) });
+        },
+    };
+}
 
 /** One live fragment, as the server renders it: a name and the proof of it. */
 const live = (id = "presence-1") => `<exos-live id="${id}" data-token="token-for-${id}"></exos-live>`;
