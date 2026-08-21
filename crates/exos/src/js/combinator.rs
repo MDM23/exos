@@ -175,8 +175,14 @@ impl Js<String> {
     }
 
     /// Whether the string contains `needle`.
+    ///
+    /// The bound is `IntoJs<String>` rather than `IntoJs<Self>`, which is the
+    /// same thing every other combinator takes and reads oddly only here: a
+    /// needle is a string, and `Self` at this point is already `Js<String>`, so
+    /// asking for `IntoJs<Self>` asks for an expression yielding an expression
+    /// and nothing implements it.
     #[must_use]
-    pub fn contains(self, needle: impl IntoJs<Self>) -> Js<bool> {
+    pub fn contains(self, needle: impl IntoJs<String>) -> Js<bool> {
         Js::raw(format!(
             "{}.includes({})",
             self.grouped(),
@@ -241,6 +247,25 @@ mod tests {
         // Ungrouped this would read `$.a && $.b || $.c`, which parses
         // differently from the way the Rust reads.
         assert_eq!(a.and(b).or(c).source(), "($.a && $.b) || $.c");
+    }
+
+    /// A needle is usually another signal, which is what a list filtered by a
+    /// search box is made of. Taking `IntoJs<Self>` made this reachable by
+    /// nothing at all.
+    #[test]
+    fn a_string_contains_a_literal_or_another_expression() {
+        let title = Js::<String>::raw("$.title");
+        let query = Js::<String>::raw("$.query");
+
+        assert_eq!(
+            title.clone().contains(query).source(),
+            "$.title.includes($.query)"
+        );
+
+        assert_eq!(
+            title.contains("rust").source(),
+            r#"$.title.includes("rust")"#
+        );
     }
 
     #[test]
