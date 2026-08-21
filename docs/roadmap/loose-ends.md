@@ -342,6 +342,7 @@ chores and each has somewhere better to live.
   sent it. Swapping a session store does nothing for it. It needs a bus, and it
   is the one thing here that cannot be added quietly later.
 
-Form validation is absent for the opposite reason: the `Effect` shape is right
-for it and what is missing is the way rules are expressed, which has not been
-designed enough to break into chores.
+Form validation is absent for the same reason, and now has [forms](forms.md) to
+be absent into. The `Effect` shape was always right for it; what was missing is
+the way rules are expressed, and that document is the design rather than the
+chores it has not been broken into yet.
