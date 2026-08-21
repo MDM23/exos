@@ -37,7 +37,7 @@ async fn text(response: Response) -> String {
 /// The URL the `url()` was rewritten to, resolved the way a browser resolves it:
 /// against the stylesheet it was written in.
 async fn referenced() -> String {
-    let stylesheet = exos::asset!("tests/fixtures/app.css");
+    let stylesheet = exos::asset!("tests/fixtures/app.css").url();
     let css = text(served(&stylesheet).await).await;
 
     let relative = css

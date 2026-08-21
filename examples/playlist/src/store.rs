@@ -13,6 +13,8 @@
 
 use std::sync::Mutex;
 
+use crate::sleeve::Sleeve;
+
 /// One track.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Track {
@@ -23,6 +25,8 @@ pub(crate) struct Track {
     /// Whether somebody in the room hearted it. Anybody can, and it is the
     /// room's rather than any one listener's.
     pub(crate) hearted: bool,
+    /// The art, and the blur it decodes to before it arrives.
+    pub(crate) cover: Sleeve,
 }
 
 /// The queue, and which of it is playing.
@@ -59,23 +63,48 @@ impl Room {
     /// A queue with something in it, so the example has something to play.
     #[must_use]
     pub(crate) fn seed() -> Self {
+        // The art is embedded here and hashed here. `asset!` puts the file in
+        // the binary and hands back the name it is served under, and
+        // [`Sleeve`] reads the same bytes to work out what to draw while it
+        // loads, so a swapped sleeve needs nothing else touched.
         let seeds = [
-            ("Coffee and a Compiler", "The Borrow Checkers"),
-            ("Slow Morning", "Hana Reyes"),
-            ("Nothing To Declare", "Public Interface"),
-            ("Tail Call", "Recursion"),
-            ("Held Across an Await", "The Deadlocks"),
-            ("Last Orders", "Closing Time"),
+            (
+                "Coffee and a Compiler",
+                "The Borrow Checkers",
+                exos::asset!("img/coffee.png"),
+            ),
+            (
+                "Slow Morning",
+                "Hana Reyes",
+                exos::asset!("img/morning.png"),
+            ),
+            (
+                "Nothing To Declare",
+                "Public Interface",
+                exos::asset!("img/declare.png"),
+            ),
+            ("Tail Call", "Recursion", exos::asset!("img/tail-call.png")),
+            (
+                "Held Across an Await",
+                "The Deadlocks",
+                exos::asset!("img/await.png"),
+            ),
+            (
+                "Last Orders",
+                "Closing Time",
+                exos::asset!("img/last-orders.png"),
+            ),
         ];
 
         let tracks: Vec<Track> = seeds
             .iter()
             .enumerate()
-            .map(|(index, (title, artist))| Track {
+            .map(|(index, (title, artist, art))| Track {
                 id: u32::try_from(index).unwrap_or(0) + 1,
                 title: (*title).to_owned(),
                 artist: (*artist).to_owned(),
                 hearted: false,
+                cover: Sleeve::new(*art),
             })
             .collect();
 
@@ -204,6 +233,7 @@ mod tests {
                 title: (*title).to_owned(),
                 artist: String::from("somebody"),
                 hearted: false,
+                cover: Sleeve::new(exos::asset!("img/coffee.png")),
             })
             .collect();
 

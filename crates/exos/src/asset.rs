@@ -14,6 +14,8 @@ use axum::{
     routing::get,
 };
 
+use crate::{AttributeValue, Render};
+
 /// Where assets sit under whatever [`base`](crate::base) the application has.
 ///
 /// Hashed names make the segment itself arbitrary. What is not arbitrary is
@@ -21,17 +23,6 @@ use axum::{
 /// so the endpoints in [`live`](crate::live) share it deliberately rather than
 /// by coincidence.
 pub(crate) const PREFIX: &str = "/_exos";
-
-/// The URL an asset is served from, under the application's base.
-///
-/// Called by [`asset!`](crate::asset), which knows the hashed file name at
-/// compile time but cannot know the base, since that is chosen when the program
-/// runs. There is no reason to call it by hand.
-#[doc(hidden)]
-#[must_use]
-pub fn asset_url(file: &str) -> String {
-    format!("{}{PREFIX}/{file}", crate::base::path())
-}
 
 /// The URL of the client runtime, which every page has to load.
 ///
@@ -54,9 +45,12 @@ pub fn asset_url(file: &str) -> String {
 /// What the runtime does with it is keep its stream open on a page with nothing
 /// live on it, and answer a reconnect with a reload rather than a repair, so
 /// that a rebuilt server reaches the tab looking at it.
+///
+/// A [`String`] rather than an [`Asset`], because a query is not part of any
+/// file name.
 #[must_use]
 pub fn runtime() -> String {
-    let url = crate::asset!("js/exos.js");
+    let url = crate::asset!("js/exos.js").url();
 
     if cfg!(debug_assertions) {
         format!("{url}?dev")
@@ -65,19 +59,112 @@ pub fn runtime() -> String {
     }
 }
 
-/// One asset built by [`asset!`](crate::asset).
+/// What [`asset!`](crate::asset) evaluates to: a file the binary carries.
+///
+/// It holds the hashed file name and nothing else, so it is a `&'static str` in
+/// a newtype and every call site is a constant. Interpolating it into a
+/// [`view!`](crate::view) writes the URL it is served from:
+///
+/// ```ignore
+/// view! { <link rel="stylesheet" href={ exos::asset!("css/app.css") }> }
+/// ```
+///
+/// [`bytes`](Self::bytes) is the other half. The file is in the binary
+/// already, so whatever can be derived from its content can be derived at
+/// startup rather than kept beside it by hand:
+///
+/// ```ignore
+/// static BLURRED: LazyLock<String> = LazyLock::new(|| {
+///     placeholder(exos::asset!("img/cover.png").bytes())
+/// });
+/// ```
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct Asset(&'static str);
+
+impl Asset {
+    /// Names one built asset. Called by [`asset!`](crate::asset).
+    #[must_use]
+    pub const fn new(file: &'static str) -> Self {
+        Self(file)
+    }
+
+    /// The hashed file name, such as `app-9f2c1b4e.css`.
+    #[must_use]
+    pub const fn file(&self) -> &'static str {
+        self.0
+    }
+
+    /// The URL this asset is served from, under the application's base.
+    ///
+    /// Only worth calling where a URL has to be a [`String`]: in a view the
+    /// asset renders as one.
+    #[must_use]
+    pub fn url(&self) -> String {
+        self.render().into_string()
+    }
+
+    /// The bytes that went into the binary under this name.
+    ///
+    /// The lookup walks what the binary embedded, so hold the result rather
+    /// than calling this per request. A [`LazyLock`](std::sync::LazyLock) is
+    /// the shape for it: the bytes never change, and neither does anything
+    /// computed from them.
+    ///
+    /// # Panics
+    ///
+    /// If nothing embedded this file. Every asset is claimed by exactly one
+    /// call site per crate, and that site is compiled into the same binary as
+    /// this one, so a failure here means the claiming site was never generated
+    /// code: an `asset!` inside a generic function nothing instantiates. That
+    /// asset has no URL that serves either, which is a build-shaped fault
+    /// rather than a request-shaped one, and it should say so at startup.
+    #[must_use]
+    pub fn bytes(&self) -> &'static [u8] {
+        crate::discover::asset_sets()
+            .iter()
+            .flat_map(|set| set.0)
+            .find(|embedded| embedded.file == self.0)
+            .unwrap_or_else(|| panic!("exos: nothing in this binary embedded {}", self.0))
+            .bytes
+    }
+}
+
+impl Render for Asset {
+    /// Straight into the buffer. A hashed file name and a base hold nothing
+    /// that HTML escaping would touch, and the [`String`] the URL would be
+    /// built in first is a temporary that only ever gets copied here.
+    fn render_to(&self, out: &mut String) {
+        out.push_str(crate::base::path());
+        out.push_str(PREFIX);
+        out.push('/');
+        out.push_str(self.0);
+    }
+}
+
+impl AttributeValue for Asset {
+    type Output<'value>
+        = &'value Self
+    where
+        Self: 'value;
+
+    fn attribute_value(&self) -> Option<&Self> {
+        Some(self)
+    }
+}
+
+/// One asset built by [`asset!`](crate::asset), with the bytes it embedded.
 ///
 /// Values come from that macro rather than being written by hand, which is
 /// why the constructor takes everything at once.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Asset {
+pub struct Embedded {
     name: &'static str,
     file: &'static str,
     content_type: &'static str,
     bytes: &'static [u8],
 }
 
-impl Asset {
+impl Embedded {
     /// Describes one built asset. Called by [`asset!`](crate::asset).
     #[must_use]
     pub const fn new(
@@ -100,34 +187,34 @@ impl Asset {
         self.name
     }
 
-    /// The hashed file name, such as `app-9f2c1b4e.css`.
+    /// A handle to this asset, which is what a page needs.
     #[must_use]
-    pub const fn file(&self) -> &'static str {
-        self.file
+    pub const fn asset(&self) -> Asset {
+        Asset(self.file)
     }
 
-    /// The URL this asset is served from.
+    /// The bytes, as they are served.
     #[must_use]
-    pub fn url(&self) -> String {
-        asset_url(self.file)
+    pub const fn bytes(&self) -> &'static [u8] {
+        self.bytes
     }
 }
 
 /// The assets one [`asset!`](crate::asset) call site registered.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct AssetSet(pub &'static [Asset]);
+pub struct AssetSet(pub &'static [Embedded]);
 
 impl AssetSet {
     /// The asset with this logical name, if the set has one.
     #[must_use]
-    pub fn get(&self, name: &str) -> Option<&'static Asset> {
-        self.0.iter().find(|asset| asset.name == name)
+    pub fn get(&self, name: &str) -> Option<&'static Embedded> {
+        self.0.iter().find(|embedded| embedded.name == name)
     }
 
     /// The asset served under this hashed file name.
     #[must_use]
-    pub fn by_file(&self, file: &str) -> Option<&'static Asset> {
-        self.0.iter().find(|asset| asset.file == file)
+    pub fn by_file(&self, file: &str) -> Option<&'static Embedded> {
+        self.0.iter().find(|embedded| embedded.file == file)
     }
 }
 
@@ -135,8 +222,8 @@ impl AssetSet {
 ///
 /// Mounted at the root of whatever router this ends up in, because nesting is
 /// what puts an application under a prefix and doing it here too would put it
-/// under one twice. What the [base](crate::base) changes is the URL
-/// [`asset_url`] writes into a page, not where this answers.
+/// under one twice. What the [base](crate::base) changes is the URL an
+/// [`Asset`] renders as, not where this answers.
 ///
 /// Takes the sets by value: discovery assembles them at startup and each one
 /// only points at `'static` data, so this is a handful of fat pointers.
@@ -153,13 +240,13 @@ pub fn routes(sets: Vec<AssetSet>) -> Router {
     )
 }
 
-fn serve(asset: &'static Asset) -> Response {
-    let mut response = Response::new(Body::from(asset.bytes));
+fn serve(embedded: &'static Embedded) -> Response {
+    let mut response = Response::new(Body::from(embedded.bytes));
     let headers = response.headers_mut();
 
     // `from_static` cannot fail here: content types come from the build
     // pipeline, which only produces valid header values.
-    if let Ok(value) = HeaderValue::from_str(asset.content_type) {
+    if let Ok(value) = HeaderValue::from_str(embedded.content_type) {
         headers.insert(header::CONTENT_TYPE, value);
     }
 
@@ -176,7 +263,7 @@ fn serve(asset: &'static Asset) -> Response {
 mod tests {
     use super::*;
 
-    const STYLESHEET: Asset = Asset {
+    const STYLESHEET: Embedded = Embedded {
         name: "app.css",
         file: "app-0123456789ab.css",
         content_type: "text/css; charset=utf-8",
@@ -194,14 +281,23 @@ mod tests {
 
     #[test]
     fn the_url_carries_the_hash_so_it_can_be_cached_forever() {
-        assert_eq!(STYLESHEET.url(), "/_exos/app-0123456789ab.css");
+        assert_eq!(STYLESHEET.asset().url(), "/_exos/app-0123456789ab.css");
     }
 
-    /// The macro and the router build their URLs from one function and one
-    /// constant, so neither can drift into a 404 the other serves. What that
-    /// looks like under a base is checked in
-    /// [`tests/base.rs`](../../tests/base.rs), which needs a process of its own
-    /// to set one.
+    /// In a view it is the URL and nothing else, so a page written against a
+    /// `String` reads the same after the handle replaced one.
+    #[test]
+    fn an_asset_renders_as_its_url() {
+        assert_eq!(
+            STYLESHEET.asset().render().as_str(),
+            "/_exos/app-0123456789ab.css"
+        );
+    }
+
+    /// The macro and the router build their URLs from one constant, so neither
+    /// can drift into a 404 the other serves. What that looks like under a base
+    /// is checked in [`tests/base.rs`](../../tests/base.rs), which needs a
+    /// process of its own to set one.
     #[test]
     fn the_router_serves_what_the_macro_points_at() {
         assert!(
@@ -209,5 +305,13 @@ mod tests {
             "the macro returned {}, which this crate does not route",
             runtime()
         );
+    }
+
+    /// The one call that can panic, on the file this crate embeds itself.
+    #[test]
+    fn the_bytes_of_an_embedded_file_are_reachable() {
+        let runtime = crate::asset!("js/exos.js");
+
+        assert!(runtime.bytes().starts_with(b"//"));
     }
 }

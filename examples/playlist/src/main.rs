@@ -19,6 +19,13 @@
 //!   understand it, which is what a switch labelled "simulate a server error"
 //!   never manages.
 //! * **Selection with a batch action**, ticking rows into one `Vec<u32>`.
+//! * **A sleeve that is there before it loads.** The art is embedded with
+//!   `asset!`, and the blur standing in for it is those same bytes shrunk to
+//!   sixteen pixels a side at startup and inlined into the page. Nothing is
+//!   written down beside the image and nothing can go stale. Throttle the
+//!   network in devtools to watch it: the blur holds until the whole sleeve
+//!   has arrived and then crosses over to it, rather than being wiped down
+//!   over by an image painting itself a row at a time.
 //! * **Drag to reorder**, deciding what plays next.
 //! * **A real listener count**, from the streams exos is already holding.
 //!
@@ -29,6 +36,7 @@ use core::time::Duration;
 mod page;
 mod room;
 mod selection;
+mod sleeve;
 mod store;
 mod track;
 

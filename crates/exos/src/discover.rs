@@ -79,7 +79,7 @@ inventory::collect!(AssetSetEntry);
 ///
 /// The runtime is not a special case: [`runtime`](crate::runtime) expands the
 /// same macro every application does, and registers the same way.
-fn asset_sets() -> Vec<AssetSet> {
+pub(crate) fn asset_sets() -> Vec<AssetSet> {
     inventory::iter::<AssetSetEntry>
         .into_iter()
         .map(|set| set.0)

@@ -47,7 +47,7 @@ mod valid;
 mod welcome;
 
 pub use crate::{
-    asset::{Asset, AssetSet, asset_url, routes as asset_routes, runtime},
+    asset::{Asset, AssetSet, Embedded, routes as asset_routes, runtime},
     attributes::{
         Attr, Attributes, Bind, BindKind, Class, Event, EventType, IntoAttributes, Target, attr,
         bind, class, on, on_change, on_click, on_dblclick, on_focusout, on_input, on_keydown,

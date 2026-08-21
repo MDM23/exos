@@ -75,6 +75,7 @@ fn document(title: &str, path: &str, body: Markup) -> Page {
                 <title>{ title }</title>
                 <link rel="stylesheet" href={ exos::asset!("css/app.css") }>
                 <script defer src={ exos::runtime() }></script>
+                <script defer src={ exos::asset!("js/sleeve.js") }></script>
             </head>
             <body>
                 <nav class="site-nav">
@@ -100,13 +101,20 @@ fn current(path: &str, href: &str) -> Option<&'static str> {
 mod tests {
     use crate::tests::get;
 
+    /// Both scripts are deferred, so document order is execution order, and
+    /// the plugin is written against a runtime that has already run.
     #[tokio::test]
-    async fn the_document_ships_one_stylesheet_and_one_script() {
+    async fn the_document_ships_one_stylesheet_and_the_runtime_before_the_plugin() {
         let html = get("/").await;
 
         assert!(html.starts_with("<!DOCTYPE html>"));
         assert_eq!(html.matches("rel=\"stylesheet\"").count(), 1);
-        assert_eq!(html.matches("<script").count(), 1);
+        assert_eq!(html.matches("<script").count(), 2);
+
+        let runtime = html.find("/_exos/exos-").expect("the runtime is linked");
+        let plugin = html.find("/_exos/sleeve-").expect("the plugin is linked");
+
+        assert!(runtime < plugin, "{html:.600}");
     }
 
     /// The shell holds no state of its own. The selection is declared by the

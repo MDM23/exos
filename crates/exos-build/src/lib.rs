@@ -35,7 +35,7 @@ pub use crate::media::content_type;
 // Where an asset is served from is deliberately not here. This crate turns a
 // file into bytes and a hashed name, and a URL is neither: it starts with the
 // base the application picks when it runs, which nothing at build time can
-// know. `exos::asset_url` is the one place that builds one.
+// know. `exos::Asset` is the one place that builds one.
 
 /// Anything that can go wrong while building an asset.
 #[derive(Debug, thiserror::Error)]

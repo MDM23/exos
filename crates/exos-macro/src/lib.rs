@@ -17,12 +17,14 @@ mod route;
 mod valid;
 mod view;
 
-/// Builds an asset and returns the URL it is served from.
+/// Builds an asset and returns a handle to it.
 ///
 /// Write it where the asset is referenced. There is no build script and no
 /// registration step: the file is processed while this crate compiles, its
-/// bytes go into the binary, and the URL comes back as a `&'static str` with
-/// the content hash already in it.
+/// bytes go into the binary, and what comes back is an `exos::Asset` naming
+/// the hash they were embedded under. In a view it renders as the URL it is
+/// served from; `bytes()` on it is the same file again, to compute whatever
+/// its content decides.
 ///
 /// ```ignore
 /// view! {
@@ -53,7 +55,7 @@ mod view;
 /// ```
 ///
 /// Referencing the same file from several places is free: it is embedded and
-/// registered once, and every call site gets the same URL. A file that does
+/// registered once, and every call site gets the same handle. A file that does
 /// not exist, or one whose extension implies nothing and was not given a
 /// content type, is a compile error here rather than a 404 later.
 #[proc_macro]

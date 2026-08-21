@@ -131,9 +131,10 @@ time, which is the guarantee the README already advertises for actions. It also
 put the URL in one place rather than two, since the caller now asks for it
 instead of building its own, and `exos::call` stopped prefixing.
 
-`asset!` returns a `String` now rather than a `&'static str`, and
+`asset!` stopped handing back a `&'static str` here, and
 `exos_build::Built::url` is gone: what a URL starts with is a runtime fact and a
-build-time crate had no business claiming to know it.
+build-time crate had no business claiming to know it. What it hands back now is
+an `Asset`, which renders as that URL wherever a page needs one.
 
 ## The stream carries all eight steps
 

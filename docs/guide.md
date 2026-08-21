@@ -103,14 +103,36 @@ view! {
 ```
 
 There is no build script and nothing to register. The file is processed while
-your crate compiles, its bytes go into the binary, and the macro returns the URL
-with the content hash already in it. Files are served from memory as `immutable`
-for a year, which is safe unconditionally because a changed file is a different
-URL.
+your crate compiles, its bytes go into the binary, and the macro returns an
+`Asset` naming the hash they were embedded under. Files are served from memory
+as `immutable` for a year, which is safe unconditionally because a changed file
+is a different URL.
 
-The URL is a `String` rather than a `&'static str`, because the hash is known
-when your crate compiles and the [prefix](#serving-under-a-prefix) it hangs
-under is not known until the program is running.
+An `Asset` is that name and nothing else, so it is `Copy` and every call site is
+a constant. In a view it renders as the URL it is served from, which is why the
+line above needs no conversion; where a URL has to be a `String`, ask for one
+with `.url()`. The name is not the URL, because the hash is known when your
+crate compiles and the [prefix](#serving-under-a-prefix) it hangs under is not
+known until the program is running.
+
+### The bytes are still there
+
+The file is in the binary, so anything derived from its content can be derived
+from the binary rather than kept beside it by hand:
+
+```rust
+static BLURRED: LazyLock<String> = LazyLock::new(|| {
+    placeholder(exos::asset!("img/cover.png").bytes())
+});
+```
+
+`bytes()` walks what the binary embedded, so hold the result rather than calling
+it per request. A `LazyLock` is the shape for it: the bytes never change, and
+neither does anything computed from them.
+
+Nothing is embedded twice to make this work. The second call site for a file
+gets the same name as the first and finds the same bytes through it, which is
+also true of a file a stylesheet pulled in on its own.
 
 The path is relative to your crate root, and its extension decides everything
 else. A `.css` file is bundled through its `@import`s, a `.js` file through its
@@ -122,7 +144,7 @@ exos::asset!("data/blob.xyz", "application/octet-stream")
 ```
 
 Referencing the same file from several places is free. It is embedded and
-registered once, and every call site gets the same URL back.
+registered once, and every call site gets the same handle back.
 
 ### What a stylesheet points at
 

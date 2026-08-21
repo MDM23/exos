@@ -5,12 +5,12 @@
 //! patch, so two browsers stay in step without either of them asking.
 
 use axum::Json;
-use exos::{Effect, Markup, connection_count, data, publish, view};
+use exos::{Effect, Markup, connection_count, data, preserve, publish, view};
 use serde::Deserialize;
 
 use crate::{
     selection::Selection,
-    store::{self, Room},
+    store::{self, Queue, Room},
     track,
 };
 
@@ -43,6 +43,7 @@ pub(crate) fn room() -> Markup {
 
     view! {
         { listeners() }
+        { sleeve(&queue) }
 
         <ul
             id="queue"
@@ -58,6 +59,62 @@ pub(crate) fn room() -> Markup {
                     .collect::<Vec<_>>()
             }
         </ul>
+    }
+}
+
+/// The sleeve of whatever is on.
+///
+/// Two boxes rather than one, because a cross-fade needs something to fade
+/// against. The blur is the wrapper's background and the sleeve is painted over
+/// it, so the blur is what shows for as long as the sleeve is transparent, and
+/// the fade is between two things that are both already there.
+///
+/// The `id` carries the track, which is what makes the mark moving a
+/// *replacement* rather than the same `<img>` with a new `src`. The morph
+/// matches children by id, so a different track is a different element, and it
+/// arrives with no bitmap of its own to go on painting while the next one
+/// loads.
+///
+/// The blur is markup rather than a signal, and rather than anything the
+/// browser computes: the server owns it, it is derived from a file that cannot
+/// change while the program runs, and a `style` the server rendered is
+/// something the morph maintains rather than something it strips.
+///
+/// **Whether the sleeve has loaded is the other way round, and needs
+/// [`preserve`].** It is client state on an element the server re-renders on
+/// every heart, drag and removal, and an ordinary patch would write the
+/// server's empty `data-fade` back over it. Nothing would put it back either: a
+/// drag reorders the DOM before it posts, so the markup that lands moves no
+/// rows, and a patch that changes only attributes fires no mutation for a
+/// plugin to answer. So the sleeve stayed blurred until the track changed.
+/// Opting the element out says what is true, which is that the server has
+/// nothing left to tell this `<img>` for as long as it is the same one.
+fn sleeve(queue: &Queue) -> Markup {
+    let Some(track) = queue.playing() else {
+        return Markup::default();
+    };
+
+    view! {
+        <section class="playing">
+            <div class="sleeve" style={ format!("--blur: url('{}')", track.cover.blur) }>
+                <img
+                    id={ format!("sleeve-{}", track.id) }
+                    alt=""
+                    data-fade
+                    decoding="async"
+                    height="240"
+                    src={ track.cover.art }
+                    width="240"
+                    {preserve()}
+                >
+            </div>
+
+            <div class="name">
+                <p class="eyebrow">"Now playing"</p>
+                <p class="title">{ &track.title }</p>
+                <p class="artist">{ &track.artist }</p>
+            </div>
+        </section>
     }
 }
 
@@ -137,6 +194,28 @@ mod tests {
     #[test]
     fn the_room_says_the_same_thing_to_everybody() {
         assert_eq!(markup(), markup());
+    }
+
+    /// The blur travels in the page, and the sleeve over it opts out of being
+    /// patched.
+    ///
+    /// Without the second half, a heart or a drag writes the server's empty
+    /// `data-fade` back over a sleeve that had already faded in, and nothing
+    /// puts it back: a patch that changes only attributes moves no nodes, and
+    /// the client hears about nodes. The sleeve blurred again and stayed that
+    /// way until the track changed.
+    #[test]
+    fn the_sleeve_carries_its_blur_and_keeps_what_it_has_loaded() {
+        let html = markup();
+
+        assert!(
+            html.contains("--blur: url('data:image/png;base64,"),
+            "{html:.400}"
+        );
+        assert!(
+            html.contains("data-fade") && html.contains("data-preserve"),
+            "{html:.400}"
+        );
     }
 
     /// Exactly one row is marked, and it is a row like any other. The mark is

@@ -80,14 +80,15 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 
     // The hashed name is known here, because it is derived from the content.
     // The base it hangs under is not: that is chosen when the program runs, so
-    // the call site asks for the URL rather than being handed a literal.
+    // the call site is handed the name and renders the URL from it.
     let file = &built.file;
-    let url = quote! { ::exos::asset_url(#file) };
+    let handle = quote! { ::exos::Asset::new(#file) };
 
     // A stylesheet brings whatever its `url()`s named, and each of those is a
     // file in its own right that some other call site may already have
-    // embedded. A repeat needs the URL and nothing else: the bytes and the
-    // registration are already in this crate.
+    // embedded. A repeat needs the name and nothing else: the bytes and the
+    // registration are already in this crate, and `Asset::bytes` finds them
+    // there rather than embedding a second copy.
     let assets: Vec<TokenStream> = core::iter::once(&built)
         .chain(&built.referenced)
         .filter(|asset| claim(&asset.file))
@@ -97,12 +98,12 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
             let content_type = &asset.content_type;
             let bytes = Literal::byte_string(&asset.bytes);
 
-            quote! { ::exos::Asset::new(#name, #file, #content_type, #bytes) }
+            quote! { ::exos::Embedded::new(#name, #file, #content_type, #bytes) }
         })
         .collect();
 
     if assets.is_empty() {
-        return url;
+        return handle;
     }
 
     // Rebuild tracking. Cargo's `rerun-if-changed` belongs to build scripts,
@@ -137,7 +138,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
                 ::exos::AssetSetEntry::new(::exos::AssetSet(&[#(#assets),*]))
             }
 
-            #url
+            #handle
         }
     }
 }

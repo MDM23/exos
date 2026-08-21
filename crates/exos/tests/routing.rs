@@ -109,7 +109,7 @@ async fn one_file_referenced_twice_gives_one_url() {
     let twice = exos::asset!("js/exos.js");
 
     assert_eq!(once, twice);
-    assert_eq!(status(&once, "GET").await, StatusCode::OK);
+    assert_eq!(status(&once.url(), "GET").await, StatusCode::OK);
 }
 
 /// Editing a plugin has to change the runtime's URL, or a browser holding a

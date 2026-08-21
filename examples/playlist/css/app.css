@@ -101,6 +101,71 @@ main a {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                                NOW PLAYING                                 */
+/* -------------------------------------------------------------------------- */
+
+.playing {
+  display: flex;
+  gap: var(--space-m);
+  align-items: center;
+  margin-bottom: var(--space-m);
+  padding: var(--space-m);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+/* The blur is the wrapper's background, inlined by the server as a sixteen
+   pixel PNG and scaled up to fill it. The sleeve is painted over the top. */
+.sleeve {
+  flex: none;
+  overflow: hidden;
+  width: min(15rem, 38vw);
+  aspect-ratio: 1;
+  border-radius: var(--radius-s);
+  background-image: var(--blur);
+  background-size: cover;
+}
+
+/* Transparent until the whole sleeve has arrived, because an image paints the
+   rows it has as they arrive and a slow one would otherwise wipe down over its
+   own blur. The plugin says when that is; how it looks getting there is
+   here. */
+.sleeve img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 400ms ease-out;
+}
+
+.sleeve img[data-fade="in"] {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sleeve img {
+    transition-duration: 0s;
+  }
+}
+
+.playing p {
+  margin: 0;
+}
+
+.playing .title {
+  font-size: 1.25rem;
+}
+
+.eyebrow {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                  THE QUEUE                                 */
 /* -------------------------------------------------------------------------- */
 

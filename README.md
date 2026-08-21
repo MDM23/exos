@@ -107,7 +107,10 @@ The [guide](docs/guide.md) walks through the whole surface.
 share: a mark travels down the queue as tracks end, hearts and removals paint
 before the server answers, and the room refuses to remove what it is playing,
 so the one correction an optimistic update needs to show is a rule rather than
-a simulation.
+a simulation. The sleeve of whatever is on is an embedded asset, and the blur
+that stands in for it while it loads is a sixteen-pixel version of the same
+bytes, computed at startup and inlined into the page rather than kept beside
+the file.
 [`examples/todos`](examples/todos) is TodoMVC, where the list is a live
 fragment per filter and editing a row is client state from the double click to
 the save. [`examples/auction`](examples/auction) is about who anybody is: a
