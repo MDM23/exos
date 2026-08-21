@@ -102,7 +102,8 @@ instead of excluding one another.
   runs. No build reaches the network for it, and nothing of it reaches a binary
   except the languages an application declared.
 
-The [guide](docs/guide.md) walks through the whole surface.
+The [guide](docs/site/content) walks through the whole surface, and
+[`docs/site`](#the-documentation-site) is that guide as a site.
 [`examples/playlist`](examples/playlist) is a listening room several browsers
 share: a mark travels down the queue as tracks end, hearts and removals paint
 before the server answers, and the room refuses to remove what it is playing,
@@ -117,6 +118,20 @@ the save. [`examples/auction`](examples/auction) is about who anybody is: a
 price is state and is published to everyone watching, being outbid is an event
 and is sent to one person wherever they are. Reload it and the price is still
 there while the message is not, which is the whole difference in one gesture.
+
+## The documentation site
+
+[`docs/site`](docs/site) is the guide as a site, and is itself an exos
+application:
+
+```bash
+cargo run -p exos-docs
+```
+
+The pages are ordinary markdown in [`docs/site/content`](docs/site/content) and
+the sidebar is one of them, so adding a page is a file and a line in a list. A
+debug build reads them off disk, a release build embeds every one of them, and
+what deploys is the binary with nothing beside it.
 
 ## Working on exos
 

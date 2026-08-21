@@ -13,7 +13,7 @@
 use crate::{Markup, Page};
 
 /// Where the first steps are written down.
-const GUIDE: &str = "https://github.com/MDM23/exos/blob/main/docs/guide.md";
+const GUIDE: &str = "https://github.com/MDM23/exos/tree/main/docs/site/content";
 
 /// The page itself, mounted as a fallback so that whichever path the first run
 /// happens to knock on answers with it.

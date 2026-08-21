@@ -10,7 +10,8 @@ patterns (1a), the debounce (3) and repeating groups (5).
 the surface that existed before any of this, so what the stages are worth is
 measured rather than argued: each one says what it saves and what it was wrong
 about, and each one that lands takes something back out of the example. It moves
-an edge the [guide](../guide.md) had already closed, which is the next section.
+an edge the [guide](../site/content/models.md#rules-on-a-model) had already
+closed, which is the next section.
 
 ## What this reopens
 
@@ -258,8 +259,8 @@ That is a validated field, whole. No error field on the model, no `touched`
 signal, no second element for the client's own complaint, no precedence to
 arrange at the call site and nothing to clear. The key in the record is the
 field's **generated** name rather than `email`, so [the wire stays
-private](../guide.md#the-wire-is-private) and the state is reachable only
-through a handle, like everything else a model owns.
+private](../site/content/models.md#the-wire-is-private) and the state is
+reachable only through a handle, like everything else a model owns.
 
 **Take the control's own marking**, which is the `aria-invalid` below and is
 `ng-invalid` with a better name.

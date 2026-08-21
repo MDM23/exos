@@ -215,8 +215,9 @@ fragments publish while somebody is clicking.
 The fix is to make the request path's marker owned the way a binding's writes
 are. What it must not become is a general rule that the client's attributes
 survive a patch: a speculative `attr_now` write has deliberately no second copy,
-and [optimistic updates](../guide.md#optimistic-updates) rests on the patch
-being the thing that corrects it.
+and [optimistic
+updates](../site/content/calling-the-server.md#optimistic-updates) rests on the
+patch being the thing that corrects it.
 
 ## Nothing disables a busy control
 

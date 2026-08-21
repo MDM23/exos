@@ -1,0 +1,527 @@
+@import "tokens.css";
+
+/* -------------------------------------------------------------------------- */
+/*                                  THE PAGE                                  */
+/* -------------------------------------------------------------------------- */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  line-height: 1.65;
+}
+
+a {
+  color: var(--accent);
+  text-underline-offset: 0.2em;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar) minmax(0, 1fr) var(--outline);
+  gap: var(--space-xl);
+  max-width: 88rem;
+  margin: 0 auto;
+  padding: 0 var(--space-l);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                THE MASTHEAD                                */
+/* -------------------------------------------------------------------------- */
+
+.masthead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: var(--space-m);
+  height: var(--masthead);
+  padding: 0 var(--space-l);
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.brand {
+  color: var(--text);
+  font-weight: 650;
+  font-size: 1.125rem;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.masthead .source {
+  margin-left: auto;
+  color: var(--text-subtle);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.masthead .source:hover {
+  color: var(--text);
+}
+
+.search {
+  flex: 1;
+  max-width: 22rem;
+}
+
+.search input {
+  width: 100%;
+  padding: var(--space-xs) var(--space-s);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+}
+
+.search input::placeholder {
+  color: var(--text-faint);
+}
+
+/* The menu button is for narrow windows only; see the last section. */
+.menu {
+  display: none;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.menu span,
+.menu span::before,
+.menu span::after {
+  display: block;
+  width: 14px;
+  height: 1.5px;
+  background: var(--text);
+}
+
+.menu span::before,
+.menu span::after {
+  position: relative;
+  content: "";
+}
+
+.menu span::before {
+  top: -4.5px;
+}
+
+.menu span::after {
+  top: 3px;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                THE SIDEBAR                                 */
+/* -------------------------------------------------------------------------- */
+
+.sidebar {
+  position: sticky;
+  top: var(--masthead);
+  align-self: start;
+  max-height: calc(100vh - var(--masthead));
+  padding: var(--space-l) 0 var(--space-xl);
+  overflow-y: auto;
+  font-size: 0.9375rem;
+}
+
+.sidebar h2 {
+  margin: var(--space-l) 0 var(--space-s);
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.sidebar h2:first-child {
+  margin-top: 0;
+}
+
+.sidebar ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sidebar a {
+  display: block;
+  padding: 0.2rem var(--space-s);
+  border-left: 2px solid transparent;
+  color: var(--text-subtle);
+  text-decoration: none;
+}
+
+.sidebar a:hover {
+  color: var(--text);
+}
+
+.sidebar a[aria-current="page"] {
+  border-left-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-weight: 550;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                THE ARTICLE                                 */
+/* -------------------------------------------------------------------------- */
+
+.article {
+  max-width: var(--measure);
+  padding: var(--space-l) 0 var(--space-xl);
+  overflow-wrap: break-word;
+}
+
+.article h1,
+.article h2,
+.article h3,
+.article h4 {
+  scroll-margin-top: calc(var(--masthead) + var(--space-m));
+  line-height: 1.25;
+}
+
+.article h1 {
+  margin: 0 0 var(--space-l);
+  font-size: 2.25rem;
+  letter-spacing: -0.02em;
+}
+
+.article h2 {
+  margin: var(--space-xl) 0 var(--space-m);
+  padding-top: var(--space-m);
+  border-top: 1px solid var(--border);
+  font-size: 1.5rem;
+  letter-spacing: -0.01em;
+}
+
+.article h3 {
+  margin: var(--space-l) 0 var(--space-s);
+  font-size: 1.15rem;
+}
+
+.article h4 {
+  margin: var(--space-l) 0 var(--space-s);
+  font-size: 1rem;
+}
+
+/* The permalink stays out of the way until the heading is pointed at, which
+   is also why it is not in the heading's own colour. */
+.anchor {
+  margin-left: var(--space-s);
+  color: var(--text-faint);
+  font-weight: 400;
+  text-decoration: none;
+  opacity: 0;
+}
+
+h1:hover > .anchor,
+h2:hover > .anchor,
+h3:hover > .anchor,
+h4:hover > .anchor,
+.anchor:focus-visible {
+  opacity: 1;
+}
+
+.article p,
+.article ul,
+.article ol {
+  margin: 0 0 var(--space-m);
+}
+
+.article li {
+  margin-bottom: var(--space-xs);
+}
+
+.article blockquote {
+  margin: var(--space-l) 0;
+  padding: var(--space-s) var(--space-m);
+  border-left: 3px solid var(--accent);
+  background: var(--accent-subtle);
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.article blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.article table {
+  display: block;
+  max-width: 100%;
+  margin: 0 0 var(--space-m);
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 0.9375rem;
+}
+
+.article th,
+.article td {
+  padding: var(--space-xs) var(--space-m) var(--space-xs) 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.article th {
+  color: var(--text-subtle);
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.article :not(pre) > code {
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--sunken);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+}
+
+.article mark {
+  padding: 0.05em 0.15em;
+  border-radius: 3px;
+  background: var(--mark);
+  color: inherit;
+}
+
+.steps {
+  display: flex;
+  gap: var(--space-m);
+  margin-top: var(--space-xl);
+  padding-top: var(--space-l);
+  border-top: 1px solid var(--border);
+}
+
+.step {
+  flex: 1;
+  padding: var(--space-s) var(--space-m);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-decoration: none;
+}
+
+.step[data-direction="forward"] {
+  margin-left: auto;
+  text-align: right;
+}
+
+.step .label {
+  display: block;
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.step .title {
+  color: var(--accent);
+  font-weight: 550;
+}
+
+.hits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hits li {
+  margin-bottom: var(--space-m);
+  padding-bottom: var(--space-m);
+  border-bottom: 1px solid var(--border);
+}
+
+.hits a {
+  font-size: 1.125rem;
+  font-weight: 550;
+}
+
+.hits p {
+  margin: var(--space-xs) 0 0;
+  color: var(--text-subtle);
+  font-size: 0.9375rem;
+}
+
+.count {
+  color: var(--text-subtle);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                THE OUTLINE                                 */
+/* -------------------------------------------------------------------------- */
+
+.outline {
+  position: sticky;
+  top: var(--masthead);
+  align-self: start;
+  max-height: calc(100vh - var(--masthead));
+  padding: var(--space-l) 0;
+  overflow-y: auto;
+  font-size: 0.875rem;
+}
+
+.outline h2 {
+  margin: 0 0 var(--space-s);
+  color: var(--text-faint);
+  font-size: 0.75rem;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.outline ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline a {
+  display: block;
+  padding: 0.15rem 0;
+  color: var(--text-subtle);
+  text-decoration: none;
+}
+
+.outline a:hover {
+  color: var(--accent);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                            SYNTAX HIGHLIGHTING                             */
+/* -------------------------------------------------------------------------- */
+
+/* syntect writes one class per component of a scope, so `keyword.operator`
+   arrives as `t-keyword t-operator`. Only the general case is named here, which
+   makes the order below the whole design: these all have the same specificity,
+   so where one token carries two of these classes the later rule wins. `fn` is
+   `t-storage t-type` and reads as a keyword, and a string's own quotes are
+   `t-punctuation t-string` and read as string. Both fall out of the order. */
+
+pre.code {
+  margin: 0 0 var(--space-m);
+  padding: var(--space-m);
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--sunken);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  tab-size: 4;
+}
+
+pre.code code {
+  font-family: var(--font-mono);
+}
+
+.t-punctuation {
+  color: var(--code-punctuation);
+}
+
+.t-support,
+.t-type {
+  color: var(--code-type);
+}
+
+.t-keyword,
+.t-storage {
+  color: var(--code-keyword);
+}
+
+.t-constant {
+  color: var(--code-number);
+}
+
+.t-string {
+  color: var(--code-string);
+}
+
+.t-comment {
+  color: var(--code-comment);
+  font-style: italic;
+}
+
+.t-entity.t-function,
+.t-entity.t-macro {
+  color: var(--code-function);
+}
+
+/* -------------------------------------------------------------------------- */
+/*                               SMALL SCREENS                                */
+/* -------------------------------------------------------------------------- */
+
+@media (width < 78rem) {
+  .shell {
+    grid-template-columns: var(--sidebar) minmax(0, 1fr);
+  }
+
+  .outline {
+    display: none;
+  }
+}
+
+@media (width < 56rem) {
+  .masthead,
+  .shell {
+    padding-inline: var(--space-m);
+  }
+
+  .menu {
+    display: grid;
+  }
+
+  .shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Off canvas until the button says otherwise. `hidden` is not used for
+     this, because the panel has to be able to slide. */
+  .sidebar {
+    position: fixed;
+    top: var(--masthead);
+    left: 0;
+    z-index: 9;
+    width: var(--sidebar);
+    max-width: 80vw;
+    padding: var(--space-l) var(--space-m);
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+  }
+
+  .menu-open .sidebar {
+    transform: none;
+  }
+
+  .article h1 {
+    font-size: 1.75rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}

@@ -1,0 +1,48 @@
+/* Design tokens. Imported by docs.css and inlined at build time. */
+
+:root {
+  color-scheme: light dark;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Fira Code", monospace;
+
+  --bg: light-dark(#fbfbfa, #16161a);
+  --surface: light-dark(#ffffff, #1e1e24);
+  --sunken: light-dark(#f4f4f2, #131317);
+  --border: light-dark(#e6e6e3, #2e2e37);
+
+  --text: light-dark(#33333a, #ececf1);
+  --text-subtle: light-dark(#6b6b76, #a0a0b0);
+  --text-faint: light-dark(#9a9aa4, #6b6b7b);
+
+  --accent: light-dark(#af2f2f, #e06c6c);
+  --accent-subtle: light-dark(#af2f2f14, #e06c6c1f);
+
+  --mark: light-dark(#ffe9a8, #6b5a1e);
+
+  --space-xs: 0.25rem;
+  --space-s: 0.5rem;
+  --space-m: 1rem;
+  --space-l: 2rem;
+  --space-xl: 3rem;
+
+  --radius: 0.375rem;
+
+  --masthead: 3.5rem;
+  --sidebar: 17rem;
+  --outline: 14rem;
+  --measure: 46rem;
+
+  --shadow: 0 1px 2px light-dark(rgb(0 0 0 / 6%), rgb(0 0 0 / 40%)),
+    0 12px 32px light-dark(rgb(0 0 0 / 8%), rgb(0 0 0 / 45%));
+
+  /* Syntax colours, named after what they mark rather than after a hue, so
+     the two themes stay one list. */
+  --code-comment: light-dark(#8a8a94, #7d7d8c);
+  --code-keyword: light-dark(#a626a4, #d183d8);
+  --code-string: light-dark(#3f7f3f, #8bc98b);
+  --code-number: light-dark(#b06000, #e0a260);
+  --code-type: light-dark(#0b6a8f, #6cb6d8);
+  --code-function: light-dark(#3b5bb5, #8fa9ee);
+  --code-punctuation: light-dark(#77777f, #9a9aa8);
+}

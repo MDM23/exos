@@ -4,6 +4,7 @@ members = [
   "crates/exos-build",
   "crates/exos-cldr",
   "crates/exos-macro",
+  "docs/site",
   "examples/auction",
   "examples/playlist",
   "examples/signup",

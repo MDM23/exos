@@ -42,7 +42,7 @@ mod dev {
 
         assert_eq!(status, StatusCode::OK);
         assert!(body.contains("exos is running"), "{body}");
-        assert!(body.contains("docs/guide.md"), "it links the guide");
+        assert!(body.contains("docs/site/content"), "it links the guide");
     }
 
     /// A fallback rather than a route on `/`, because a first run knocks on

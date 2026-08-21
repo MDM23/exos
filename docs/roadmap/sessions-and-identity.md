@@ -135,7 +135,7 @@ which every view underneath reads synchronously. That is the scope doing the
 job it already exists for.
 
 A framework holding the contents cannot do that. `session()` has to answer
-synchronously, because a [`view!`](../guide.md#templates-are-html) fragment is
+synchronously, because a [`view!`](../site/content/templates.md) fragment is
 a plain function and cannot await, so the layer has to load before the handler
 runs, and every request carrying a cookie pays for a session whether or not it
 uses one. That concession was written into this document for exactly one
@@ -470,8 +470,9 @@ between an attacker's page and a state change.
 
 Together that is a policy rather than the start of one, and the first two legs
 of it now hold: the session cookie is `SameSite=Lax`, and the guide says all
-three under [cross-site requests](../guide.md#cross-site-requests) as the reason
-exos ships no token. The gap is real but narrow: a handler that accepts a
+three under [cross-site
+requests](../site/content/sessions.md#cross-site-requests) as the reason exos
+ships no token. The gap is real but narrow: a handler that accepts a
 form-encoded body steps outside all three at once. The answer is a token derived
 from the session id, rendered by a helper into the form, and it should be built
 when the first form handler exists rather than before.

@@ -288,9 +288,10 @@ exos::messages! {
 Generating `t::clear_selection()`, `t::items_selected(count)` and
 `t::assigned(to, count)`, which return `String` and read the locale from the
 request scope. A message with no slots is text, so interpolating one into a
-[`view!`](../guide.md) escapes it like any other string. `t` is a module beside
-the block, so a second block in one module is a name collision, which is the
-rule "messages live next to what says them" showing up as a compile error.
+[`view!`](../site/content/templates.md) escapes it like any other string. `t` is
+a module beside the block, so a second block in one module is a name collision,
+which is the rule "messages live next to what says them" showing up as a
+compile error.
 
 Arms read like a `match`: in order, first wins, `_` and `..` as wildcards. That
 order carries meaning, so arms are exempt from the alphabetical rule while the
