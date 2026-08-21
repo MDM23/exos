@@ -150,11 +150,12 @@ carried a real application yet. Known gaps, roughly in priority order:
   bind the tag to now exists; what is left is that `publish` renders a fragment
   outside any request, so where the token comes from there has to be settled
   first.
-- **No form validation API.** The mechanism works: a handler answers a refusal
-  with the status it deserves and an `Effect` saying what to do about it, and
-  the client applies effects whatever status carries them. What is missing is
-  the way rules are expressed, which is a design rather than a chore, and is
-  now written down in [forms](docs/roadmap/forms.md).
+- **Nothing debounces.** A call fires per event, so a rule only the server can
+  answer waits for a submit rather than answering while a field is being typed,
+  and a search box that submits as it is typed has to arrange that itself. Rules
+  about the shape of a value do run in the browser: they are declared on the
+  model and checked on both sides from that one declaration, which is stages 1,
+  2 and half of 4 of [forms](docs/roadmap/forms.md).
 - **A message cannot reach the browser.** `exos::locales!` declares an
   application's languages and `exos::messages!` declares its text, as ordinary
   Rust functions whose arms the compiler holds to every language, so a locale
@@ -180,8 +181,8 @@ Where each of those is going is written down in [docs/roadmap](docs/roadmap):
 [sessions and identity](docs/roadmap/sessions-and-identity.md) is the one most
 of the others wait on and now names both the browser and, on a live stream, who
 it belongs to, [directed effects](docs/roadmap/directed-effects.md) is built as
-far as pushing an effect to a person, [forms](docs/roadmap/forms.md) is the
-design the validation gap was waiting on, and [loose
+far as pushing an effect to a person, [forms](docs/roadmap/forms.md) is built as
+far as rules that answer on both sides, and [loose
 ends](docs/roadmap/loose-ends.md) collects the smaller work that waits for
 nothing.
 

@@ -983,6 +983,105 @@ Writing `Json<Selection>` on an action still compiles, because a model is an
 ordinary `Deserialize` type. It fails at runtime with a missing field, since
 the keys that arrive are not the ones serde is looking for.
 
+### Rules on a model
+
+A rule about the shape of one value is written on the field it is about:
+
+```rust
+#[exos::model]
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct Signup {
+    #[valid(required, length = 2..=40)]
+    name: String,
+
+    #[valid(required, email)]
+    email: String,
+
+    invoice: bool,
+
+    #[valid(required_with = invoice)]
+    vat: String,
+}
+```
+
+**Nothing calls a validator.** `Model<Signup>` already refuses a body it cannot
+read, so it refuses one that breaks a rule the same way: a `422` carrying an
+effect that writes what is wrong into the model's own record and moves the
+caret to the first field that has something wrong with it. A handler body runs
+only against a value whose shape held, and no call site can forget a rule
+because there is no call site.
+
+**The same declaration answers in the browser.** `bind` carries the field's
+rules to the control, which asks them while somebody types and writes the
+answer into the same record a refusal writes. One slot per field, whichever
+side decided what is in it, so a template reads one place:
+
+```rust
+view! {
+    <input {bind(&form.email)}>
+    <p {show(form.email.invalid())} {text(form.email.error())}></p>
+}
+```
+
+A bound control also marks itself with `aria-invalid="true"`, which is a
+standard attribute rather than a class of ours, so a screen reader is told what
+the border says and the simplest usable form needs no error markup at all:
+
+```css
+[aria-invalid="true"] {
+  border-color: red;
+}
+```
+
+Nothing speaks until a field has been edited, because a form that is red before
+it is read is worse than no validation. A message from the server shows
+whenever there is one, since the server only speaks after a submit.
+
+**A rule exos cannot know is a `Refusal`.** Whether a code is spent or a name
+is taken needs the data, so it stays ordinary Rust in the handler and answers
+in the same shape, and nothing a viewer sees says which side decided:
+
+```rust
+#[exos::post("/signup")]
+async fn signup(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>> {
+    let mut refusal = Refusal::new();
+
+    if !data::<Codes>().accepts(&form.code) {
+        refusal.add(Signup::CODE, "That code is not one of ours.");
+    }
+
+    if !refusal.is_empty() {
+        return Err(refusal);
+    }
+
+    /* ... */
+}
+```
+
+`Signup::CODE` is a token rather than a name, so renaming the field breaks that
+line instead of quietly addressing nothing.
+
+**exos ships no message text**, because an application's languages are its own
+and belong in [`messages!`](#messages) where the compiler holds them to every
+locale. A violation is a value, and one function turns one into a sentence:
+
+```rust
+exos::complaints(|field, violation| match (field, violation) {
+    ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
+    (_, Violation::Required) => String::from("This is needed."),
+    _ => String::from("That does not look right."),
+});
+```
+
+The field arrives under the name it is declared with, which never leaves the
+server, so an application can answer per field where the general sentence is
+not good enough.
+
+One thing to watch. `required_with` gates a rule on another field being filled
+in, and nothing holds that gate and whatever `show`s the section together. A
+section revealed on more than the gate names is validated while hidden, and the
+submit then fails with a message nobody can see.
+
 ## Handlers
 
 A handler is a Rust closure. It runs at render time, on the server, and what it
@@ -1327,17 +1426,16 @@ and still say what to do about it:
 ```rust
 #[exos::post("/drafts")]
 async fn save(Model(draft): Model<Draft>) -> Result<Effect, (StatusCode, Effect)> {
-    if draft.title.trim().is_empty() {
-        return Err((
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Effect::set(&Draft::signals().error, String::from("A title is needed."))
-                .focus("#title"),
-        ));
+    if data::<Drafts>().locked(draft.id) {
+        return Err((StatusCode::CONFLICT, Effect::patch(locked(draft.id))));
     }
 
     /* ... */
 }
 ```
+
+A form has a shape of its own for this; see [rules on a
+model](#rules-on-a-model).
 
 Answer with the status the outcome deserves. A refusal that had to be `200` in
 order to be heard is a lie told to every log, proxy and test in front of it.
@@ -1625,7 +1723,8 @@ Knowing the edges is more useful than a feature list.
 
 - **No client-side loop.** Server-rendered lists plus morphing cover it. If you
   need a list bound to reactive client data, exos is the wrong tool.
-- **No client-side validation rules.** They round-trip, debounced.
+- **No debounce.** A call fires per event, so a rule only the server can answer
+  waits for a submit rather than answering while a field is being typed.
 - **No client-side routing beyond fetch-and-morph.**
 - **No arbitrary Rust in the browser.** Handlers record expressions, and
   anything the combinators cannot say needs `Js::raw`.
