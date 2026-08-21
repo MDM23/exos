@@ -1,0 +1,230 @@
+/* The example's styles. One file, because there is one page. */
+
+:root {
+  color-scheme: light dark;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --bg: light-dark(#f5f5f5, #16161a);
+  --surface: light-dark(#ffffff, #1e1e24);
+  --border: light-dark(#dcdce4, #2e2e37);
+
+  --text: light-dark(#3c3c46, #ececf1);
+  --text-subtle: light-dark(#777783, #a0a0b0);
+
+  --accent: light-dark(#2f5faf, #6c9ce0);
+  --error: light-dark(#af2f2f, #e06c6c);
+
+  --space-xs: 0.25rem;
+  --space-s: 0.5rem;
+  --space-m: 1rem;
+  --space-l: 2rem;
+
+  --radius: 0.25rem;
+  --shadow: 0 2px 4px light-dark(rgb(0 0 0 / 12%), rgb(0 0 0 / 45%));
+
+  --exos-progress-color: var(--accent);
+  --exos-progress-height: 3px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: var(--space-l) var(--space-m);
+  font-family: var(--font-sans);
+  color: var(--text);
+  background: var(--bg);
+  line-height: 1.4;
+}
+
+/* An action in flight. The runtime sets aria-busy for the duration, so this
+   needs no class bookkeeping and is announced as well as shown. */
+[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  THE FORM                                  */
+/* -------------------------------------------------------------------------- */
+
+#signup {
+  max-inline-size: 32rem;
+  margin-inline: auto;
+  padding: var(--space-l);
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+h1 {
+  margin-block-start: 0;
+  font-size: 1.5rem;
+}
+
+.field {
+  margin-block-end: var(--space-m);
+}
+
+.field label,
+.field .label {
+  display: block;
+  margin-block-end: var(--space-xs);
+  font-size: 0.875rem;
+  color: var(--text-subtle);
+}
+
+input[type="text"],
+input[type="email"],
+input[type="search"] {
+  inline-size: 100%;
+  padding: var(--space-s);
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* Written by hand, because nothing marks a bound control for us. The framework
+   would say aria-invalid here, which is also what a screen reader wants. */
+input.invalid {
+  border-color: var(--error);
+}
+
+.error {
+  margin-block: var(--space-xs) 0;
+  color: var(--error);
+  font-size: 0.8125rem;
+}
+
+.check {
+  display: flex;
+  gap: var(--space-s);
+  align-items: center;
+  margin-block-end: var(--space-m);
+}
+
+.billing {
+  margin-block-end: var(--space-m);
+  padding: var(--space-m);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.billing legend {
+  padding-inline: var(--space-xs);
+  font-size: 0.8125rem;
+  color: var(--text-subtle);
+}
+
+button[type="submit"] {
+  inline-size: 100%;
+  padding: var(--space-s) var(--space-m);
+  font: inherit;
+  color: var(--surface);
+  background: var(--accent);
+  border: 0;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.done ul {
+  margin-block: var(--space-m);
+  padding-inline-start: var(--space-m);
+}
+
+.count {
+  color: var(--text-subtle);
+  font-size: 0.875rem;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 THE PICKER                                 */
+/* -------------------------------------------------------------------------- */
+
+.picker {
+  position: relative;
+}
+
+.picker .toggle {
+  inline-size: 100%;
+  padding: var(--space-s);
+  font: inherit;
+  color: inherit;
+  text-align: start;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-block-start: var(--space-xs);
+}
+
+.chip {
+  padding: 0.125rem var(--space-s);
+  font-size: 0.8125rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+}
+
+.list {
+  position: absolute;
+  z-index: 1;
+  inline-size: 100%;
+  max-block-size: 18rem;
+  margin-block-start: var(--space-xs);
+  padding: var(--space-s);
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.option {
+  display: flex;
+  gap: var(--space-s);
+  align-items: baseline;
+  padding: var(--space-xs);
+  cursor: pointer;
+}
+
+.option .track {
+  margin-inline-start: auto;
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+}
+
+.list .close {
+  inline-size: 100%;
+  margin-block-start: var(--space-s);
+  padding: var(--space-xs);
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.info {
+  margin-block-start: var(--space-l);
+  color: var(--text-subtle);
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.info p {
+  margin-block: var(--space-xs);
+}

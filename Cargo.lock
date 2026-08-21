@@ -1205,6 +1205,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "signup"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "exos",
+ "serde",
+ "tokio",
+ "tower",
+]
+
+[[package]]
 name = "simd-abstraction"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

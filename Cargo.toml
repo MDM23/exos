@@ -6,6 +6,7 @@ members = [
   "crates/exos-macro",
   "examples/auction",
   "examples/playlist",
+  "examples/signup",
   "examples/todos",
 ]
 resolver = "3"
