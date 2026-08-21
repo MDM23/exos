@@ -3,11 +3,11 @@
 Rules written once, checked on both sides, and the one round trip that carries
 what only the server knows.
 
-Status: not built, and this is the design rather than the chores. It moves an
-edge the [guide](../guide.md) had already closed, which is the first section
-below. Stage 0 is an example rather than an API, for the reason [sessions and
-identity](sessions-and-identity.md) records in its stage 3: the narrow version
-is the reversible one, and nothing here has been written against yet.
+Status: stage 0 is built and nothing else is.
+[`examples/signup`](../../examples/signup) is the form written by hand against
+today's surface, so what the stages below are worth is measured rather than
+argued: each one now says what it saves and what it was wrong about. It moves an
+edge the [guide](../guide.md) had already closed, which is the next section.
 
 ## What this reopens
 
@@ -28,63 +28,78 @@ validation at all.
 
 ## Stage 0: write one by hand
 
-The tree contains one form. It has one field, and its whole answer to a refusal
-is `Effect::none()` with a comment explaining why the field keeps what was
-typed. Everything the roadmap knows about refusals came from business rules in
-[`examples/playlist`](../../examples/playlist), not from fields.
+**Done**, as [`examples/signup`](../../examples/signup): a registration form
+with fields of several types, a section that applies only when a box is ticked,
+a searchable multi-select, repeating rows added by a button, and one rule the
+server alone can answer. Written entirely with today's surface, so what a form
+costs without any help is a thing to read rather than a thing to argue about.
 
-So the first move is an example that is a form and nothing else, written with
-today's surface: several fields of different types, a section that only applies
-when a checkbox is ticked, repeating rows added by a button, one rule the server
-alone can answer, and a search field beside it. Every stage below is a guess
-until that exists, and the guesses most likely to be wrong are stages 4 and 5.
+It was built first because every stage below it was a guess, which is the method
+the rest of this roadmap was built by: stage 4 of [sessions and
+identity](sessions-and-identity.md) argued for a `reconnect` step until
+[`examples/auction`](../../examples/auction) showed it loses a race it cannot
+win. The guesses named as most likely to be wrong were stages 4 and 5, and stage
+5 was the one that moved.
 
-The second thing to build in it is a **searchable dropdown**, because it is the
-control every application needs, because none of them get it right, and because
-it is where exos's edges sit closest together. A listbox that filters as it is
-typed into, from the client for a short list and from the server for a long one,
-with optional multiple selection.
+### What it cost
 
-Most of it is cheaper than it looks. Multiple selection is a `Vec<T>` model
-field with checkbox bindings, which
-[`examples/playlist`](../../examples/playlist) already does with no per-row
-bookkeeping. Server-side filtering is stage 3's debounce patching a fragment,
-the same mechanism as the search field beside it, which is the second time one
-debounce pays for two features. And client-side filtering needs none of the
-client-side loop exos refuses to grow: the server renders every option, each
-carrying its own `show` condition over the query, so filtering is per-element
-visibility. The same trick shows the chosen labels back in the closed control,
-since a chip is an option that reveals itself once it is picked. **Render
-everything and gate it with `show`** is how exos answers this whole class of
-widget, and its one limit is how many options that stays reasonable for, which
-stage 0 should measure rather than argue about.
+The numbers stage 2 is written against. Thirteen model fields for a form with
+six, because a message can only be written where a handler can reach it. A
+report function rewriting every message on every reply, empty ones included,
+since a message nobody clears outlives the value it described. A table pairing
+each field with the id its input was rendered under, so a refusal can move the
+caret. Two error elements per field, because no expression can choose between
+the client's complaint and the server's. And a forty-line helper to render one
+labelled input.
 
-What it will find is the dismissal and the keyboard. Both are gaps in the
-vocabulary rather than in the design, and none of them needs a document:
+### What was cheaper than it looked
+
+The widget half. **Render everything and gate it with `show`** turned out to
+answer the whole class: the server renders every option and every chip once,
+each carrying its own condition, so filtering and showing what is picked are
+both per-element visibility and neither needs the client-side loop exos refuses
+to grow. Multiple selection is a `Vec<T>` with checkbox bindings and no per-row
+bookkeeping, as [`examples/playlist`](../../examples/playlist) already showed.
+The limit is that the whole list sits in the document whether or not it is on
+screen, which is right for nine options and wrong for nine thousand.
+
+### What it found
+
+One bug, fixed rather than recorded: **`Js<String>::contains` could not be
+called at all.** Its bound asked for an expression yielding an expression, which
+nothing implements, and it had no test. That single call is the whole of a
+client-side filter, so this was not a corner of the API.
+
+Four gaps in the vocabulary, each left with a comment in the example where it
+bit. None needs a document:
 
 - **Nothing can say "focus left this widget".** Delegation dispatches to the
-  nearest element carrying the attribute, so a click outside a dropdown finds no
-  handler at all, and a `data-on-click` on `<body>` is shadowed by every inner
-  click handler rather than running after it. `focusout` bubbles and is the
-  accessible answer anyway, but deciding whether focus went somewhere inside
+  nearest element carrying the attribute, so a click outside a dropdown reaches
+  no handler at all, and a `data-on-click` on `<body>` is shadowed by every
+  inner click handler rather than running after it. `focusout` bubbles and is
+  the accessible answer anyway, but deciding whether focus went somewhere inside
   means reading `relatedTarget` and asking the DOM, and
-  [`Event`](../../crates/exos/src/attributes/handler.rs) exposes neither.
-- **The combinators cannot do a listbox's arithmetic.** Moving the active option
-  with the arrow keys is an index clamped to a length, and
-  [combinator.rs](../../crates/exos/src/js/combinator.rs) has `plus` and `minus`
-  but no `min`, `max` or clamp. `aria-activedescendant` is an id and an index
-  concatenated, and there is no concatenation on `Js<String>` either.
-- **A client-side filter is case-sensitive**, because `contains` is what there
-  is and there is no `lower`.
-- **The element carrying the binding is not an `<input>`.** A combobox is a
-  `div` with `role="combobox"`, so stage 2's `aria-invalid` has to be written by
-  whatever carries `bind` rather than by whatever looks like a form control.
-  Worth knowing before that stage decides otherwise.
+  [`Event`](../../crates/exos/src/attributes/handler.rs) exposes neither. The
+  example closes its dropdown with a button.
+- **No case folding on `Js<String>`**, so the filter goes through `Js::raw`. A
+  search that matches only the capitalisation somebody happened to type is not a
+  search.
+- **No concatenation on `Js<String>`**, so "3 selected" is three elements. The
+  same gap is what `aria-activedescendant` would need, along with the clamped
+  index arithmetic [combinator.rs](../../crates/exos/src/js/combinator.rs) has
+  no `min` or `max` for.
+- **`attr` cannot write `aria-invalid="true"`.** The runtime writes an empty
+  attribute for a true boolean, and `aria-invalid=""` is read as false, so the
+  hook [stage 2](#stage-2-the-same-rule-in-the-browser) commits to cannot be
+  said today. That makes it the binding's to write directly rather than an
+  expression's, which is what that stage says. The example marks its invalid
+  controls with a class instead.
 
-That is the method the rest of this roadmap was built by. Stage 4 of [sessions
-and identity](sessions-and-identity.md) argued for a `reconnect` step until
-[`examples/auction`](../../examples/auction) showed it loses a race it cannot
-win.
+And one thing stage 1 has to change rather than extend: **`ModelRejection`
+answers with a text body.** A malformed body comes back as `missing field
+\`name\`` in `text/plain`, which the client logs and the page ignores. Stage 1
+wants that path carrying an `Effect`, which is a change to a type that already
+exists.
 
 ## Stage 1: a rule is a value the server checks
 
@@ -408,13 +423,34 @@ trip, which is the same answer this document gives everywhere else.
 
 ## Stage 5: repeating groups
 
-The biggest piece by a distance, and the only one here that fights an edge
-rather than moving it. exos has no client-side loop and should not grow one, so
-a row added by a button is **rendered by the server** and arrives as a patch,
-like every other list in the tree.
+This was drawn as the biggest piece by a distance. Writing it by hand in
+[`examples/signup`](../../examples/signup) made it the narrowest stage here,
+because the half that looked hard turned out to be already built and the half
+nobody mentioned is the whole of the work.
 
-What that needs is a model field of `Vec<Row>` and a way to name one row's
-field, so that a binding, an error key and a rule all address the same thing:
+**What already works is per-row client state.** A row holds its own
+[`signal`](../../crates/exos/src/signal.rs), every row declares the same
+generated name because it comes from one call site, and every row is its own
+scope, since the runtime keys a scope per element rather than per id. A
+declaration is never overwritten, so a patch that re-renders the entire list
+leaves half-typed text exactly where it was. None of that needed designing and
+none of it is on this stage's list.
+
+**What is missing is a name.** A binding names one signal, and nothing can name
+the third row's field, so the rows cannot be part of the submission at all. That
+is two failures rather than one:
+
+- **`bind` on a collection is wrong rather than absent** for anything but a
+  checkbox. The runtime writes the whole array into the field comma-joined and
+  typing writes that string back over all of it, which reads as a broken page
+  rather than as a missing feature.
+- **A row's own signal cannot be sent.** The generated caller sends a model and
+  only a model, so a row that wants to save copies its signal into a one-field
+  model first and posts that. The example does exactly this, and the transport
+  model is a type that exists for no other reason.
+
+So the whole of this stage is the projection the earlier draft asked for in
+passing:
 
 ```rs
 form.lines.at(line.id).quantity   // Signal<u32>
@@ -422,12 +458,21 @@ form.lines.at(line.id).quantity   // Signal<u32>
 
 Keyed by the row's own id rather than by its index, because removing the second
 of five rows renumbers three signals and every error under them. The id is
-already in the markup, since a row needs one for morphing.
+already in the markup, since a row needs one for morphing. Give a handle that,
+and `bind`, the payload, the rules and the error record all reach the same
+place, which is what makes a repeating group part of one submission instead of a
+list of round trips.
 
-The error map's keys stop being flat here, and that is the decision this stage
-turns on: an error belongs to a field of a row, so the key is a path. That is
-worth designing against a real form rather than in advance, which is the second
-reason stage 0 comes first.
+**What it costs to not have it is worth recording**, because it is what an
+application pays today. The rows become server state, so a half-filled form is a
+resource: it survives a reload, two tabs share it, and an abandoned one has to
+expire. Every row edit is a round trip. And a message about a row has nowhere to
+go, so it is one message for the group, with the caret going nowhere because the
+group is a `div` and `focus` on one does nothing.
+
+The error record's keys stop being flat here, which is the one decision this
+stage still turns on: an error belongs to a field of a row, so the key is a
+path.
 
 ## What exos will not do
 
