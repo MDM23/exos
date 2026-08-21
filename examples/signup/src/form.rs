@@ -14,7 +14,8 @@ use exos::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    store::{self, Programme, Registration, Registrations},
+    attendees::roster,
+    store::{self, Programme, Registration, Registrations, Roster},
     workshops::picker,
 };
 
@@ -53,6 +54,10 @@ pub(crate) struct Signup {
     pub(crate) code_error: String,
     /// What is wrong with [`workshops`](Self::workshops).
     pub(crate) workshops_error: String,
+    /// What is wrong with the attendee rows, which are not a field of this
+    /// model at all: they live on the server, and this is here only because a
+    /// message has to be somewhere a handler can write it.
+    pub(crate) attendees_error: String,
 }
 
 /// The form, with every rule it can answer without asking.
@@ -92,6 +97,19 @@ pub(crate) fn registration() -> Markup {
                 <div class="field">
                     <span class="label">"Workshops"</span>
                     { picker(&form.workshops, &form.workshops_error) }
+                </div>
+
+                <div class="field">
+                    <span class="label">"Who is coming"</span>
+                    { roster() }
+
+                    // One message for the whole group, because an error has
+                    // nowhere row-shaped to go.
+                    <p
+                        class="error"
+                        {show(!form.attendees_error.get().is_empty())}
+                        {text(form.attendees_error.get())}
+                    ></p>
                 </div>
 
                 <label class="check">
@@ -211,6 +229,15 @@ struct Fault {
     message: &'static str,
 }
 
+/// Whether this fault is about `error`.
+///
+/// A signal has no identity beyond its name, so the two are compared by it.
+impl Fault {
+    fn is_about(&self, error: &Signal<String>) -> bool {
+        self.error.name() == error.name()
+    }
+}
+
 /// Every shape rule, asked a second time against what arrived.
 ///
 /// These are the same questions the template asks in the browser, and keeping
@@ -243,6 +270,18 @@ fn faults(form: &Signup) -> Vec<Fault> {
         });
     }
 
+    // Read from the store rather than from what arrived, because the rows are
+    // not part of the submission. A message about them can therefore not say
+    // which row, and `#attendees` is a div, so the caret does not go there
+    // either: the focus step finds it and nothing happens.
+    if let Some(message) = store::roster_fault(&data::<Roster>().snapshot()) {
+        faults.push(Fault {
+            error: signals.attendees_error,
+            id: "attendees",
+            message,
+        });
+    }
+
     if form.invoice && form.company.trim().is_empty() {
         faults.push(Fault {
             error: signals.company_error,
@@ -271,6 +310,7 @@ fn report(faults: &[Fault]) -> Effect {
     let mut effect = Effect::none();
 
     for error in [
+        signals.attendees_error,
         signals.code_error,
         signals.company_error,
         signals.email_error,
@@ -280,7 +320,7 @@ fn report(faults: &[Fault]) -> Effect {
     ] {
         let message = faults
             .iter()
-            .find(|fault| fault.error.name() == error.name())
+            .find(|fault| fault.is_about(&error))
             .map_or_else(String::new, |fault| fault.message.to_owned());
 
         effect = effect.and_set(&error, message);
@@ -326,17 +366,28 @@ async fn register(Model(form): Model<Signup>) -> Result<Effect, (StatusCode, Eff
         ));
     }
 
+    // Read rather than taken, so this example stays one an ordinary test can
+    // run twice. An application could not: the rows are the server's, so a
+    // form that succeeded has to be emptied here or it stays a resource with
+    // somebody's half-typed guest list in it, and nothing on the client can do
+    // that for it. That is the other end of the same problem.
+    let attending: Vec<String> = data::<Roster>()
+        .snapshot()
+        .iter()
+        .map(|row| row.name.clone())
+        .collect();
+
     let taken = data::<Registrations>().add(Registration {
         name: form.name.trim().to_owned(),
         email: form.email.trim().to_owned(),
         workshops: form.workshops.clone(),
     });
 
-    Ok(Effect::patch(confirmation(&form, taken)))
+    Ok(Effect::patch(confirmation(&form, &attending, taken)))
 }
 
 /// What replaces the form once it is accepted.
-fn confirmation(form: &Signup, taken: usize) -> Markup {
+fn confirmation(form: &Signup, attending: &[String], taken: usize) -> Markup {
     let programme = data::<Programme>();
 
     let picked: Vec<&str> = programme
@@ -355,6 +406,15 @@ fn confirmation(form: &Signup, taken: usize) -> Markup {
                 <strong>{ form.email.trim() }</strong>
                 "."
             </p>
+
+            <ul>
+                {
+                    attending
+                        .iter()
+                        .map(|name| view! { <li>{ name }</li> })
+                        .collect::<Vec<_>>()
+                }
+            </ul>
 
             <ul>
                 { picked.iter().map(|title| view! { <li>{ *title }</li> }).collect::<Vec<_>>() }

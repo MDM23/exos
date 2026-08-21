@@ -144,6 +144,35 @@ button[type="submit"] {
 }
 
 /* -------------------------------------------------------------------------- */
+/*                                  THE ROWS                                  */
+/* -------------------------------------------------------------------------- */
+
+.row {
+  display: flex;
+  gap: var(--space-s);
+  margin-block-end: var(--space-xs);
+}
+
+.row input {
+  flex: 1;
+}
+
+.rows .add,
+.row .drop {
+  padding: var(--space-xs) var(--space-s);
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.rows .add {
+  margin-block-start: var(--space-xs);
+}
+
+/* -------------------------------------------------------------------------- */
 /*                                 THE PICKER                                 */
 /* -------------------------------------------------------------------------- */
 

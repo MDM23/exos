@@ -19,8 +19,9 @@
 //!
 //! Run it with `cargo run -p signup`.
 
-use crate::store::{Programme, Registrations};
+use crate::store::{Programme, Registrations, Roster};
 
+mod attendees;
 mod form;
 mod page;
 mod store;
@@ -43,6 +44,7 @@ async fn main() -> Result<(), std::io::Error> {
 fn boot() {
     exos::provide(Programme::seed());
     exos::provide(Registrations::default());
+    exos::provide(Roster::seed());
 }
 
 /// What the modules' own tests are written against.

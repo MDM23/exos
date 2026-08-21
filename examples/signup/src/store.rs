@@ -70,6 +70,107 @@ impl Programme {
     }
 }
 
+/// One person on the registration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct Attendee {
+    /// What the row is keyed by, in the DOM and in the routes.
+    pub(crate) id: u32,
+    /// Who they are, as far as it has been typed.
+    pub(crate) name: String,
+}
+
+/// The rows of the form that are not fields of it.
+///
+/// This is the price of a repeating group today. The rows cannot ride along in
+/// the submission, so they are held here, which makes a half-filled form a
+/// resource on the server rather than state in a browser. One list for the
+/// whole process is what an example can afford; an application would key it by
+/// the viewer and would then have to decide when an abandoned one expires.
+#[derive(Debug, Default)]
+pub(crate) struct Roster(Mutex<Vec<Attendee>>);
+
+impl Roster {
+    /// A roster with two rows, so the form opens with something to edit.
+    #[must_use]
+    pub(crate) fn seed() -> Self {
+        let rows = ["Ada Lovelace", "Alan Turing"]
+            .iter()
+            .enumerate()
+            .map(|(index, name)| Attendee {
+                id: u32::try_from(index).unwrap_or(0) + 1,
+                name: (*name).to_owned(),
+            })
+            .collect();
+
+        Self(Mutex::new(rows))
+    }
+
+    /// A copy of the rows, for rendering.
+    ///
+    /// # Panics
+    ///
+    /// If the lock was poisoned by a panic in another thread while held.
+    pub(crate) fn snapshot(&self) -> Vec<Attendee> {
+        self.0
+            .lock()
+            .expect("the store lock is never held across a panic")
+            .clone()
+    }
+
+    /// Applies `change` to the rows.
+    ///
+    /// # Panics
+    ///
+    /// If the lock was poisoned; see [`snapshot`](Self::snapshot).
+    pub(crate) fn update<T>(&self, change: impl FnOnce(&mut Vec<Attendee>) -> T) -> T {
+        let mut rows = self
+            .0
+            .lock()
+            .expect("the store lock is never held across a panic");
+
+        change(&mut rows)
+    }
+}
+
+/// Appends an empty row, and hands back the id it was given.
+pub(crate) fn add_attendee(rows: &mut Vec<Attendee>) -> u32 {
+    let id = rows.iter().map(|row| row.id).max().unwrap_or(0) + 1;
+
+    rows.push(Attendee {
+        id,
+        name: String::new(),
+    });
+
+    id
+}
+
+/// Writes one row's name.
+pub(crate) fn rename_attendee(rows: &mut [Attendee], id: u32, name: &str) {
+    if let Some(row) = rows.iter_mut().find(|row| row.id == id) {
+        row.name = name.trim().to_owned();
+    }
+}
+
+/// Drops one row.
+pub(crate) fn remove_attendee(rows: &mut Vec<Attendee>, id: u32) {
+    rows.retain(|row| row.id != id);
+}
+
+/// What is wrong with the rows, if anything.
+///
+/// A free function over a slice, like every other rule that has to be tested
+/// without a server in front of it. It can only answer for the group, because
+/// the message it produces has only one place to go.
+pub(crate) fn roster_fault(rows: &[Attendee]) -> Option<&'static str> {
+    if rows.is_empty() {
+        return Some("Add at least one attendee.");
+    }
+
+    rows.iter()
+        .any(|row| row.name.trim().is_empty())
+        .then_some("Every attendee needs a name.")
+}
+
 /// One accepted registration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Registration {
@@ -128,6 +229,58 @@ mod tests {
         assert!(accepts("earlybird"));
         assert!(accepts("  SPEAKER "));
         assert!(!accepts("FRIEND"));
+    }
+
+    /// A fresh, local list, so nothing here depends on what another test did.
+    fn rows() -> Vec<Attendee> {
+        vec![
+            Attendee {
+                id: 1,
+                name: String::from("Ada"),
+            },
+            Attendee {
+                id: 2,
+                name: String::from("Alan"),
+            },
+        ]
+    }
+
+    #[test]
+    fn a_new_row_gets_an_id_of_its_own_and_no_name() {
+        let mut rows = rows();
+
+        assert_eq!(add_attendee(&mut rows), 3);
+        assert_eq!(rows[2].name, "");
+    }
+
+    #[test]
+    fn renaming_writes_the_trimmed_name() {
+        let mut rows = rows();
+        rename_attendee(&mut rows, 2, "  Grace  ");
+
+        assert_eq!(rows[1].name, "Grace");
+    }
+
+    #[test]
+    fn removing_drops_one_row() {
+        let mut rows = rows();
+        remove_attendee(&mut rows, 1);
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 2);
+    }
+
+    /// The rule can only answer for the group, because the message it produces
+    /// has one place to go and that place is not a row.
+    #[test]
+    fn a_roster_is_faulted_as_a_whole() {
+        assert_eq!(roster_fault(&[]), Some("Add at least one attendee."));
+        assert_eq!(roster_fault(&rows()), None);
+
+        let mut half = rows();
+        half[1].name = String::from("  ");
+
+        assert_eq!(roster_fault(&half), Some("Every attendee needs a name."));
     }
 
     #[test]
