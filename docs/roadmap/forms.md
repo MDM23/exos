@@ -208,47 +208,84 @@ pattern's can ever be.
 
 ## Stage 2: the same rule in the browser
 
-Where an error lands decides how much of this is new machinery, and the answer
-is almost none. `#[model]` generates one more document signal, `errors`, holding
-a map from a field's generated name to the text for it. The server's refusal
-writes it with `Effect::set`, which merges, and a template reads one field's
-error through the handle:
+**Nothing here is declared by hand, and that is the requirement rather than a
+nicety.** Writing [`examples/signup`](../../examples/signup) against today's
+surface cost thirteen model fields for a form with six, a `report` function
+rewriting every message on every reply including the empty ones, and a table
+pairing each field with the id its input was rendered under so that a refusal
+could move the caret. None of that is the form's doing. It is the shape of what
+is missing.
+
+**AngularJS had this right and it is worth naming what it had.** An `ngModel`
+kept a record per field, `$error`, `$dirty`, `$touched`, `$pending` and
+`$valid`, put `ng-invalid` and `ng-dirty` on the control, and aggregated
+validity up to the form. A template wrote
+`signup.email.$touched && signup.email.$error.required` and declared none of it.
+Two things to take from that and two to leave.
+
+**Take the record.** `#[model]` generates one more document signal per model
+holding the validation state, keyed by each field's generated name, and the
+handle reads it per field:
 
 ```rs
 view! {
-    <label>
-        "Email"
-        <input type="email" {bind(&form.email)}>
-    </label>
-
-    <p class="error" {text(form.error(Signup::EMAIL))}></p>
+    <input type="email" {bind(&form.email)}>
+    <p class="error" {text(form.email.error())}></p>
 }
 ```
 
-`Field<M>` is the token that makes that check at compile time, and it already
-exists in [signal.rs](../../crates/exos/src/signal.rs), generated per field by
-`#[model]` and so far used by nothing. It was written for this.
+That is a validated field, whole. No error field on the model, no `touched`
+signal, no second element for the client's own complaint, no precedence to
+arrange at the call site and nothing to clear. The key in the record is the
+field's **generated** name rather than `email`, so [the wire stays
+private](../guide.md#the-wire-is-private) and the state is reachable only
+through a handle, like everything else a model owns.
 
-The key in the map is the field's **generated** name, not `email`, so [the wire
-stays private](../guide.md#the-wire-is-private) and an error map is addressable
-only through a handle, like everything else a model owns.
+**Take the control's own marking**, which is the `aria-invalid` below and is
+`ng-invalid` with a better name.
 
-Client-side checking then needs no new runtime feature except one flag, because
-a checked rule is an ordinary recorded expression: the error a field shows is
-`its client rules, then whatever the server last said`. What is new is
-**dirty**, and it belongs to the binding, which is the one thing that already
-knows a control changed. Two rules fall out of it, and both are about not
-shouting at somebody mid-word:
+**Leave the string names.** `signup.email.$error.required` is three strings a
+rename breaks in silence, which is the failure exos exists to make impossible.
+The field is `form.email`, the same handle the binding took, and
+[`Field<M>`](../../crates/exos/src/signal.rs) is there for the places that need
+to name one to a function.
 
-- **A field says nothing until it is dirty.** An untouched field is not a wrong
-  field, and a form that is red before it is read is worse than no validation.
-  A submit marks every field dirty at once, which is what makes the first
-  submission show everything.
+**Leave the `$parsers` and `$formatters` pipeline.** A view value and a model
+value transforming into each other in both directions was the most confusing
+part of that API, and here the server is the authority anyway.
+
+**Two stores, because there are two owners.** The errors are the server's word
+and live in the model's state signal, written by one `Effect::set` carrying the
+whole record, so a reply that fixes a field clears it by not mentioning it and
+nobody has to remember to. Dirty is the client's and never leaves the browser:
+the binding already knows a control changed, so it keeps that beside its own
+bookkeeping rather than in anything the model sends. A reply then cannot clobber
+what somebody is typing, and a submission does not carry state the server would
+throw away.
+
+**Which is what makes `error()` gated rather than the template gating it.** A
+client rule says nothing until its field is dirty, because an untouched field is
+not a wrong field and a form that is red before it is read is worse than no
+validation at all. A server message shows whenever there is one, because the
+server speaks only after a submission, so the arrival of a message is already
+the evidence that one happened. AngularJS needed `$submitted` for exactly this
+and exos needs no flag for it.
+
+Two more rules, and the first is the one an implementation gets wrong:
+
 - **Editing a field clears the server's error for it.** Otherwise "that email is
   taken" hangs under a field while somebody types a different one, and the
   client cannot answer a rule it does not own.
+- **Precedence is the client's answer first**, because it is the fresher of the
+  two.
 
-Precedence is the client's answer first, because it is the fresher of the two.
+**Validity aggregates, and it costs nothing.** `form.valid()` is every rule of
+every field folded into one expression, and the macro can write it because the
+macro is where the rules are. No new runtime concept: it is an ordinary recorded
+expression like any other, so `{attr("disabled", ...)}` on the submit button is
+the whole of what AngularJS needed a form controller for. What it deliberately
+does not do is disable a form that has never been touched, which would hide the
+button before anybody has had a chance to be wrong.
 
 **A bound control marks itself, and the marking is not exos's to name.**
 [`bind`](../../crates/exos/src/attributes/helper.rs) already carries the field's
