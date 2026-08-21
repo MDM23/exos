@@ -195,6 +195,60 @@ both. Three things came out of writing it.
   bug it names is worse than no test. What is checked instead is that the render
   observes the lock held, which fails the moment the mechanism is removed.
 
+## A busy marker is taken off mid-request
+
+[runtime.js](../../crates/exos/js/runtime.js) sets `aria-busy` on the element an
+action was recorded on before the fetch and removes it in a `finally`, so an
+indicator can say where the work is happening and a request that failed cannot
+leave the page looking busy for good. `syncAttributes` then takes off whatever
+the incoming markup does not carry, and `aria-busy` is written by the request
+path rather than by a binding, so it is not in the set `reapply` puts back.
+
+A patch landing over that element while its own request is still in flight
+therefore takes the marker with it: the spinner goes, the button looks ready
+again, and the `finally` afterwards removes an attribute that is already gone.
+It is the same ownership bug the comment above `reapply` describes, one category
+further out, and it happens most readily where it is worst, on a page whose live
+fragments publish while somebody is clicking.
+
+The fix is to make the request path's marker owned the way a binding's writes
+are. What it must not become is a general rule that the client's attributes
+survive a patch: a speculative `attr_now` write has deliberately no second copy,
+and [optimistic updates](../guide.md#optimistic-updates) rests on the patch
+being the thing that corrects it.
+
+## Nothing disables a busy control
+
+`aria-busy` is advisory. It says work is happening and prevents none of it, so a
+second click during a request sends a second request, and a form slow enough to
+be doubted is a form that gets submitted twice.
+
+Most of the answer is already an application's to write, and that is worth
+recording before anybody builds machinery for it. The attribute is set
+synchronously, before the `await`, so this blocks the second click rather than
+racing it:
+
+```css
+[aria-busy="true"] {
+    pointer-events: none;
+}
+```
+
+Two things it does not cover. The keyboard goes straight past it: a focused
+button still activates with Enter or Space, and Enter in a text field still
+submits. And the element marked busy is the one carrying the handler, so for
+`<form {on_submit(...)}>` that rule freezes every field in the form rather than
+the button, which is either exactly right or far too much depending on how long
+the request takes.
+
+Whether exos should write `disabled` itself is the open question, and what keeps
+it open is that the obvious version is wrong in both directions. A framework
+that disables a control for the length of a request also disables it where a
+second click was wanted, and a disabled element loses focus, which hands the
+caret back to the body in the middle of somebody's typing. An application that
+wants it today writes `prop("disabled", ...)` over a model field the handler
+clears, which is a few lines and keeps the policy where the policy belongs.
+
 ## Publishing scans every connection
 
 `publish` takes a `Mutex` over the whole registry and walks it. At presence
