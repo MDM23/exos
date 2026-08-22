@@ -247,7 +247,7 @@
                 "$", "el", "ev",
                 "get", "post", "put", "patch", "del",
                 "attr", "append", "focus", "debounce",
-                "rows", "addRow", "dropRow", "rowError",
+                "rows", "addRow", "dropRow", "rowError", "dirty",
                 statement ? source : `return (${source})`,
             );
         } catch (error) {
@@ -327,7 +327,7 @@
         );
     }
 
-    function addRow(key) {
+    function addRow(el, key, state) {
         const into = group(key);
         const template = into?.querySelector("template");
         if (!template) return;
@@ -336,15 +336,35 @@
 
         // An id only so the store reads well in a debugger. The scope is the
         // element's either way, which is what makes the clone's fields its own.
-        for (const el of clone.children) {
-            if (!el.id) el.id = `exos-row-${++appended}`;
+        for (const child of clone.children) {
+            if (!child.id) child.id = `exos-row-${++appended}`;
         }
 
+        // The new row goes on the end, so no message moves. What does go is
+        // what the server said about how many rows there are.
+        forgetRows(el, key, state, rowsIn(into).length);
         into.appendChild(clone);
     }
 
-    function dropRow(el, key) {
-        rowOf(el, key)?.remove();
+    function dropRow(el, key, state) {
+        const row = rowOf(el, key);
+        if (!row) return;
+
+        forgetRows(el, key, state, rowsIn(row.parentElement).indexOf(row));
+        row.remove();
+    }
+
+    // What the server said about a group, retired because the group changed
+    // shape. A message names a row by where it sits, so everything from `from`
+    // on is about a different row now; renumbering would be guessing, and the
+    // next submission says what is wrong with the rows as they then are.
+    function forgetRows(el, key, state, from) {
+        forget(el, state, (at) => {
+            if (at === key) return true;
+            if (!at.startsWith(`${key}.`)) return false;
+
+            return Number(at.slice(key.length + 1).split(".")[0]) >= from;
+        });
     }
 
     function rowError(record, key, field, el) {
@@ -443,6 +463,7 @@
             addRow,
             dropRow,
             rowError,
+            (name) => isDirty(el, name),
         );
     }
 
@@ -455,6 +476,49 @@
     // generated name can wear, and nothing declares or sends these: what
     // somebody has typed so far is the client's alone.
     const dirtyKey = (key) => `~dirty/${key}`;
+
+    // The same question an expression asks, as `dirty(name)`. Resolved from
+    // where it is asked, so a field of a row answers for that row, and a
+    // model's record answers for every control writing into it.
+    function isDirty(el, name) {
+        return read(dirtyKey(resolve(el, name))) === true;
+    }
+
+    // A model's record, minus whatever `stale` says is no longer about
+    // anything. Every message needs something that retires it, or a form that
+    // reads the record whole reaches a state it cannot be submitted out of.
+    function forget(el, state, stale) {
+        if (!state) return;
+
+        const slot = resolve(el, state);
+        const record = read(slot) ?? {};
+        const kept = Object.entries(record).filter(([at]) => !stale(at));
+
+        if (kept.length !== Object.keys(record).length) {
+            write(slot, Object.fromEntries(kept));
+        }
+    }
+
+    // What was said about one field, retired because it has just been edited,
+    // and the model marked as edited while we are here. The mark is one flag
+    // beside the field's own rather than a fold over however many fields a
+    // form has.
+    //
+    // A gate takes the fields it arms with it: their rules only apply while
+    // this one is filled in, so editing it changes which rules there are, and
+    // a complaint about a section a box has just hidden can be reached by
+    // nothing on screen.
+    function forgetField(el, name) {
+        const state = el.getAttribute("data-bind-state");
+        if (!state) return;
+
+        write(dirtyKey(resolve(el, state)), true);
+
+        const armed = (el.getAttribute("data-bind-arms") ?? "").split(" ").filter(Boolean);
+        const gone = new Set([name, ...armed].map((field) => recordKey(el, field)));
+
+        forget(el, state, (at) => gone.has(at));
+    }
 
     // -------------------------------------------------------------------------
     //                                 BINDINGS
@@ -726,10 +790,14 @@
             const current = read(key);
             const kind = el.getAttribute("data-bind-kind");
 
-            // Edited, so this control's own rules may speak. What they answer
-            // replaces whatever the server last said, because a verdict on a
-            // value that is no longer there is worse than none.
+            // Edited, so this control's own rules may speak, and whatever was
+            // said about the old value goes: a verdict on a value that is no
+            // longer there is worse than none. Dropped here rather than by the
+            // rules recomputing over it, because a field only the server can
+            // judge has no rules to recompute and its message would outlive
+            // every value it was ever about.
             write(dirtyKey(key), true);
+            forgetField(el, name);
 
             if (el.type === "checkbox" && Array.isArray(current)) {
                 const value = el.value;

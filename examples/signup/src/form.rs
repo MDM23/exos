@@ -5,7 +5,9 @@
 //! about, and answered on both sides from that one declaration. What is left
 //! in the handler is what a declaration cannot reach.
 
-use exos::{Bound, Effect, Markup, Model, Refusal, Rows, bind, data, on_submit, show, text, view};
+use exos::{
+    Bound, Effect, Markup, Model, Refusal, Rows, attr, bind, data, on_submit, show, text, view,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -105,7 +107,12 @@ pub(crate) fn registration() -> Markup {
 
                 { field("code", "Discount code", "text", &form.code) }
 
-                <button type="submit">"Register"</button>
+                // One read of the record every message lands in, so the button
+                // answers for the rows and for what the server said as much as
+                // for the rules the controls answered themselves. It starts
+                // enabled: a form nobody has filled in yet is not a form
+                // anybody has got wrong.
+                <button type="submit" {attr("disabled", !form.valid())}>"Register"</button>
             </form>
         </div>
     }
@@ -260,6 +267,44 @@ mod tests {
         // The record is declared with the fields, so the index cannot land on
         // an undefined before anything has been written.
         assert!(html.contains(&format!("&quot;{state}&quot;:{{}}")));
+    }
+
+    /// The whole form's validity is that same record read once, so the button
+    /// answers for a row and for what the server said as much as for a rule a
+    /// control checked itself.
+    #[tokio::test]
+    async fn the_submit_button_asks_the_record_the_messages_land_in() {
+        let html = get("/").await;
+        let state = <Signup as exos::Validate>::STATE;
+
+        let button = html
+            .split_once("type=\"submit\"")
+            .and_then(|(_, rest)| rest.split_once('>'))
+            .map(|(tag, _)| tag)
+            .expect("the submit button is on the page");
+
+        assert!(button.contains("data-attr="), "{button}");
+        assert!(button.contains("disabled"), "{button}");
+        assert!(button.contains(state), "{button}");
+    }
+
+    /// A gate is a rule under a condition, so the control that arms one says
+    /// which fields it arms and the browser retires their messages when it is
+    /// edited. Without it, unticking the box leaves a complaint about a
+    /// section nothing on screen can reach.
+    #[tokio::test]
+    async fn the_box_that_reveals_a_section_says_what_it_arms() {
+        let html = get("/").await;
+        let signals = Signup::signals();
+
+        assert!(
+            html.contains(&format!(
+                "data-bind-arms=\"{} {}\"",
+                signals.company.name(),
+                signals.vat.name()
+            )),
+            "{html:.4000}"
+        );
     }
 
     /// A plain signal has no record, because nothing off the page can say

@@ -130,6 +130,29 @@ impl Serialize for Errors {
     }
 }
 
+/// Whether a model's record holds nothing, as the browser reads it.
+///
+/// The aggregation of every rule of every field, and it folds nothing: the
+/// record is already the one place a verdict lands, whichever side reached it
+/// and whichever row it was about. Generated onto the model's handle, where it
+/// is `form.valid()`.
+#[doc(hidden)]
+#[must_use]
+pub fn all_valid(state: &str) -> Js<bool> {
+    Js::raw(format!("Object.keys($.{state} ?? {{}}).length === 0"))
+}
+
+/// Whether anything writing into that record has been edited.
+///
+/// One flag the runtime sets beside the per-field one every binding already
+/// sets, so this is a read rather than a fold, and a row counts like any other
+/// control. Generated onto the handle as `form.dirty()`.
+#[doc(hidden)]
+#[must_use]
+pub fn any_dirty(state: &str) -> Js<bool> {
+    Js::raw(format!("dirty({})", crate::quote_js(state)))
+}
+
 /// A model that knows its own rules.
 ///
 /// Implemented by `#[model]` for every model, whether or not it declares any,
@@ -520,6 +543,19 @@ mod tests {
 
         assert_eq!(errors.get("s1"), Some("This is needed."));
         assert!(!errors.is_empty());
+    }
+
+    /// A model's two questions are one read each. The aggregation is not the
+    /// rules folded together: a fold could only see the fields a document
+    /// declares, which leaves out every row and everything the server alone
+    /// decided.
+    #[test]
+    fn a_form_asks_the_record_rather_than_the_rules() {
+        assert_eq!(
+            all_valid("s1").source(),
+            "Object.keys($.s1 ?? {}).length === 0"
+        );
+        assert_eq!(any_dirty("s1").source(), "dirty(\"s1\")");
     }
 
     #[test]

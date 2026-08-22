@@ -222,6 +222,61 @@ test("editing a control replaces what the server said about it", async () => {
     assert.equal(window.exos.signals.errors.other, "kept", "and nobody else's is touched");
 });
 
+// The same rule for a field the server alone can judge. Nothing recomputes over
+// it, so without this its message outlives every value it was ever about, and a
+// form gated on the record could never be submitted again.
+test("editing a field with no rules of its own still retires what was said", async () => {
+    const window = boot(
+        `<input id="field" data-signals-root='{"errors":{}}' data-bind="code" ` +
+            `data-bind-kind="string" data-bind-state="errors">`,
+    );
+
+    window.exos.signals.errors = { code: "not one of ours", other: "kept" };
+    await settled();
+
+    assert.equal(window.document.getElementById("field").getAttribute("aria-invalid"), "true");
+
+    await type(window, "EARLYBIRD");
+
+    assert.equal(window.exos.signals.errors.code, undefined);
+    assert.equal(window.exos.signals.errors.other, "kept");
+});
+
+// A gated rule applies only while the field that arms it is filled in, so
+// editing that field changes which rules there are. Without this, unticking the
+// box that reveals a section leaves the complaints about it in the record,
+// where nothing on screen can reach them.
+test("editing a gate retires what was said about the fields it arms", async () => {
+    const window = boot(
+        `<input id="field" type="checkbox" data-signals-root='{"errors":{}}' ` +
+            `data-bind="invoice" data-bind-kind="bool" data-bind-state="errors" ` +
+            `data-bind-arms="company vat">`,
+    );
+
+    window.exos.signals.errors = { company: "needed", vat: "needed", name: "kept" };
+    await settled();
+
+    const box = window.document.getElementById("field");
+    box.checked = false;
+    box.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settled();
+
+    assert.deepEqual({ ...window.exos.signals.errors }, { name: "kept" });
+});
+
+// Whether anything in a form has been edited, which is one flag beside the
+// per-field ones rather than a fold over however many fields it has.
+test("a model knows whether any of its controls has been edited", async () => {
+    const window = boot(`${validated()}<p id="say" data-text="dirty('errors') ? 'yes' : 'no'"></p>`);
+    await settled();
+
+    assert.equal(window.document.getElementById("say").textContent, "no");
+
+    await type(window, "typed");
+
+    assert.equal(window.document.getElementById("say").textContent, "yes");
+});
+
 // A control bound to a plain signal has no rules and no record, and must not go
 // looking for either.
 test("a binding with no rules survives being edited", async () => {
@@ -491,23 +546,24 @@ test("html arriving with a failure is left where it is", async () => {
 // whole point is that a row needs no name: a clone is its own signal scope, so
 // adding one is a DOM copy and the submission reads them back out at the end.
 
+/** One row of the group below, template and rendered row alike. */
+const rowOf = (state) =>
+    `<div data-signals='{"name":""}' data-row>` +
+    `<input data-bind="name" data-bind-state="${state}" data-bind-rows="g">` +
+    `<button type="button" data-on-click="dropRow(el, 'g', '${state}')">x</button>` +
+    `</div>`;
+
 /** A group as the server renders it: the template, then the rows it opened with. */
-const group = (rows = 1) =>
-    `<form data-on-submit="post('/save', {'g': rows(el, 'g', ['name'])})">` +
+const group = (rows = 1, state = "errors") =>
+    `<form data-signals-root='{"${state}":{}}' ` +
+    `data-on-submit="post('/save', {'g': rows(el, 'g', ['name'])})">` +
     `<div data-rows="g">` +
-    `<template><div data-signals='{"name":""}' data-row>` +
-    `<input data-bind="name"><button type="button" data-on-click="dropRow(el, 'g')">x</button>` +
-    `</div></template>` +
+    `<template>${rowOf(state)}</template>` +
     Array.from({ length: rows })
-        .map(
-            () =>
-                `<div data-signals='{"name":""}' data-row>` +
-                `<input data-bind="name"><button type="button" data-on-click="dropRow(el, 'g')">x</button>` +
-                `</div>`,
-        )
+        .map(() => rowOf(state))
         .join("") +
     `</div>` +
-    `<button id="add" type="button" data-on-click="addRow('g')">add</button>` +
+    `<button id="add" type="button" data-on-click="addRow(el, 'g', '${state}')">add</button>` +
     `</form>`;
 
 /** Types `text` into the nth row's field, the way a person would. */
@@ -581,6 +637,37 @@ test("a row removed in the browser is gone from the submission", async () => {
     await settled();
 
     assert.deepEqual(window.transport.requests[0].body, { g: [{ name: "Grace" }] });
+});
+
+// A message names a row by where it sits, so the group changing shape decides
+// which of them are still about the row they were written for.
+test("adding a row retires what was said about how many there are", async () => {
+    const window = boot(group(1));
+
+    window.exos.signals.errors = { g: "add at least one", "g.0.name": "needed" };
+    await settled();
+
+    click(window, "#add");
+    await settled();
+
+    assert.equal(window.exos.signals.errors.g, undefined, "the count it was about has changed");
+    assert.equal(window.exos.signals.errors["g.0.name"], "needed", "and nobody moved");
+});
+
+test("removing a row retires the messages that would have moved", async () => {
+    const window = boot(group(2));
+
+    window.exos.signals.errors = { "g.0.name": "first", "g.1.name": "second" };
+    await settled();
+
+    window.document
+        .querySelectorAll("[data-row] button")[0]
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await settled();
+
+    // Renumbering would be guessing. The next submission says what is wrong
+    // with the rows as they then are.
+    assert.deepEqual({ ...window.exos.signals.errors }, {});
 });
 
 test("the template is not a row and never rides along", async () => {

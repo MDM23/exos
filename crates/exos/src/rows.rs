@@ -52,11 +52,12 @@
 //!
 //! # Rows are numbered by position, not by identity
 //!
-//! What a rule says about the third row is written under the third row. Adding
-//! or removing a row after a refusal therefore shifts the messages that are on
-//! screen, which is a corner worth knowing and the price of never inventing an
-//! id. Editing a row clears its own message either way, because the control
-//! answers its rules as it is typed into.
+//! What a rule says about the third row is written under the third row, so
+//! removing a row would leave every message after it about a different one.
+//! They are retired rather than renumbered: what was said about the rows from
+//! there on goes when the row does, and the next submission says what is wrong
+//! with the rows as they then are. Editing a row clears its own message either
+//! way, because the control answers its rules as it is typed into.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -231,11 +232,19 @@ impl<T> RowsOf<T> {
 
     /// Adds an empty row, in the browser, without asking the server.
     ///
+    /// What the server said about how many rows there are goes with the click,
+    /// since it is about a form that no longer exists. What it said about the
+    /// rows themselves stays: a new row goes on the end and moves nobody.
+    ///
     /// # Panics
     ///
     /// If called outside a handler; see [`emit`](crate::emit).
     pub fn add(&self) {
-        emit(format!("addRow({})", quote_js(self.key)));
+        emit(format!(
+            "addRow(el, {}, {})",
+            quote_js(self.key),
+            quote_js(self.state)
+        ));
     }
 
     /// Removes the row this was recorded inside.
@@ -248,7 +257,11 @@ impl<T> RowsOf<T> {
     ///
     /// If called outside a handler; see [`emit`](crate::emit).
     pub fn remove(&self) {
-        emit(format!("dropRow(el, {})", quote_js(self.key)));
+        emit(format!(
+            "dropRow(el, {}, {})",
+            quote_js(self.key),
+            quote_js(self.state)
+        ));
     }
 
     /// What is wrong with the collection, or the empty string.

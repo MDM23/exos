@@ -274,6 +274,7 @@ pub struct Bound<T> {
     state: &'static str,
     checked: Option<Js<String>>,
     group: Option<&'static str>,
+    arms: &'static str,
 }
 
 impl<T> Bound<T> {
@@ -290,6 +291,7 @@ impl<T> Bound<T> {
             state,
             checked,
             group: None,
+            arms: "",
         }
     }
 
@@ -312,7 +314,27 @@ impl<T> Bound<T> {
             state,
             checked,
             group: Some(group),
+            arms: "",
         }
+    }
+
+    /// Says which fields' rules this one arms, space separated.
+    ///
+    /// A gate is a rule under a condition, so editing the field the condition
+    /// reads changes which rules there are. The control carries the list and
+    /// the runtime retires what was said about them, which is how unticking a
+    /// box takes the complaints about the section it revealed with it.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn arming(mut self, arms: &'static str) -> Self {
+        self.arms = arms;
+        self
+    }
+
+    /// Those fields, as the binding carries them.
+    #[must_use]
+    pub const fn arms(&self) -> &'static str {
+        self.arms
     }
 
     /// The rows field this is one row's copy of, where it is one.

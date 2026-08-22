@@ -3,8 +3,8 @@
 Rules written once, checked on both sides, and the one round trip that carries
 what only the server knows.
 
-Status: stages 0, 1, 2, 3, 5 and the gate half of 4 are built. What is left is
-patterns (1a), `required_when`, and the aggregation stage 2 describes.
+Status: stages 0, 1, 2, 3, 5 and the gate half of 4 are built, aggregation
+included. What is left is patterns (1a) and `required_when`.
 
 [`examples/signup`](../../examples/signup) is the form written by hand against
 the surface that existed before any of this, so what the stages are worth is
@@ -290,13 +290,12 @@ server speaks only after a submission, so the arrival of a message is already
 the evidence that one happened. AngularJS needed `$submitted` for exactly this
 and exos needs no flag for it.
 
-**Validity aggregates, and it costs nothing.** Not built, and still true when it
-is: `form.valid()` is every rule of every field folded into one expression, and
-the macro can write it because the macro is where the rules are. No new runtime
-concept, so `{attr("disabled", ...)}` on the submit button is the whole of what
-AngularJS needed a form controller for. What it deliberately would not do is
-disable a form that has never been touched, which hides the button before
-anybody has had a chance to be wrong.
+**Validity aggregates, and it costs nothing.** Built, and cheaper than this
+paragraph first claimed: `form.valid()` is the record, empty, so
+`{attr("disabled", !form.valid())}` on the submit button is the whole of what
+AngularJS needed a form controller for. `form.dirty()` is beside it. What it
+deliberately does not do is disable a form that has never been touched, which
+hides the button before anybody has had a chance to be wrong.
 
 **A bound control marks itself, and the marking is not exos's to name.**
 [`bind`](../../crates/exos/src/attributes/helper.rs) already carries the field's
@@ -339,6 +338,29 @@ error element per field the stage-0 example needed.
 effect subscribes to what it reads, so a rule gated on one evaluates once and
 never again. It lives in the signal store under a `~dirty/` prefix for that
 reason, which a client test caught and nothing else would have.
+
+**The aggregation is not the rules folded, it is the record read.** This stage
+promised one expression the macro would build out of every field's rules, and
+that would have been both more code and wrong: an expression on the form can
+only reach the fields the document declares, which leaves out every row, and it
+can only ask the rules the browser has, which leaves out everything the server
+alone decided. The record already holds all of it, keyed the same way, so
+`valid()` is `Object.keys` of one signal and does not grow with the model.
+`dirty()` is the same shape: one flag beside the per-field ones the binding
+already writes, rather than a fold over them.
+
+**A form gated on the record has to be a form that can be submitted again**, and
+that is what building this found. Every message needs something that retires it,
+or the button that reads them locks. A field's own edit already did that where
+the field had rules of its own; a field only the server can judge had none to
+recompute, so its message outlived every value it was ever about. Two more had
+the same shape and neither was visible until a button depended on them: a gate
+that shuts leaves complaints about a section nothing on screen can reach, and a
+group that changes shape leaves messages about rows that have moved. So an edit
+retires what was said about the field **and about the fields it arms**, and a
+row added or removed retires what was said about the rows from there on. That is
+one rule seen three times: a verdict about a value nothing is asking about any
+more is worse than no verdict.
 
 **`aria-invalid` is written out rather than toggled**, which is stage 0's fourth
 finding landing where it was aimed. `toggleAttribute` produces `aria-invalid=""`
@@ -557,9 +579,11 @@ until submit, and the runtime needed no new concept, only three helpers.**
 **Position is a good enough identity.** With scopes doing the work there is
 nothing to renumber: removing a row removes its element and its signals. Only
 the *messages* need an index, since a message comes back from the server keyed
-by something, so a row's key is `<group>.<position>.<field>` and the one thing
-that costs is a refusal's messages shifting if rows are added or removed
-afterwards. That is a corner, and it bought away ids, routes and server state.
+by something, so a row's key is `<group>.<position>.<field>`. What that costs is
+that a refusal's messages stop being about the rows they were written for as
+soon as the rows move, so they are retired when one is added or removed, which
+is where stage 2's aggregation arrived from the other side. It bought away ids,
+routes and server state.
 
 **The renaming stopped one level down**, and both sides were wrong in the same
 direction, so every test passed while nothing worked. `to_wire` renamed the top

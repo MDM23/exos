@@ -160,9 +160,11 @@ and the message lands on that row. `required` on `lines` is about how many rows
 there are, and `form.lines.error()` is where that one goes.
 
 **Rows are numbered by position, not identity.** A message about the third row
-is written under the third row, so adding or removing a row after a refusal
-shifts the messages on screen. That is the price of never inventing an id, and
-editing a row clears its own message either way.
+is written under the third row, so removing a row would leave every message
+after it about a different one. They are retired rather than renumbered, and
+the next submit says what is wrong with the rows as they then are. That is the
+price of never inventing an id, and editing a row clears its own message
+either way.
 
 ## Rules on a model
 
@@ -263,3 +265,30 @@ One thing to watch. `required_with` gates a rule on another field being filled
 in, and nothing holds that gate and whatever `show`s the section together. A
 section revealed on more than the gate names is validated while hidden, and the
 submit then fails with a message nobody can see.
+
+## What a form asks about itself
+
+Two questions about the model as a whole, each one read rather than a fold over
+however many fields it has:
+
+```rust
+view! {
+    <button type="submit" {attr("disabled", !form.valid())}>"Register"</button>
+}
+```
+
+`form.valid()` is that same record, empty. It answers for every rule of every
+field, for a rule about a row, and for whatever the server decided, because all
+of them land in the one place. `form.dirty()` is whether any control writing
+into it has been edited.
+
+**A form nobody has filled in is valid**, because nothing has judged it yet.
+That is deliberate: a submit button disabled before anybody has had a chance to
+be wrong hides the way forward, and the submit is what the first messages come
+back on.
+
+What it costs is that a message has to be retirable, or a form could reach a
+state it cannot be submitted out of. Each of them is: editing a field retires
+what was said about it, editing a gate retires what was said about the fields
+it arms, and adding or removing a row retires what was said about how many
+there are.

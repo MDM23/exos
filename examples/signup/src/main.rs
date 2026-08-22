@@ -6,13 +6,16 @@
 //! cost that was visible rather than argued about; each one that has since
 //! landed took something back out of it.
 //!
-//! Five things it does:
+//! Six things it does:
 //!
 //! * **A shape rule** is declared on the model in [`form`], and that one
 //!   declaration answers on both sides: the extractor refuses a body that
 //!   breaks it, and the control asks it again while it is being typed.
 //! * **A message** goes into one record per model, keyed by field, whichever
 //!   side decided what is in it.
+//! * **The submit button** reads that record whole, so it answers for the rows
+//!   and for what the server said as much as for a rule a control checked
+//!   itself.
 //! * **A conditional section** is shown by one signal and gated on that same
 //!   signal, which is the one pair nothing holds together.
 //! * **A searchable multi-select** is in [`workshops`], and needs no

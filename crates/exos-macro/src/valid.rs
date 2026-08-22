@@ -210,6 +210,26 @@ pub(crate) fn strip(input: &mut ItemStruct) {
     }
 }
 
+/// The fields whose rules `field` arms, by wire name.
+///
+/// Read by the control the gate is on, so that editing it retires what was
+/// said about the fields it gates: unticking the box takes the billing
+/// complaints with it, rather than leaving them in the record where nothing
+/// on screen can reach them.
+pub(crate) fn arms(declared: &[Rules], field: &Ident) -> String {
+    let armed = declared.iter().filter(|other| {
+        other.rules.iter().any(|rule| match rule {
+            Rule::RequiredWith { sibling } => sibling == field,
+            _ => false,
+        })
+    });
+
+    armed
+        .map(|other| other.key.as_str())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// The browser's half: the same rules, as one expression yielding a message.
 ///
 /// Built from the list [`check`] reads, so the two questions are one

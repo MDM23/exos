@@ -43,6 +43,8 @@ pub struct Bind {
     state: Option<&'static str>,
     /// The rows field this control is one row's copy of.
     group: Option<&'static str>,
+    /// The fields whose rules this one arms, where it gates any.
+    arms: &'static str,
     /// The field's own rules, for the control to answer as it is typed into.
     rules: Option<String>,
 }
@@ -63,6 +65,12 @@ impl IntoAttributes for Bind {
         // browser can say, so the group travels and the key is built there.
         if let Some(group) = self.group {
             attributes.set("data-bind-rows", group);
+        }
+
+        // Editing this field changes which rules apply to those, so what was
+        // said about them is retired along with what was said about this.
+        if !self.arms.is_empty() {
+            attributes.set("data-bind-arms", self.arms);
         }
 
         if let Some(rules) = self.rules {
@@ -90,6 +98,7 @@ impl<T: BindKind> Bindable for Signal<T> {
             state: None,
             rules: None,
             group: None,
+            arms: "",
         }
     }
 }
@@ -102,6 +111,7 @@ impl<T: BindKind> Bindable for crate::Bound<T> {
             state: Some(self.state()),
             rules: self.checked().map(|rules| rules.source().to_owned()),
             group: self.group(),
+            arms: self.arms(),
         }
     }
 }

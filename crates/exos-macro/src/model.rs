@@ -86,6 +86,13 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         .map(|field| valid::ask(&rules, field))
         .collect();
 
+    // And, for a field that gates others, which they are. Editing a gate
+    // changes which rules there are, so what they said goes with the edit.
+    let arming: Vec<String> = names
+        .iter()
+        .map(|field| valid::arms(&rules, field))
+        .collect();
+
     // What one field is on the handle, how it is built, what it sends, and
     // what a row of it is validated against. A `Rows` field answers all four
     // differently, so they are built together rather than four matches apart.
@@ -103,7 +110,8 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         .zip(&rows)
         .zip(&asked)
         .zip(&labels)
-        .map(|(((key, row), asked), label)| match row {
+        .zip(&arming)
+        .map(|((((key, row), asked), label), arming)| match row {
             // The rows the model opens with, which is what `each` renders
             // before the template. Everything after that is the browser's.
             Some(_) => quote! {
@@ -132,7 +140,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
 
                 let __asked = #asked;
 
-                ::exos::Bound::new(__signal, #state, __asked)
+                ::exos::Bound::new(__signal, #state, __asked).arming(#arming)
             }},
         })
         .collect();
@@ -199,7 +207,8 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         .zip(&rows)
         .zip(&asked)
         .zip(&labels)
-        .map(|(((key, row), asked), label)| match row {
+        .zip(&arming)
+        .map(|((((key, row), asked), label), arming)| match row {
             // Rows of rows would need a group inside a group, and nothing has
             // asked for one. Left empty rather than silently addressing the
             // wrong signals.
@@ -218,7 +227,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
 
                 let __asked = #asked;
 
-                ::exos::Bound::row(__signal, __state, __asked, __group)
+                ::exos::Bound::row(__signal, __state, __asked, __group).arming(#arming)
             }},
         })
         .collect();
@@ -248,6 +257,24 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
                     .unwrap_or(::exos::serde_json::Value::Null);
 
                 #handle { #(#names: #built,)* }
+            }
+        }
+
+        impl #handle {
+            /// Whether nothing in this model is currently complaining.
+            ///
+            /// One read of the record every message lands in, so a row and a
+            /// refusal count for as much as a rule the browser answered. A
+            /// form nobody has touched is valid: nothing has judged it yet.
+            #[must_use]
+            pub fn valid(&self) -> ::exos::Js<bool> {
+                ::exos::all_valid(#state)
+            }
+
+            /// Whether any of its controls has been edited.
+            #[must_use]
+            pub fn dirty(&self) -> ::exos::Js<bool> {
+                ::exos::any_dirty(#state)
             }
         }
 
@@ -517,6 +544,25 @@ mod tests {
 
         assert!(on_field.contains("compile_error"));
         assert!(on_struct.contains("compile_error"));
+    }
+
+    /// The whole form's validity is the record read, not the rules folded: a
+    /// fold could only reach the fields the document declares, which is every
+    /// field except the rows and every verdict except the server's.
+    #[test]
+    fn a_handle_answers_for_the_whole_model() {
+        let expanded = expand_ok("struct Draft { sku: String }");
+        let state = signal_name(&format_ident!("Draft"), &format_ident!("__state"));
+
+        assert!(expanded.contains("fn valid"), "{expanded}");
+        assert!(
+            expanded.contains(&format!("all_valid (\"{state}\")")),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains(&format!("any_dirty (\"{state}\")")),
+            "{expanded}"
+        );
     }
 
     /// A gate names a sibling, so a typo is a message at the attribute rather

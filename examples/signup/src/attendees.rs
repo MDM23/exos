@@ -113,7 +113,7 @@ mod tests {
     async fn a_row_is_added_and_dropped_without_a_round_trip() {
         let html = get("/").await;
 
-        assert!(html.contains("addRow("), "{html:.3000}");
+        assert!(html.contains("addRow(el, "), "{html:.3000}");
         assert!(html.contains("dropRow(el, "), "{html:.3000}");
         assert!(
             !html.contains("/attendees"),
