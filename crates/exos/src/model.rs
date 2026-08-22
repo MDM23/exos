@@ -48,6 +48,45 @@ use crate::{Effect, Errors, Placement, Signal, Validate};
 pub trait ModelFields {
     /// `(wire key, field name)` per field, in declaration order.
     const FIELDS: &'static [(&'static str, &'static str)];
+
+    /// Renames whatever `field` nests, in the direction `outwards` asks for.
+    ///
+    /// The identity for every field but a [`Rows`](crate::Rows), whose rows
+    /// are models of their own and therefore have keys of their own to rename.
+    /// Without it the renaming would stop one level down and the row would
+    /// arrive as a body serde cannot read.
+    #[doc(hidden)]
+    #[must_use]
+    fn nested(field: &str, value: Value, outwards: bool) -> Value {
+        let _ = (field, outwards);
+        value
+    }
+}
+
+/// Renames the keys inside every row of a [`Rows`](crate::Rows) field.
+///
+/// Called by the `#[model]` expansion, which is the only thing that knows
+/// which fields hold rows and of what.
+#[doc(hidden)]
+#[must_use]
+pub fn nested_rows<T: ModelFields>(value: Value, outwards: bool) -> Value {
+    let Value::Array(rows) = value else {
+        return value;
+    };
+
+    let renamed = rows.into_iter().map(|row| {
+        let Value::Object(fields) = row else {
+            return row;
+        };
+
+        Value::Object(if outwards {
+            outward::<T>(&fields)
+        } else {
+            inward::<T>(fields)
+        })
+    });
+
+    Value::Array(renamed.collect())
 }
 
 /// A `#[model]` body, extracted from the wire form.
@@ -80,7 +119,7 @@ where
             return Err(ModelRejection::NotAnObject);
         };
 
-        let model: T = serde_json::from_value(Value::Object(from_wire::<T>(wire)))?;
+        let model: T = serde_json::from_value(Value::Object(inward::<T>(wire)))?;
 
         // Checked here rather than in the handler, so that there is no call
         // site to forget and a body runs only against a value whose shape
@@ -104,16 +143,29 @@ where
 /// the caller this route has, and a field spelled the way the struct spells it
 /// is exactly that: dropping it is what makes a hand-written body fail with
 /// the missing field it is missing.
-fn from_wire<T: ModelFields>(mut wire: Map<String, Value>) -> Map<String, Value> {
+fn inward<T: ModelFields>(mut wire: Map<String, Value>) -> Map<String, Value> {
     let mut fields = Map::new();
 
     for (key, field) in T::FIELDS {
         if let Some(value) = wire.remove(*key) {
-            fields.insert((*field).to_owned(), value);
+            fields.insert((*field).to_owned(), T::nested(field, value, false));
         }
     }
 
     fields
+}
+
+/// The same renaming, outwards, for [`to_wire`].
+fn outward<T: ModelFields>(fields: &Map<String, Value>) -> Map<String, Value> {
+    let mut wire = Map::new();
+
+    for (key, field) in T::FIELDS {
+        if let Some(value) = fields.get(*field) {
+            wire.insert((*key).to_owned(), T::nested(field, value.clone(), true));
+        }
+    }
+
+    wire
 }
 
 /// Serializes a model into the wire form [`Model`] reads.
@@ -136,15 +188,7 @@ pub fn to_wire<T: ModelFields + Serialize>(value: &T) -> String {
         return String::from("{}");
     };
 
-    let mut wire = Map::new();
-
-    for (key, field) in T::FIELDS {
-        if let Some(value) = fields.get(*field) {
-            wire.insert((*key).to_owned(), value.clone());
-        }
-    }
-
-    Value::Object(wire).to_string()
+    Value::Object(outward::<T>(&fields)).to_string()
 }
 
 /// Why a [`Model`] body was refused.
@@ -233,7 +277,7 @@ mod tests {
 
     fn read(body: &str) -> Result<Selection, serde_json::Error> {
         let wire: Map<String, Value> = serde_json::from_str(body).expect("valid json");
-        serde_json::from_value(Value::Object(from_wire::<Selection>(wire)))
+        serde_json::from_value(Value::Object(inward::<Selection>(wire)))
     }
 
     #[test]

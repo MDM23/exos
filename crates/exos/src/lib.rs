@@ -40,6 +40,7 @@ mod model;
 mod number;
 mod render;
 mod response;
+mod rows;
 mod scope;
 mod session;
 mod signal;
@@ -66,10 +67,11 @@ pub use crate::{
     live::{Fragment, Topic, connected, connection_count, publish, send},
     locale::{Direction, Lang, LocaleSet, PluralCategory, lang, locale},
     message::{Count, Enumerable},
-    model::{Model, ModelFields, ModelRejection, to_wire},
+    model::{Model, ModelFields, ModelRejection, nested_rows, to_wire},
     number::Symbols,
     render::{AttributeValue, Flag, Markup, Render, escape_display_into, escape_into},
     response::Page,
+    rows::{Row, RowModel, Rows, RowsOf},
     scope::{Scope, detached, scope, with_scope},
     session::{Id, Session, session},
     signal::{Bound, Field, Placement, Signal, signal},

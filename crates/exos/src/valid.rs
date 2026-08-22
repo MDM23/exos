@@ -89,8 +89,12 @@ pub enum Violation {
 ///
 /// Empty is valid. The whole record is written at once, so a field that now
 /// passes is cleared by not being in it and nothing has to remember to.
+///
+/// A key is a `String` rather than a `&'static str` because a field of a row
+/// has no static name: it is the [`Rows`](crate::Rows) field, the row's id and
+/// the field, and the id is only known once there is a row.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Errors(BTreeMap<&'static str, String>);
+pub struct Errors(BTreeMap<String, String>);
 
 impl Errors {
     /// Records a violation against a field.
@@ -99,9 +103,9 @@ impl Errors {
     /// because a field that is empty is not also too short and saying both is
     /// how a form ends up shouting.
     #[doc(hidden)]
-    pub fn add(&mut self, key: &'static str, field: &'static str, violation: Violation) {
+    pub fn add(&mut self, key: impl Into<String>, field: &'static str, violation: Violation) {
         self.0
-            .entry(key)
+            .entry(key.into())
             .or_insert_with(|| complain(field, violation));
     }
 
@@ -134,8 +138,21 @@ pub trait Validate: ModelFields {
     /// The name of the signal holding this model's [`Errors`].
     const STATE: &'static str;
 
+    /// What is wrong with this value, under `prefix`.
+    ///
+    /// The prefix is empty for a model somebody submits and names the row for
+    /// a model that is one, so that a message lands on the same key the row's
+    /// control reads. Nothing outside the expansion has a reason to call this;
+    /// [`validate`](Validate::validate) is the whole question.
+    #[doc(hidden)]
+    fn validate_into(&self, prefix: &str, errors: &mut Errors);
+
     /// What is wrong with this value.
-    fn validate(&self) -> Errors;
+    fn validate(&self) -> Errors {
+        let mut errors = Errors::default();
+        self.validate_into("", &mut errors);
+        errors
+    }
 }
 
 /// A handler's own refusal, in the shape a declared rule already produces.
@@ -189,7 +206,10 @@ impl<M: Validate> Refusal<M> {
             return;
         };
 
-        self.errors.0.entry(key).or_insert_with(|| message.into());
+        self.errors
+            .0
+            .entry((*key).to_owned())
+            .or_insert_with(|| message.into());
     }
 
     /// Whether anything is.

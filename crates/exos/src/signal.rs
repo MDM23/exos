@@ -273,6 +273,7 @@ pub struct Bound<T> {
     signal: Signal<T>,
     state: &'static str,
     checked: Option<Js<String>>,
+    group: Option<&'static str>,
 }
 
 impl<T> Bound<T> {
@@ -288,7 +289,36 @@ impl<T> Bound<T> {
             signal,
             state,
             checked,
+            group: None,
         }
+    }
+
+    /// The same, for a field of a row.
+    ///
+    /// `group` is the [`Rows`](crate::Rows) field this row belongs to. A row's
+    /// message is keyed by where the row sits rather than by a name, because
+    /// every row of one group carries the same field names, so the key is only
+    /// complete once the browser can say which row this is.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn row(
+        signal: Signal<T>,
+        state: &'static str,
+        checked: Option<Js<String>>,
+        group: &'static str,
+    ) -> Self {
+        Self {
+            signal,
+            state,
+            checked,
+            group: Some(group),
+        }
+    }
+
+    /// The rows field this is one row's copy of, where it is one.
+    #[must_use]
+    pub const fn group(&self) -> Option<&'static str> {
+        self.group
     }
 
     /// The name of the record this field's message is written into.
@@ -315,11 +345,18 @@ impl<T> Bound<T> {
     /// nobody has judged since it changed cannot have a message about it.
     #[must_use]
     pub fn error(&self) -> Js<String> {
-        Js::raw(format!(
-            "($.{state}[{key}] ?? \"\")",
-            state = self.state,
-            key = crate::quote_js(self.signal.name()),
-        ))
+        let key = crate::quote_js(self.signal.name());
+
+        // A row's key is only complete in the browser, which is the one place
+        // that can say where the row sits.
+        match self.group {
+            Some(group) => Js::raw(format!(
+                "rowError($.{state}, {group}, {key}, el)",
+                state = self.state,
+                group = crate::quote_js(group),
+            )),
+            None => Js::raw(format!("($.{state}[{key}] ?? \"\")", state = self.state)),
+        }
     }
 
     /// Whether anything is.

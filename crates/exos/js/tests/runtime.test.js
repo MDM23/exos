@@ -487,6 +487,113 @@ test("html arriving with a failure is left where it is", async () => {
     assert.equal(window.document.getElementById("slot").textContent, "before");
 });
 
+// A repeating group is a <template> and however many rows are beside it. The
+// whole point is that a row needs no name: a clone is its own signal scope, so
+// adding one is a DOM copy and the submission reads them back out at the end.
+
+/** A group as the server renders it: the template, then the rows it opened with. */
+const group = (rows = 1) =>
+    `<form data-on-submit="post('/save', {'g': rows(el, 'g', ['name'])})">` +
+    `<div data-rows="g">` +
+    `<template><div data-signals='{"name":""}' data-row>` +
+    `<input data-bind="name"><button type="button" data-on-click="dropRow(el, 'g')">x</button>` +
+    `</div></template>` +
+    Array.from({ length: rows })
+        .map(
+            () =>
+                `<div data-signals='{"name":""}' data-row>` +
+                `<input data-bind="name"><button type="button" data-on-click="dropRow(el, 'g')">x</button>` +
+                `</div>`,
+        )
+        .join("") +
+    `</div>` +
+    `<button id="add" type="button" data-on-click="addRow('g')">add</button>` +
+    `</form>`;
+
+/** Types `text` into the nth row's field, the way a person would. */
+function fill(window, nth, text) {
+    const field = window.document.querySelectorAll("[data-row] input")[nth];
+    field.value = text;
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+}
+
+const click = (window, selector) =>
+    window.document
+        .querySelector(selector)
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+test("a row added in the browser holds its own value", async () => {
+    const window = boot(group(1));
+
+    click(window, "#add");
+    await settled();
+
+    assert.equal(window.document.querySelectorAll("[data-row]").length, 2);
+
+    fill(window, 0, "Ada");
+    fill(window, 1, "Grace");
+    await settled();
+
+    // The two rows declare one name and hold two values, which is what the
+    // scope-per-element rule has always given a row's own signal.
+    const values = [...window.document.querySelectorAll("[data-row] input")].map((el) => el.value);
+    assert.deepEqual(values, ["Ada", "Grace"]);
+});
+
+test("the submission collects the rows in the order they are shown", async () => {
+    const window = boot(group(1));
+
+    click(window, "#add");
+    await settled();
+
+    fill(window, 0, "Ada");
+    fill(window, 1, "Grace");
+    await settled();
+
+    window.document
+        .querySelector("form")
+        .dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    await settled();
+
+    assert.deepEqual(window.transport.requests[0].body, {
+        g: [{ name: "Ada" }, { name: "Grace" }],
+    });
+});
+
+test("a row removed in the browser is gone from the submission", async () => {
+    const window = boot(group(1));
+
+    click(window, "#add");
+    await settled();
+
+    fill(window, 0, "Ada");
+    fill(window, 1, "Grace");
+    await settled();
+
+    // The first row's own button, so this also checks that `dropRow` walks up
+    // to the row it was clicked inside rather than to some other one.
+    click(window, "[data-row] button");
+    await settled();
+
+    window.document
+        .querySelector("form")
+        .dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    await settled();
+
+    assert.deepEqual(window.transport.requests[0].body, { g: [{ name: "Grace" }] });
+});
+
+test("the template is not a row and never rides along", async () => {
+    const window = boot(group(0));
+
+    window.document
+        .querySelector("form")
+        .dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    await settled();
+
+    assert.deepEqual(window.transport.requests[0].body, { g: [] });
+});
+
 // A handler on `input` runs per keystroke, so anything that leaves the machine
 // has to be held back. The key is generated per call site on the server and
 // resolved against the DOM here, which is the half only a document can check.

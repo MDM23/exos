@@ -247,6 +247,7 @@
                 "$", "el", "ev",
                 "get", "post", "put", "patch", "del",
                 "attr", "append", "focus", "debounce",
+                "rows", "addRow", "dropRow", "rowError",
                 statement ? source : `return (${source})`,
             );
         } catch (error) {
@@ -277,6 +278,86 @@
         else if (name.startsWith("data-")) target.setAttribute(name, String(value));
         else if (value === false) target.removeAttribute(name);
         else target.setAttribute(name, value === true ? "" : String(value));
+    }
+
+    // -------------------------------------------------------------------------
+    //                                    ROWS
+    // -------------------------------------------------------------------------
+
+    // A repeating group is a <template> holding one row and however many rows
+    // are on screen beside it. Adding one is a clone, and a clone is its own
+    // signal scope, so nothing has to name a row: no id, no round trip, and no
+    // list for the server to keep until the form is sent.
+
+    function group(key) {
+        return document.querySelector(`[data-rows="${key}"]`);
+    }
+
+    function rowsIn(el) {
+        return el ? [...el.children].filter((child) => child.hasAttribute("data-row")) : [];
+    }
+
+    // The row `el` sits in, within the named group. Walked rather than
+    // `closest`, so a group inside a row answers for the group that was asked
+    // for rather than for whichever row is nearest.
+    function rowOf(el, key) {
+        const into = group(key);
+
+        for (let node = el; node; node = node.parentElement) {
+            if (node.parentElement === into && node.hasAttribute("data-row")) return node;
+        }
+
+        return null;
+    }
+
+    // Where a row sits, which is the whole of its name. A message about the
+    // third row is written under the third row, because every row of one group
+    // carries the same field names and only position tells them apart.
+    function rowIndex(el, key) {
+        const row = rowOf(el, key);
+        return row ? rowsIn(row.parentElement).indexOf(row) : -1;
+    }
+
+    // The body's rows, read out of the group in the order they are shown. Not
+    // a loop over data that renders: the values are in the DOM already and
+    // this walks them once, when the request is built.
+    function collectRows(el, key, fields) {
+        return rowsIn(group(key)).map((row) =>
+            Object.fromEntries(fields.map((field) => [field, read(resolve(row, field))])),
+        );
+    }
+
+    function addRow(key) {
+        const into = group(key);
+        const template = into?.querySelector("template");
+        if (!template) return;
+
+        const clone = template.content.cloneNode(true);
+
+        // An id only so the store reads well in a debugger. The scope is the
+        // element's either way, which is what makes the clone's fields its own.
+        for (const el of clone.children) {
+            if (!el.id) el.id = `exos-row-${++appended}`;
+        }
+
+        into.appendChild(clone);
+    }
+
+    function dropRow(el, key) {
+        rowOf(el, key)?.remove();
+    }
+
+    function rowError(record, key, field, el) {
+        return (record ?? {})[`${key}.${rowIndex(el, key)}.${field}`] ?? "";
+    }
+
+    // Where a control's message lives in its model's record. A field of a row
+    // is keyed by its group and its position, which is the same key the server
+    // writes and the same one `rowError` reads, so the two sides cannot pick
+    // different slots.
+    function recordKey(el, name) {
+        const group = el.getAttribute("data-bind-rows");
+        return group ? `${group}.${rowIndex(el, group)}.${name}` : name;
     }
 
     // Clones a <template> into a container, giving the clone a fresh id so it
@@ -358,6 +439,10 @@
             appendTemplate,
             focusLater,
             (key, delay, body) => debounceCall(el, key, delay, body),
+            (from, key, fields) => collectRows(from, key, fields),
+            addRow,
+            dropRow,
+            rowError,
         );
     }
 
@@ -431,14 +516,15 @@
             const said = String(evaluate(source, el, null, false) ?? "");
             const slot = resolve(el, state);
             const record = read(slot) ?? {};
+            const at = recordKey(el, name);
 
-            if ((record[name] ?? "") === said) return;
+            if ((record[at] ?? "") === said) return;
 
             // A fresh object rather than a write in place, for the reason a
             // collection is reassigned rather than pushed into.
-            if (said) write(slot, { ...record, [name]: said });
+            if (said) write(slot, { ...record, [at]: said });
             else {
-                const { [name]: _gone, ...rest } = record;
+                const { [at]: _gone, ...rest } = record;
                 write(slot, rest);
             }
         },
@@ -453,7 +539,7 @@
             const name = el.getAttribute("data-bind");
             const record = read(resolve(el, state)) ?? {};
 
-            if (record[name]) el.setAttribute("aria-invalid", "true");
+            if (record[recordKey(el, name)]) el.setAttribute("aria-invalid", "true");
             else el.removeAttribute("aria-invalid");
         },
 

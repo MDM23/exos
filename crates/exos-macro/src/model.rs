@@ -51,6 +51,11 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         .collect();
 
     let types: Vec<syn::Type> = fields.named.iter().map(|field| field.ty.clone()).collect();
+
+    // Which fields hold rows of another model, and of which. A `Rows<Line>`
+    // field is a handle over many `Line`s rather than a signal over one value,
+    // so it is the one field the pieces below all treat differently.
+    let rows: Vec<Option<syn::Type>> = types.iter().map(rows_of).collect();
     let labels: Vec<String> = names.iter().map(ToString::to_string).collect();
     let keys: Vec<String> = names
         .iter()
@@ -81,6 +86,143 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         .map(|field| valid::ask(&rules, field))
         .collect();
 
+    // What one field is on the handle, how it is built, what it sends, and
+    // what a row of it is validated against. A `Rows` field answers all four
+    // differently, so they are built together rather than four matches apart.
+    let held: Vec<TokenStream> = types
+        .iter()
+        .zip(&rows)
+        .map(|(ty, row)| match row {
+            Some(row) => quote! { ::exos::RowsOf<#row> },
+            None => quote! { ::exos::Bound<#ty> },
+        })
+        .collect();
+
+    let built: Vec<TokenStream> = keys
+        .iter()
+        .zip(&rows)
+        .zip(&asked)
+        .zip(&labels)
+        .map(|(((key, row), asked), label)| match row {
+            // The rows the model opens with, which is what `each` renders
+            // before the template. Everything after that is the browser's.
+            Some(_) => quote! {
+                ::exos::RowsOf::new(
+                    #key,
+                    #state,
+                    __initial
+                        .get(#label)
+                        .and_then(::exos::serde_json::Value::as_array)
+                        .cloned()
+                        .unwrap_or_default(),
+                )
+            },
+            None => quote! {{
+                let __signal = ::exos::Signal::with_value(
+                    #key,
+                    __initial
+                        .get(#label)
+                        .cloned()
+                        .unwrap_or(::exos::serde_json::Value::Null),
+                    // On the document, not on whichever element declares the
+                    // handle: a handler answers with Effect::set, which the
+                    // client applies against the document root.
+                    ::exos::Placement::Document,
+                );
+
+                let __asked = #asked;
+
+                ::exos::Bound::new(__signal, #state, __asked)
+            }},
+        })
+        .collect();
+
+    // A rows field declares nothing: a row's signals belong to the row, and
+    // the handle putting them on the form would name every row it was told
+    // about wherever the form's own handle happened to sit.
+    let declared: Vec<&Ident> = names
+        .iter()
+        .zip(&rows)
+        .filter(|(_, row)| row.is_none())
+        .map(|(field, _)| field)
+        .collect();
+
+    // The renaming does not stop at the top level. A row is a model with keys
+    // of its own, so a body whose rows kept their field names is one serde
+    // cannot read and one the client never sends.
+    let nests: Vec<TokenStream> = labels
+        .iter()
+        .zip(&rows)
+        .filter_map(|(label, row)| {
+            let row = row.as_ref()?;
+
+            Some(quote! {
+                #label => ::exos::nested_rows::<#row>(__value, __outwards),
+            })
+        })
+        .collect();
+
+    let sent: Vec<TokenStream> = names
+        .iter()
+        .zip(&rows)
+        .map(|(field, row)| match row {
+            Some(_) => quote! { ::exos::RowsOf::payload(&self.#field) },
+            None => quote! { self.#field.get().source() },
+        })
+        .collect();
+
+    // A row's own rules run under a prefix naming where the row sits, so a
+    // message about it lands on the key that row's control reads.
+    let walked: Vec<TokenStream> = names
+        .iter()
+        .zip(&rows)
+        .zip(&keys)
+        .filter_map(|((field, row), key)| {
+            row.as_ref()?;
+
+            Some(quote! {
+                for (__at, __row) in ::exos::Rows::iter(&self.#field).enumerate() {
+                    ::exos::Validate::validate_into(
+                        __row,
+                        &::std::format!("{}{}.{}.", __prefix, #key, __at),
+                        __errors,
+                    );
+                }
+            })
+        })
+        .collect();
+
+    // Every field as one row holds it: on the row's own element, so that a
+    // clone of the template is its own scope and nothing has to name it.
+    let within: Vec<TokenStream> = keys
+        .iter()
+        .zip(&rows)
+        .zip(&asked)
+        .zip(&labels)
+        .map(|(((key, row), asked), label)| match row {
+            // Rows of rows would need a group inside a group, and nothing has
+            // asked for one. Left empty rather than silently addressing the
+            // wrong signals.
+            Some(_) => quote! {
+                ::exos::RowsOf::new(#key, __state, ::std::vec::Vec::new())
+            },
+            None => quote! {{
+                let __signal = ::exos::Signal::with_value(
+                    #key,
+                    __initial
+                        .get(#label)
+                        .cloned()
+                        .unwrap_or(::exos::serde_json::Value::Null),
+                    ::exos::Placement::Element,
+                );
+
+                let __asked = #asked;
+
+                ::exos::Bound::row(__signal, __state, __asked, __group)
+            }},
+        })
+        .collect();
+
     quote! {
         #input
 
@@ -89,7 +231,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         #visibility struct #handle {
             #(
                 #[doc = concat!("The `", #labels, "` field.")]
-                pub #names: ::exos::Bound<#types>,
+                pub #names: #held,
             )*
         }
 
@@ -105,34 +247,29 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
                 let __initial = ::exos::serde_json::to_value(Self::default())
                     .unwrap_or(::exos::serde_json::Value::Null);
 
-                #handle {
-                    #(
-                        #names: {
-                            let __signal = ::exos::Signal::with_value(
-                                #keys,
-                                __initial
-                                    .get(#labels)
-                                    .cloned()
-                                    .unwrap_or(::exos::serde_json::Value::Null),
-                                // On the document, not on whichever element
-                                // declares the handle: a handler answers with
-                                // Effect::set, which the client applies against
-                                // the document root.
-                                ::exos::Placement::Document,
-                            );
+                #handle { #(#names: #built,)* }
+            }
+        }
 
-                            let __asked = #asked;
+        impl ::exos::RowModel for #name {
+            type Handle = #handle;
 
-                            ::exos::Bound::new(__signal, #state, __asked)
-                        },
-                    )*
-                }
+            fn row(
+                __initial: &::exos::serde_json::Value,
+                __state: &'static str,
+                __group: &'static str,
+            ) -> #handle {
+                #handle { #(#names: #within,)* }
+            }
+
+            fn keys() -> &'static [&'static str] {
+                &[#(#keys),*]
             }
         }
 
         impl ::exos::IntoAttributes for &#handle {
             fn write(self, __attributes: &mut ::exos::Attributes) {
-                #(::exos::IntoAttributes::write(&self.#names, __attributes);)*
+                #(::exos::IntoAttributes::write(&self.#declared, __attributes);)*
 
                 // The record every field's error is read out of. Declared
                 // beside them rather than as a field of its own, because it is
@@ -153,10 +290,9 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         impl ::exos::Validate for #name {
             const STATE: &'static str = #state;
 
-            fn validate(&self) -> ::exos::Errors {
-                let mut __errors = ::exos::Errors::default();
+            fn validate_into(&self, __prefix: &str, __errors: &mut ::exos::Errors) {
                 #checks
-                __errors
+                #(#walked)*
             }
         }
 
@@ -169,17 +305,24 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         impl ::exos::ModelFields for #name {
             const FIELDS: &'static [(&'static str, &'static str)] =
                 &[#((#keys, #labels)),*];
+
+            fn nested(
+                __field: &str,
+                __value: ::exos::serde_json::Value,
+                __outwards: bool,
+            ) -> ::exos::serde_json::Value {
+                match __field {
+                    #(#nests)*
+                    _ => __value,
+                }
+            }
         }
 
         impl ::exos::IntoPayload<#name> for #handle {
             fn payload(&self) -> ::std::string::String {
                 let __fields: ::std::vec::Vec<::std::string::String> = ::std::vec![
                     #(
-                        ::std::format!(
-                            "{}: {}",
-                            ::exos::quote_js(#keys),
-                            self.#names.get().source(),
-                        ),
+                        ::std::format!("{}: {}", ::exos::quote_js(#keys), #sent),
                     )*
                 ];
 
@@ -197,6 +340,33 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
                 ::exos::to_wire(self)
             }
         }
+    }
+}
+
+/// The row model of a `Rows<T>` field, if that is what this is.
+///
+/// Matched on the name rather than resolved, which is what a macro can do: a
+/// type aliased to something else called `Rows` would be taken for one, and a
+/// `Rows` aliased to another name would not. Both are visible at the
+/// declaration, which is where somebody reading this is standing.
+fn rows_of(ty: &syn::Type) -> Option<syn::Type> {
+    let syn::Type::Path(path) = ty else {
+        return None;
+    };
+
+    let segment = path.path.segments.last()?;
+
+    if segment.ident != "Rows" {
+        return None;
+    }
+
+    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return None;
+    };
+
+    match arguments.args.first()? {
+        syn::GenericArgument::Type(inner) => Some(inner.clone()),
+        _ => None,
     }
 }
 

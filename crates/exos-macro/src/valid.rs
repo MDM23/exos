@@ -291,13 +291,19 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
     quote! { ::exos::chain(::std::vec![#(#asked),*]) }
 }
 
-/// The server's half: what runs inside `Validate::validate`.
+/// The server's half: what runs inside `Validate::validate_into`.
+///
+/// Every key is written under `__prefix`, which is empty for a model somebody
+/// submits and names the row for a model that is one. That is the whole of
+/// what makes a message about row three land where row three's control reads,
+/// and it is one concat rather than a second generated body.
 pub(crate) fn check(declared: &[Rules]) -> TokenStream {
     let checks = declared.iter().map(
         |Rules {
              field, key, rules, ..
          }| {
             let label = field.to_string();
+            let key = quote! { ::std::format!("{}{}", __prefix, #key) };
 
             let questions = rules.iter().map(|rule| match rule {
             Rule::Required => quote! {

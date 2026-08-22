@@ -41,6 +41,8 @@ pub struct Bind {
     kind: &'static str,
     /// The record a message about this field lives in.
     state: Option<&'static str>,
+    /// The rows field this control is one row's copy of.
+    group: Option<&'static str>,
     /// The field's own rules, for the control to answer as it is typed into.
     rules: Option<String>,
 }
@@ -55,6 +57,12 @@ impl IntoAttributes for Bind {
         // writes, so a template reads one place whoever decided it.
         if let Some(state) = self.state {
             attributes.set("data-bind-state", state);
+        }
+
+        // A field of a row is keyed by where the row sits, which only the
+        // browser can say, so the group travels and the key is built there.
+        if let Some(group) = self.group {
+            attributes.set("data-bind-rows", group);
         }
 
         if let Some(rules) = self.rules {
@@ -81,6 +89,7 @@ impl<T: BindKind> Bindable for Signal<T> {
             kind: T::KIND,
             state: None,
             rules: None,
+            group: None,
         }
     }
 }
@@ -92,6 +101,7 @@ impl<T: BindKind> Bindable for crate::Bound<T> {
             kind: T::KIND,
             state: Some(self.state()),
             rules: self.checked().map(|rules| rules.source().to_owned()),
+            group: self.group(),
         }
     }
 }
