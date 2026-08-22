@@ -1,17 +1,16 @@
 //! The form: what it holds, what it says when a field is wrong, and the action
 //! that accepts it.
 //!
-//! Every rule here is written twice on purpose, once as a Rust condition over
-//! the value that arrived and once as an expression the browser answers while
-//! somebody types. That is what the framework should be writing, and doing it
-//! by hand is what this example is for.
+//! Every rule about the shape of a value is declared once, on the field it is
+//! about, and answered on both sides from that one declaration. What is left
+//! in the handler is what a declaration cannot reach.
 
-use exos::{Bound, Effect, Markup, Model, Refusal, bind, data, on_submit, show, text, view};
+use exos::{Bound, Effect, Markup, Model, Refusal, Rows, bind, data, on_submit, show, text, view};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    attendees::roster,
-    store::{self, Programme, Registration, Registrations, Roster},
+    attendees::{self, Attendee, roster},
+    store::{self, Programme, Registration, Registrations},
     workshops::picker,
 };
 
@@ -21,7 +20,7 @@ use crate::{
 /// the extractor, so nothing below calls a validator. What is left in the
 /// handler is the rules that need something this struct does not hold.
 #[exos::model]
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Signup {
     /// Who is registering.
     #[valid(required, length = 2..=40)]
@@ -42,12 +41,32 @@ pub(crate) struct Signup {
     /// Which workshops were picked.
     #[valid(required)]
     pub(crate) workshops: Vec<u32>,
-    /// Never filled in, and here so that a message has a field to hang on.
+    /// Who is coming, one row each, sent with everything else.
     ///
-    /// The rows live on the server, so this model does not hold them, and the
-    /// record is keyed by field. A message about something that is not a field
-    /// has no home, and inventing one is the cheapest way to give it one.
-    pub(crate) attendees: String,
+    /// `required` here is about how many rows there are. What is wrong with a
+    /// row is the row's own rule and lands on the row.
+    #[valid(required)]
+    pub(crate) attendees: Rows<Attendee>,
+}
+
+/// What the form opens with.
+///
+/// A model's `Default` is where `signals()` gets every field's starting value,
+/// rows included, so one blank attendee here is one blank row on screen. A
+/// form that edits something existing would build the same shape from it.
+impl Default for Signup {
+    fn default() -> Self {
+        Self {
+            attendees: attendees::opening(),
+            code: String::new(),
+            company: String::new(),
+            email: String::new(),
+            invoice: false,
+            name: String::new(),
+            vat: String::new(),
+            workshops: Vec::new(),
+        }
+    }
 }
 
 /// The form.
@@ -69,15 +88,7 @@ pub(crate) fn registration() -> Markup {
 
                 <div class="field">
                     <span class="label">"Who is coming"</span>
-                    { roster() }
-
-                    // One message for the whole group, because an error still
-                    // has nowhere row-shaped to go.
-                    <p
-                        class="error"
-                        {show(form.attendees.invalid())}
-                        {text(form.attendees.error())}
-                    ></p>
+                    { roster(&form.attendees) }
                 </div>
 
                 <label class="check">
@@ -122,10 +133,10 @@ fn field(
 
 /// Accepts a registration, or says what is wrong with it.
 ///
-/// Every rule about a single value was checked by the extractor, so a body
-/// that broke one never reached this line. What is left is the two kinds a
-/// rule on a field cannot express: one that needs a fact this model does not
-/// hold, and one about data that is not in it at all.
+/// Every rule about a single value was checked by the extractor, rows
+/// included, so a body that broke one never reached this line. What is left is
+/// the one kind a rule on a field cannot express: the kind that needs a fact
+/// this model does not hold.
 #[exos::post("/register")]
 async fn register(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>> {
     let mut refusal = Refusal::new();
@@ -134,12 +145,6 @@ async fn register(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>>
     // anybody should see: a well-behaved page cannot produce it.
     if !data::<Programme>().holds(&form.workshops) {
         refusal.add(Signup::WORKSHOPS, "That is not on the programme.");
-    }
-
-    // The rows are not part of the submission, so this reads the store and the
-    // message goes on the field invented to hold it.
-    if let Some(message) = store::roster_fault(&data::<Roster>().snapshot()) {
-        refusal.add(Signup::ATTENDEES, message);
     }
 
     // The round trip this form exists to have.
@@ -151,15 +156,12 @@ async fn register(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>>
         return Err(refusal);
     }
 
-    // Read rather than taken, so this example stays one an ordinary test can
-    // run twice. An application could not: the rows are the server's, so a
-    // form that succeeded has to be emptied here or it stays a resource with
-    // somebody's half-typed guest list in it, and nothing on the client can do
-    // that for it. That is the other end of the same problem.
-    let attending: Vec<String> = data::<Roster>()
-        .snapshot()
+    // The guest list arrived with everything else, so nothing is read back out
+    // of the server here and there is nothing left over there to clear.
+    let attending: Vec<String> = form
+        .attendees
         .iter()
-        .map(|row| row.name.clone())
+        .map(|row| row.name.trim().to_owned())
         .collect();
 
     let taken = data::<Registrations>().add(Registration {
@@ -220,6 +222,11 @@ mod tests {
             name: String::from("Ada"),
             email: String::from("ada@example.com"),
             workshops: vec![1],
+            attendees: [Attendee {
+                name: String::from("Grace"),
+            }]
+            .into_iter()
+            .collect(),
             ..Signup::default()
         }
     }
@@ -325,8 +332,16 @@ mod tests {
     /// never reaches the handler and comes back as the record anyway.
     #[tokio::test]
     async fn a_declared_rule_is_checked_before_the_handler_runs() {
-        let stream = post("/register", &exos::to_wire(&Signup::default())).await;
         let signals = Signup::signals();
+
+        let stream = post(
+            "/register",
+            &exos::to_wire(&Signup {
+                code: String::from("nope"),
+                ..Signup::default()
+            }),
+        )
+        .await;
 
         assert!(stream.contains("This is needed."), "{stream}");
         assert!(
@@ -334,9 +349,9 @@ mod tests {
             "{stream}"
         );
 
-        // The handler's own rules did not run: the roster is fine and the
+        // The handler's own rules did not run: the code is wrong and the
         // extractor refused before anything could ask about it.
-        assert!(!stream.contains("attendee"), "{stream}");
+        assert!(!stream.contains("not one of ours"), "{stream}");
     }
 
     /// A field that now passes is cleared by not being in the record, which is
@@ -401,6 +416,74 @@ mod tests {
         .await;
 
         assert!(stream.contains("You are registered"), "{stream}");
+    }
+
+    /// The rows arrive with everything else, and a rule about one of them
+    /// answers on that one: the second row wrong is a message under the second
+    /// row, which is the key that row's own control reads.
+    #[tokio::test]
+    async fn a_row_is_refused_where_the_row_sits() {
+        let group = Signup::signals().attendees.key();
+        let field = <Attendee as exos::RowModel>::keys()[0];
+
+        let stream = post(
+            "/register",
+            &exos::to_wire(&Signup {
+                attendees: [
+                    Attendee {
+                        name: String::from("Grace"),
+                    },
+                    Attendee {
+                        name: String::new(),
+                    },
+                ]
+                .into_iter()
+                .collect(),
+                ..draft()
+            }),
+        )
+        .await;
+
+        assert!(stream.contains("This is needed."), "{stream}");
+        assert!(
+            stream.contains(&format!("\"{group}.1.{field}\"")),
+            "{stream}"
+        );
+        assert!(
+            !stream.contains(&format!("\"{group}.0.{field}\"")),
+            "the row that is fine says nothing: {stream}"
+        );
+    }
+
+    /// The renaming does not stop at the top level. A row is a model with keys
+    /// of its own, and the body the browser writes uses them, so a body whose
+    /// rows kept their field names is one serde cannot read.
+    #[tokio::test]
+    async fn a_row_travels_under_generated_keys_too() {
+        let group = Signup::signals().attendees.key();
+        let field = <Attendee as exos::RowModel>::keys()[0];
+        let body = exos::to_wire(&draft());
+
+        assert!(
+            body.contains(&format!("\"{group}\":[{{\"{field}\"")),
+            "{body}"
+        );
+    }
+
+    /// And the collection has a rule of its own, which is about how many rows
+    /// there are rather than about any one of them.
+    #[tokio::test]
+    async fn a_form_with_no_rows_is_refused_as_a_whole() {
+        let stream = post(
+            "/register",
+            &exos::to_wire(&Signup {
+                attendees: Rows::default(),
+                ..draft()
+            }),
+        )
+        .await;
+
+        assert!(stream.contains("Add at least one attendee."), "{stream}");
     }
 
     /// A checkbox carries whatever the markup said, so what arrives is checked

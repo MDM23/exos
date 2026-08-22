@@ -149,12 +149,18 @@ button[type="submit"] {
 
 .row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-s);
   margin-block-end: var(--space-xs);
 }
 
 .row input {
   flex: 1;
+}
+
+/* A row's own message, under its own field. */
+.row .error {
+  flex-basis: 100%;
 }
 
 .rows .add,

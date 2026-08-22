@@ -99,6 +99,71 @@ Writing `Json<Selection>` on an action still compiles, because a model is an
 ordinary `Deserialize` type. It fails at runtime with a missing field, since
 the keys that arrive are not the ones serde is looking for.
 
+## Repeating groups
+
+A form with rows in it is one submission, and the rows are the browser's until
+it is made. The rows are a field, and a row is a model:
+
+```rust
+#[exos::model]
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct Order {
+    #[valid(required)]
+    reference: String,
+
+    #[valid(required)]
+    lines: Rows<Line>,
+}
+
+#[exos::model]
+#[derive(Debug, Default, Deserialize, Serialize)]
+struct Line {
+    #[valid(required)]
+    sku: String,
+}
+```
+
+`each` writes the row once and it is used twice: for the rows the form opens
+with, and as the `<template>` a new row is cloned from.
+
+```rust
+{ form.lines.each(|line| view! {
+    <li {line}>
+        <input {bind(&line.sku)}>
+        <p class="error" {text(line.sku.error())}></p>
+        <button type="button" {on_click(|_| form.lines.remove())}>"Remove"</button>
+    </li>
+}) }
+
+<button type="button" {on_click(|_| form.lines.add())}>"Add a line"</button>
+```
+
+That is the whole of it. No ids, no routes, no list on the server: `add` clones
+the template and `remove` takes an element off the page, and neither is a
+request.
+
+**A row needs no name because a clone is its own scope.** The runtime keys
+signals per element, so every row declares the same field name and holds its own
+value, which is the rule that has always given [a row's own
+signal](signals#most-signals-have-no-name) its own value. The submission reads
+the rows out of the group when it is sent, in the order they are on screen.
+
+**`{line}` goes on the row's root element.** It declares the row's fields and
+marks where one row ends, so it has to sit on the outermost element of the row.
+
+**What the form opens with is the model's `Default`.** One blank `Line` in
+`Order::default()` is one blank row on screen; a form editing something existing
+builds the same shape from it.
+
+**A row's rules are the row's.** `required` on `Line::sku` is checked per row
+and the message lands on that row. `required` on `lines` is about how many rows
+there are, and `form.lines.error()` is where that one goes.
+
+**Rows are numbered by position, not identity.** A message about the third row
+is written under the third row, so adding or removing a row after a refusal
+shifts the messages on screen. That is the price of never inventing an id, and
+editing a row clears its own message either way.
+
 ## Rules on a model
 
 A rule about the shape of one value is written on the field it is about:
@@ -178,8 +243,9 @@ async fn signup(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>> {
 line instead of quietly addressing nothing.
 
 **exos ships no message text**, because an application's languages are its own
-and belong in [`messages!`](languages#messages) where the compiler holds them to every
-locale. A violation is a value, and one function turns one into a sentence:
+and belong in [`messages!`](languages#messages) where the compiler holds them
+to every locale. A violation is a value, and one function turns one into a
+sentence:
 
 ```rust
 exos::complaints(|field, violation| match (field, violation) {

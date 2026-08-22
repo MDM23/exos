@@ -1,4 +1,4 @@
-//! A registration form, with every rule written by hand.
+//! A registration form, and what a form costs.
 //!
 //! The other three examples are about state that changes under you. This one
 //! is about a form. It was written by hand first, against what exos had before
@@ -6,7 +6,7 @@
 //! cost that was visible rather than argued about; each one that has since
 //! landed took something back out of it.
 //!
-//! Four things it does:
+//! Five things it does:
 //!
 //! * **A shape rule** is declared on the model in [`form`], and that one
 //!   declaration answers on both sides: the extractor refuses a body that
@@ -18,12 +18,16 @@
 //! * **A searchable multi-select** is in [`workshops`], and needs no
 //!   client-side loop: every option is rendered once and decides for itself
 //!   whether it is on screen.
+//! * **Repeating rows** are in [`attendees`] and are part of the one
+//!   submission, each with its own rules and its own place to say what is
+//!   wrong. Adding and removing one is the browser's alone: the server holds
+//!   nothing about them and there is no route for a row.
 //!
 //! Run it with `cargo run -p signup`.
 
 use exos::Violation;
 
-use crate::store::{Programme, Registrations, Roster};
+use crate::store::{Programme, Registrations};
 
 mod attendees;
 mod form;
@@ -50,13 +54,13 @@ async fn main() -> Result<(), std::io::Error> {
 fn boot() {
     exos::provide(Programme::seed());
     exos::provide(Registrations::default());
-    exos::provide(Roster::seed());
 
     // exos ships no text, because an application's languages are its own. A
     // violation is a value and this is the one function that turns one into a
     // sentence; in an application with more than one language every arm here
     // would be a `messages!` call instead of a literal.
     exos::complaints(|field, violation| match (field, violation) {
+        ("attendees", Violation::Required) => String::from("Add at least one attendee."),
         ("company", Violation::Required) => String::from("An invoice needs a company."),
         ("email", Violation::Malformed) => String::from("That is not an email address."),
         ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),

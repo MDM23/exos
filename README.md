@@ -165,11 +165,11 @@ carried a real application yet. Known gaps, roughly in priority order:
   bind the tag to now exists; what is left is that `publish` renders a fragment
   outside any request, so where the token comes from there has to be settled
   first.
-- **Nothing can send part of a model.** The generated caller sends the whole
-  thing, so a rule only the server can answer cannot be checked on one field
-  while the rest of the form is still empty, and a repeating group cannot ride
-  along in one submission at all. It is one missing projection, hit from three
-  sides, and it is stage 5 of [forms](docs/roadmap/forms.md).
+- **A model is sent whole or not at all.** The generated caller has no way to
+  send one field, so a rule only the server can answer cannot be checked while
+  the rest of the form is still empty: it waits for the submit. Repeating
+  groups no longer need it, since rows are a field and ride along with
+  everything else.
 - **A message cannot reach the browser.** `exos::locales!` declares an
   application's languages and `exos::messages!` declares its text, as ordinary
   Rust functions whose arms the compiler holds to every language, so a locale

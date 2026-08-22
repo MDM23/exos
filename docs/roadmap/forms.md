@@ -3,9 +3,8 @@
 Rules written once, checked on both sides, and the one round trip that carries
 what only the server knows.
 
-Status: stages 0, 1, 2, 3 and the gate half of 4 are built. What is left is
-patterns (1a) and repeating groups (5), and 5 is now the one three other
-stages have run into.
+Status: stages 0, 1, 2, 3, 5 and the gate half of 4 are built. What is left is
+patterns (1a), `required_when`, and the aggregation stage 2 describes.
 
 [`examples/signup`](../../examples/signup) is the form written by hand against
 the surface that existed before any of this, so what the stages are worth is
@@ -489,8 +488,8 @@ which is the promise the rest of the macro makes.
 
 ## Stage 5: repeating groups
 
-This was drawn as the biggest piece by a distance. Writing it by hand in
-[`examples/signup`](../../examples/signup) made it the narrowest stage here,
+**Done.** This was drawn as the biggest piece by a distance. Writing it by hand
+in [`examples/signup`](../../examples/signup) made it the narrowest stage here,
 because the half that looked hard turned out to be already built and the half
 nobody mentioned is the whole of the work.
 
@@ -515,30 +514,77 @@ is two failures rather than one:
   model first and posts that. The example does exactly this, and the transport
   model is a type that exists for no other reason.
 
-So the whole of this stage is the projection the earlier draft asked for in
-passing:
+The draft here asked for a projection, `form.lines.at(line.id).quantity`, keyed
+by the row's own id. That was built and thrown away; what replaced it is below,
+and the short version is that the paragraph above already had the answer in it.
+A row is its own scope, so a row needs no name:
 
 ```rs
-form.lines.at(line.id).quantity   // Signal<u32>
+{ form.lines.each(|line| view! {
+    <li {line}><input {bind(&line.sku)}></li>
+}) }
+
+<button {on_click(|_| form.lines.add())}>"Add a line"</button>
 ```
 
-Keyed by the row's own id rather than by its index, because removing the second
-of five rows renumbers three signals and every error under them. The id is
-already in the markup, since a row needs one for morphing. Give a handle that,
-and `bind`, the payload, the rules and the error record all reach the same
-place, which is what makes a repeating group part of one submission instead of a
-list of round trips.
-
-**What it costs to not have it is worth recording**, because it is what an
-application pays today. The rows become server state, so a half-filled form is a
-resource: it survives a reload, two tabs share it, and an abandoned one has to
-expire. Every row edit is a round trip. And a message about a row has nowhere to
-go, so it is one message for the group, with the caret going nowhere because the
-group is a `div` and `focus` on one does nothing.
+**What it cost to not have it is worth recording**, because it is what the
+example paid before this landed. The rows were server state, so a half-filled
+form was a resource: it survived a reload, two tabs shared it, and an abandoned
+one would have had to expire. Every row edit was a round trip. And a message
+about a row had nowhere to go, so it was one message for the group.
 
 The error record's keys stop being flat here, which is the one decision this
-stage still turns on: an error belongs to a field of a row, so the key is a
+stage still turns on: a message belongs to a field of a row, so the key is a
 path.
+
+### What it found
+
+**A projection is the wrong shape, and ids were the wrong question.** The draft
+above asks for `form.lines.at(id).quantity`, which was built and then thrown
+away: it made the caller supply ids off data the server had to keep, so adding
+a row was a round trip and a half-filled form was still a resource. Every one of
+those costs came from wanting a *name* for a row.
+
+A row does not need one. **The runtime keys a signal scope per element**, so a
+clone of a `<template>` is its own scope and every row can declare the same
+field name and hold its own value. That is the mechanism a row's own `signal`
+has used since the start; the only thing missing was that the submission could
+not find them. So `each` renders the row markup twice, once into the template
+and once per opening row, `add` clones and `remove` unmounts, and the payload
+walks the group when the body is built. **Nothing about a row reaches the server
+until submit, and the runtime needed no new concept, only three helpers.**
+
+**Position is a good enough identity.** With scopes doing the work there is
+nothing to renumber: removing a row removes its element and its signals. Only
+the *messages* need an index, since a message comes back from the server keyed
+by something, so a row's key is `<group>.<position>.<field>` and the one thing
+that costs is a refusal's messages shifting if rows are added or removed
+afterwards. That is a corner, and it bought away ids, routes and server state.
+
+**The renaming stopped one level down**, and both sides were wrong in the same
+direction, so every test passed while nothing worked. `to_wire` renamed the top
+level and left each row's fields under their own names; the extractor undid
+exactly that, so a test round-tripping through both agreed with itself. The
+browser does not. Found by posting the body a rendered page actually sends.
+
+**A blank row is the row model's `Default`, not nothing.** The template first
+rendered its fields as `null`, which reads as empty in the browser and fails to
+deserialize on the server, so a row added and never typed into would have
+refused the whole form.
+
+**A rule about the rows is not a rule about a row.** `required` on the
+collection asks how many there are, and it is server-only: the rows are not a
+signal, so there is nothing on the client to count. `RowsOf` answers `error()`
+and `invalid()` for that message and cannot be `bind`ed.
+
+### What it cost the example
+
+Everything to do with rows came out and nothing went in. Gone: the `Roster`
+store, both row routes, the `Row` transport model, the `roster_fault` rule, the
+`attendees: String` field invented to hang a message on, the debounce on every
+row, and the round trip per keystroke. What is left is a model, a closure and
+two buttons. A half-filled form is no longer a resource on the server, because
+none of it is on the server at all.
 
 ## What exos will not do
 
