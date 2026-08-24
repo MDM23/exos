@@ -565,5 +565,6 @@ whatever its database already does.
 - **Multi-instance.** Sessions are the application's, so they cross instances if
   its database does. That leaves the connection registry, which is a
   process-local `HashMap`, so a directed effect only reaches the tabs connected
-  to the instance that sent it. That belongs to [directed
-  effects](directed-effects.md) and needs a bus.
+  to the instance that sent it. That belongs to [more than one
+  instance](more-than-one-instance.md), which also names what a rotation has to
+  do about a stream held by another node.

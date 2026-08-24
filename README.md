@@ -192,7 +192,8 @@ browser presenting it was served the fragment,
 [directed effects](docs/roadmap/directed-effects.md) is built as
 far as pushing an effect to a person, [forms](docs/roadmap/forms.md) is built as
 far as rules that answer on both sides and calls that wait for the typing to
-stop, and [loose
+stop, [more than one instance](docs/roadmap/more-than-one-instance.md) is the
+bus and everything it changes, and [loose
 ends](docs/roadmap/loose-ends.md) collects the smaller work that waits for
 nothing.
 

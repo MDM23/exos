@@ -36,6 +36,9 @@ is the one most of the others wait on and names both the browser and, on a live
 stream, who it belongs to.
 [Directed effects](https://github.com/MDM23/exos/blob/main/docs/roadmap/directed-effects.md)
 is built as far as pushing an effect to a person.
+[More than one instance](https://github.com/MDM23/exos/blob/main/docs/roadmap/more-than-one-instance.md)
+is the bus, what a subscription and a rotation have to do to cross one, and
+which of the ordering guarantees survive.
 [Loose ends](https://github.com/MDM23/exos/blob/main/docs/roadmap/loose-ends.md)
 collects the smaller work that waits for nothing.
 

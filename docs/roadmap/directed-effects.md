@@ -457,8 +457,11 @@ the message.
   solve it for them.
 - **Rate limiting.** Nothing here stops a job from sending a thousand effects
   to one connection and pushing everything else out of a 64-slot channel.
-- **More than one instance.** The registry is a process-local `HashMap`, so a
-  send reaches only the tabs connected to the instance that sent it. Swapping
-  the session store fixes identity across instances and does nothing for this.
-  It needs a bus, every instance subscribing and re-sending locally, and it is
-  the one thing here that cannot be added quietly later.
+- **More than one instance.** *Now a document of its own: [more than one
+  instance](more-than-one-instance.md).* The registry is a process-local
+  `HashMap`, so a send reaches only the tabs connected to the instance that sent
+  it. Swapping the session store fixes identity across instances and does
+  nothing for this. It needs a bus, every instance subscribing and re-sending
+  locally, and it is the one thing here that cannot be added quietly later. That
+  document also names what a bus does to the ordering `send` promises, and why a
+  rotation has to cross one.

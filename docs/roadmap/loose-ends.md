@@ -400,10 +400,11 @@ chores and each has somewhere better to live.
   it was rendered in, and the messages themselves, slots included.
   Locale-formatted numbers and everything that has to reach the browser are the
   rest of that document rather than loose ends.
-- **Running more than one instance.** The connection registry is a process-local
-  `HashMap`, so a publish reaches only the tabs connected to the instance that
-  sent it. Swapping a session store does nothing for it. It needs a bus, and it
-  is the one thing here that cannot be added quietly later.
+- **Running more than one instance**, in [more than one
+  instance](more-than-one-instance.md). The connection registry is a
+  process-local `HashMap`, so a publish reaches only the tabs connected to the
+  instance that sent it. Swapping a session store does nothing for it. It needs
+  a bus, and it is the one thing here that cannot be added quietly later.
 
 Form validation is absent for the same reason, and now has [forms](forms.md) to
 be absent into. The `Effect` shape was always right for it; what was missing is
