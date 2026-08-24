@@ -508,6 +508,11 @@
     // this one is filled in, so editing it changes which rules there are, and
     // a complaint about a section a box has just hidden can be reached by
     // nothing on screen.
+    //
+    // And so does what was said about the model itself, under the empty key.
+    // A refusal about the whole of it is about the values it was submitted
+    // with, so any edit is what makes it no longer true, and there is no field
+    // of its own for an edit to route it through.
     function forgetField(el, name) {
         const state = el.getAttribute("data-bind-state");
         if (!state) return;
@@ -515,7 +520,7 @@
         write(dirtyKey(resolve(el, state)), true);
 
         const armed = (el.getAttribute("data-bind-arms") ?? "").split(" ").filter(Boolean);
-        const gone = new Set([name, ...armed].map((field) => recordKey(el, field)));
+        const gone = new Set(["", ...[name, ...armed].map((field) => recordKey(el, field))]);
 
         forget(el, state, (at) => gone.has(at));
     }
@@ -528,6 +533,13 @@
     // disposed when it leaves the DOM.
 
     const bound = new WeakMap(); // element -> Effect[]
+
+    // What a control's own rules last said, so that they retire their own
+    // verdict and nothing else. A message only the server could have decided
+    // is not theirs to withdraw: they cannot recompute it, and "nothing is
+    // wrong" is exactly what they answer about a field a handler refused.
+    const spoken = new WeakMap(); // element -> the message its rules wrote
+
     const CHECKABLE = new Set(["checkbox", "radio"]);
 
     const BINDINGS = {
@@ -569,6 +581,12 @@
         // red before it is read is worse than no validation, and without the
         // guard a patch re-inserting a control would wipe the message that
         // arrived with it.
+        //
+        // What is cleared is what these rules themselves put there. This runs
+        // again whenever the record changes, and a field that is fine by its
+        // own rules is most of what a handler refuses: without the ownership
+        // check it would answer a refusal by deleting it, and every message
+        // only the server can decide would last one microtask.
         "data-bind-rules": (el, source) => () => {
             const name = el.getAttribute("data-bind");
             const state = el.getAttribute("data-bind-state");
@@ -581,13 +599,17 @@
             const slot = resolve(el, state);
             const record = read(slot) ?? {};
             const at = recordKey(el, name);
+            const held = record[at] ?? "";
 
-            if ((record[at] ?? "") === said) return;
+            if (held === said) return;
 
             // A fresh object rather than a write in place, for the reason a
             // collection is reassigned rather than pushed into.
-            if (said) write(slot, { ...record, [at]: said });
-            else {
+            if (said) {
+                spoken.set(el, said);
+                write(slot, { ...record, [at]: said });
+            } else if (held === spoken.get(el)) {
+                spoken.delete(el);
                 const { [at]: _gone, ...rest } = record;
                 write(slot, rest);
             }

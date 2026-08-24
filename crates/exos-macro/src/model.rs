@@ -276,6 +276,25 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
             pub fn dirty(&self) -> ::exos::Js<bool> {
                 ::exos::any_dirty(#state)
             }
+
+            /// What a handler said about the submission rather than about one
+            /// field of it, through `Refusal::say`.
+            ///
+            /// Empty while there is nothing to say, so a template reads it the
+            /// way it reads a field's own message.
+            #[must_use]
+            pub fn refusal(&self) -> ::exos::Js<::std::string::String> {
+                ::exos::model_refusal(#state)
+            }
+
+            /// Whether there is one.
+            ///
+            /// About the model itself, where [`valid`](Self::valid) is about
+            /// everything anything has left in the record.
+            #[must_use]
+            pub fn refused(&self) -> ::exos::Js<bool> {
+                !self.refusal().is_empty()
+            }
         }
 
         impl ::exos::RowModel for #name {
@@ -561,6 +580,10 @@ mod tests {
         );
         assert!(
             expanded.contains(&format!("any_dirty (\"{state}\")")),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains(&format!("model_refusal (\"{state}\")")),
             "{expanded}"
         );
     }

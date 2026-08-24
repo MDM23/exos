@@ -244,6 +244,32 @@ async fn signup(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>> {
 `Signup::CODE` is a token rather than a name, so renaming the field breaks that
 line instead of quietly addressing nothing.
 
+**A refusal about the submission is `say`.** Whether these two are a login is a
+question about the pair, and answering it on the password says something the
+server does not know. It lands in the same record under a key no field has:
+
+```rust
+#[exos::post("/login")]
+async fn login(Model(form): Model<Login>) -> Result<Effect, Refusal<Login>> {
+    let Some(account) = accounts().authenticate(&form).await else {
+        let mut refusal = Refusal::new();
+        refusal.say(wrong_credentials());
+        return Err(refusal);
+    };
+
+    /* ... */
+}
+```
+
+A template reads it the way it reads a field's, and no control marks itself for
+it, because it is about none of them:
+
+```rust
+view! {
+    <p {show(form.refused())} {text(form.refusal())}></p>
+}
+```
+
 **exos ships no message text**, because an application's languages are its own
 and belong in [`messages!`](languages#messages) where the compiler holds them
 to every locale. A violation is a value, and one function turns one into a
@@ -290,5 +316,11 @@ back on.
 What it costs is that a message has to be retirable, or a form could reach a
 state it cannot be submitted out of. Each of them is: editing a field retires
 what was said about it, editing a gate retires what was said about the fields
-it arms, and adding or removing a row retires what was said about how many
-there are.
+it arms, adding or removing a row retires what was said about how many there
+are, and any edit at all retires what was said about the submission, which was
+about the values that were sent.
+
+A field's own rules retire only what they said themselves. They run again over
+the record whenever anything writes into it, and a field a handler refused is
+one they find nothing wrong with, so anything else would be a refusal deleting
+itself on the microtask it arrived on.

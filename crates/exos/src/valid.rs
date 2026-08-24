@@ -85,6 +85,13 @@ pub enum Violation {
     Malformed,
 }
 
+/// Where a message about the model itself is kept in its record.
+///
+/// The empty string, which is not a field's wire name and not a row's key
+/// either, so a refusal about the whole submission lands in the record every
+/// other message lands in rather than in a second place a template has to read.
+const MODEL: &str = "";
+
 /// What is wrong with a model, keyed by the field's wire name.
 ///
 /// Empty is valid. The whole record is written at once, so a field that now
@@ -140,6 +147,19 @@ impl Serialize for Errors {
 #[must_use]
 pub fn all_valid(state: &str) -> Js<bool> {
     Js::raw(format!("Object.keys($.{state} ?? {{}}).length === 0"))
+}
+
+/// What the handler said about the model itself, as the browser reads it.
+///
+/// The same read a field's message is, off the key no field can spell.
+/// Generated onto the model's handle, where it is `form.refusal()`.
+#[doc(hidden)]
+#[must_use]
+pub fn model_refusal(state: &str) -> Js<String> {
+    Js::raw(format!(
+        "($.{state}[{key}] ?? \"\")",
+        key = crate::quote_js(MODEL)
+    ))
 }
 
 /// Whether anything writing into that record has been edited.
@@ -225,13 +245,53 @@ impl<M: Validate> Refusal<M> {
     /// The field is a token rather than a name, so renaming it breaks this
     /// line rather than quietly addressing nothing.
     pub fn add(&mut self, field: Field<M>, message: impl Into<String>) {
-        let Some((key, _)) = M::FIELDS.iter().find(|(_, name)| *name == field.name()) else {
+        let found = M::FIELDS.iter().find(|(_, name)| *name == field.name());
+
+        // A token is generated with the model, so a miss is one built by hand
+        // and there is nothing to say it: a refusal that lands nowhere answers
+        // exactly like one that worked, and the page it leaves behind is a
+        // form that did nothing on submit.
+        debug_assert!(
+            found.is_some(),
+            "{} declares no field named `{}`",
+            core::any::type_name::<M>(),
+            field.name(),
+        );
+
+        let Some((key, _)) = found else {
             return;
         };
 
         self.errors
             .0
             .entry((*key).to_owned())
+            .or_insert_with(|| message.into());
+    }
+
+    /// Says what is wrong with the submission rather than with a field of it.
+    ///
+    /// Whether these two are a login is a question about the pair, and hanging
+    /// its answer on the password says something the server does not know. It
+    /// lands in the same record under a key no field has, which is
+    /// `form.refusal()` in a template, and any edit into the model retires it
+    /// the way editing a field retires what was said about that field.
+    ///
+    /// ```ignore
+    /// #[exos::post("/login")]
+    /// async fn login(Model(form): Model<Login>) -> Result<Effect, Refusal<Login>> {
+    ///     let Some(user) = accounts().authenticate(&form).await else {
+    ///         let mut refusal = Refusal::new();
+    ///         refusal.say(wrong_credentials());
+    ///         return Err(refusal);
+    ///     };
+    ///
+    ///     /* ... */
+    /// }
+    /// ```
+    pub fn say(&mut self, message: impl Into<String>) {
+        self.errors
+            .0
+            .entry(MODEL.to_owned())
             .or_insert_with(|| message.into());
     }
 
@@ -545,6 +605,45 @@ mod tests {
         assert!(!errors.is_empty());
     }
 
+    /// The parts of a `#[model]` expansion a refusal reads, written out so
+    /// that one can be built here without the macro. Its values are nobody's
+    /// business but the handler's, which is why there are none.
+    #[derive(Debug)]
+    struct Login;
+
+    impl ModelFields for Login {
+        const FIELDS: &'static [(&'static str, &'static str)] =
+            &[("s1", "email"), ("s2", "password")];
+    }
+
+    impl Validate for Login {
+        const STATE: &'static str = "s0";
+
+        fn validate_into(&self, _prefix: &str, _errors: &mut Errors) {}
+    }
+
+    /// A handler names a field by the name it declares, and the browser reads
+    /// the wire key, so the token is translated on the way out.
+    #[test]
+    fn a_refusal_about_a_field_lands_under_that_field_key() {
+        let mut refusal = Refusal::<Login>::new();
+        refusal.add(Field::new("password"), "Wrong credentials given");
+
+        assert_eq!(refusal.errors.get("s2"), Some("Wrong credentials given"));
+    }
+
+    /// A refusal about the submission has no field to be keyed by, and the
+    /// empty key is the one nothing else can produce.
+    #[test]
+    fn a_refusal_about_the_model_is_kept_under_the_empty_key() {
+        let mut refusal = Refusal::<Login>::new();
+        refusal.say("Wrong email or password.");
+        refusal.say("Something else.");
+
+        assert!(!refusal.is_empty());
+        assert_eq!(refusal.errors.get(MODEL), Some("Wrong email or password."));
+    }
+
     /// A model's two questions are one read each. The aggregation is not the
     /// rules folded together: a fold could only see the fields a document
     /// declares, which leaves out every row and everything the server alone
@@ -556,6 +655,13 @@ mod tests {
             "Object.keys($.s1 ?? {}).length === 0"
         );
         assert_eq!(any_dirty("s1").source(), "dirty(\"s1\")");
+    }
+
+    /// And what it was refused with, which is the same read a field's message
+    /// is, off the key no field can spell.
+    #[test]
+    fn a_form_reads_what_it_was_refused_with_off_the_empty_key() {
+        assert_eq!(model_refusal("s1").source(), "($.s1[\"\"] ?? \"\")");
     }
 
     #[test]

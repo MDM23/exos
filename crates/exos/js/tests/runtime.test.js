@@ -302,6 +302,70 @@ test("a message survives a patch over the control it is about", async () => {
     assert.equal(window.exos.signals.errors.draft, "taken");
 });
 
+// Every field of a form somebody just submitted has been edited, so the guard
+// above is not what protects a refusal: the rules run again over the record
+// they are written into, and a field a handler refused is one they find nothing
+// wrong with. What they clear is what they said themselves.
+test("a refusal outlives the rules of the field it is about", async () => {
+    const window = boot(validated());
+
+    await type(window, "filled in");
+
+    window.exos.signals.errors = { draft: "taken" };
+    await settled();
+
+    assert.equal(window.exos.signals.errors.draft, "taken");
+    assert.equal(window.document.getElementById("field").getAttribute("aria-invalid"), "true");
+});
+
+// And the same refusal on a form the answer re-rendered, which is a fresh
+// element running its rules for the first time over a record that already has
+// something in it.
+test("a refusal survives a patch over the edited control it is about", async () => {
+    const window = boot(`<div id="host">${validated()}</div>`);
+
+    await type(window, "filled in");
+
+    window.exos.signals.errors = { draft: "taken" };
+    await settled();
+
+    window.exos.applyPatch(`<div id="host">${validated()}</div>`);
+    await settled();
+
+    assert.equal(window.exos.signals.errors.draft, "taken");
+});
+
+// What a field's rules do own, they still retire, or a form gated on the record
+// could never be submitted out of a verdict its own value has moved past.
+test("a field still withdraws what its own rules said", async () => {
+    const window = boot(validated());
+
+    await type(window, "");
+    assert.equal(window.exos.signals.errors.draft, "needed");
+
+    window.exos.signals.draft = "filled in";
+    await settled();
+
+    assert.equal(window.exos.signals.errors.draft, undefined);
+});
+
+// A refusal about the submission rather than about one field of it sits under
+// the empty key, which no field name and no row key can be. Nothing recomputes
+// it, so any edit into the model is what retires it: it was about the values
+// that were sent.
+test("a refusal about the model itself is retired by editing anything", async () => {
+    const window = boot(validated());
+
+    window.exos.signals.errors = { "": "Wrong email or password.", other: "kept" };
+    await settled();
+
+    assert.equal(window.document.getElementById("field").hasAttribute("aria-invalid"), false);
+
+    await type(window, "typed");
+
+    assert.deepEqual({ ...window.exos.signals.errors }, { other: "kept" });
+});
+
 test("a handler on markup that arrived later still fires", () => {
     const window = boot(`<div id="host"></div>`);
 
