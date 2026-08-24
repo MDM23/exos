@@ -6,9 +6,7 @@
 //! is that the whole programme is in the document whether or not it is on
 //! screen, which is right for nine workshops and wrong for nine thousand.
 
-use exos::{
-    Bound, IntoJs as _, Js, Markup, Signal, bind, data, on_click, show, signal, text, view,
-};
+use exos::{Bound, IntoJs as _, Markup, bind, data, on_click, show, signal, text, view};
 
 use crate::store::Programme;
 
@@ -31,12 +29,11 @@ pub(crate) fn picker(picked: &Bound<Vec<u32>>) -> Markup {
                 aria-haspopup="listbox"
                 {on_click(|_| open.toggle())}
             >
-                // Three elements rather than one expression, because nothing
-                // concatenates a count onto a word.
                 <span {show(picked.get().is_empty())}>"Choose workshops"</span>
-                <span {show(picked.get().any())}>
-                    <span {text(picked.get().len())}></span>" selected"
-                </span>
+                <span
+                    {show(picked.get().any())}
+                    {text(picked.get().len().concat(" selected"))}
+                ></span>
             </button>
 
             <div class="chips">
@@ -79,7 +76,9 @@ pub(crate) fn picker(picked: &Bound<Vec<u32>>) -> Markup {
                                         query
                                             .get()
                                             .is_empty()
-                                            .or(haystack.into_js().contains(folded(&query)))
+                                            .or(haystack
+                                                .into_js()
+                                                .contains(query.get().to_lowercase()))
                                     )}
                                 >
                                     <input
@@ -103,15 +102,6 @@ pub(crate) fn picker(picked: &Bound<Vec<u32>>) -> Markup {
             <p class="error" {show(picked.invalid())} {text(picked.error())}></p>
         </div>
     }
-}
-
-/// The query, lowercased.
-///
-/// Through the escape hatch, because `Js<String>` has `contains` and `trim`
-/// and no case folding, and a search box that only matches the capitalisation
-/// somebody happened to type is not a search box.
-fn folded(query: &Signal<String>) -> Js<String> {
-    Js::raw(format!("{}.toLowerCase()", query.get().source()))
 }
 
 #[cfg(test)]

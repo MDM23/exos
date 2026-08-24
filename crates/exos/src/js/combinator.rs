@@ -39,6 +39,26 @@ impl<T: serde::Serialize> IntoJs<Self> for Vec<T> {
     }
 }
 
+impl<T: ?Sized> Js<T> {
+    /// Joins this to `other` as text.
+    ///
+    /// On every expression rather than on [`Js<String>`] alone, because the
+    /// piece that needs joining is usually the one that is not a string: "3
+    /// selected" is a count and a word, and `aria-activedescendant` is a prefix
+    /// and an index.
+    ///
+    /// A template literal rather than `+`, since `+` over two numbers adds them
+    /// and this has no way to know whether either side is one.
+    #[must_use]
+    pub fn concat<U>(self, other: impl IntoJs<U>) -> Js<String> {
+        Js::raw(format!(
+            "`${{{}}}${{{}}}`",
+            self.source,
+            other.into_js().source()
+        ))
+    }
+}
+
 impl Js<bool> {
     /// `a && b`.
     #[must_use]
@@ -190,6 +210,12 @@ impl Js<String> {
         ))
     }
 
+    /// The string in lower case, for comparing two of them as a reader would.
+    #[must_use]
+    pub fn to_lowercase(self) -> Self {
+        Self::raw(format!("{}.toLowerCase()", self.grouped()))
+    }
+
     /// The string without leading or trailing whitespace.
     #[must_use]
     pub fn trim(self) -> Self {
@@ -265,6 +291,36 @@ mod tests {
         assert_eq!(
             title.contains("rust").source(),
             r#"$.title.includes("rust")"#
+        );
+    }
+
+    /// A search box matches what somebody meant, not the capitalisation they
+    /// happened to type, so both sides fold.
+    #[test]
+    fn a_string_folds_its_case() {
+        let title = Js::<String>::raw("$.title");
+        let query = Js::<String>::raw("$.query");
+
+        assert_eq!(
+            title.to_lowercase().contains(query.to_lowercase()).source(),
+            "($.title.toLowerCase()).includes($.query.toLowerCase())"
+        );
+    }
+
+    /// The left side is usually a number, which is the whole reason this is not
+    /// on `Js<String>`: `+` would add it to the next one instead of joining it.
+    #[test]
+    fn anything_joins_onto_anything_as_text() {
+        let count = Js::<u32>::raw("$.picked.length");
+
+        assert_eq!(
+            count.clone().concat(" selected").source(),
+            "`${$.picked.length}${\" selected\"}`"
+        );
+
+        assert_eq!(
+            count.plus(1_u32).concat(2_u32).source(),
+            "`${$.picked.length + 1}${2}`"
         );
     }
 

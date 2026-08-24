@@ -85,13 +85,16 @@ bit. None needs a document:
   means reading `relatedTarget` and asking the DOM, and
   [`Event`](../../crates/exos/src/attributes/handler.rs) exposes neither. The
   example closes its dropdown with a button.
-- **No case folding on `Js<String>`**, so the filter goes through `Js::raw`. A
+- **No case folding on `Js<String>`**, so the filter went through `Js::raw`. A
   search that matches only the capitalisation somebody happened to type is not a
-  search.
-- **No concatenation on `Js<String>`**, so "3 selected" is three elements. The
-  same gap is what `aria-activedescendant` would need, along with the clamped
-  index arithmetic [combinator.rs](../../crates/exos/src/js/combinator.rs) has
-  no `min` or `max` for.
+  search. **Closed**: `to_lowercase`, and the example's escape hatch with it.
+- **No concatenation on `Js<String>`**, so "3 selected" was three elements.
+  **Closed**, and on every `Js<T>` rather than on `Js<String>`: the piece that
+  needs joining is usually the one that is not a string, and `concat` builds a
+  template literal for the same reason, since `+` over two numbers adds them.
+  What `aria-activedescendant` still wants is the clamped index arithmetic
+  [combinator.rs](../../crates/exos/src/js/combinator.rs) has no `min` or `max`
+  for.
 - **`attr` cannot write `aria-invalid="true"`.** The runtime writes an empty
   attribute for a true boolean, and `aria-invalid=""` is read as false, so the
   hook [stage 2](#stage-2-the-same-rule-in-the-browser) commits to cannot be

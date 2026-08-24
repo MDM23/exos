@@ -4,10 +4,15 @@
 
 | on | methods |
 | --- | --- |
+| any `Js<T>` | `concat` |
 | `Js<bool>` | `and`, `not`, `or` |
 | numbers | `eq`, `ge`, `gt`, `le`, `lt`, `minus`, `ne`, `plus` |
-| `Js<String>` | `contains`, `eq`, `is_empty`, `len`, `ne`, `trim` |
+| `Js<String>` | `contains`, `eq`, `is_empty`, `len`, `ne`, `to_lowercase`, `trim` |
 | `Js<Vec<T>>` | `any`, `contains`, `is_empty`, `len` |
+
+`concat` joins as text, on every expression rather than on `Js<String>` alone,
+because the piece that needs joining is usually the one that is not a string:
+`text(picked.get().len().concat(" selected"))`.
 
 `!` is overloadable, so `!gone.get()` works. `==` and `&&` are not, because
 `PartialEq::eq` must return `bool`, hence `.eq()` and `.and()`. That is the one
