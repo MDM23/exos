@@ -4,7 +4,7 @@ Rules written once, checked on both sides, and the one round trip that carries
 what only the server knows.
 
 Status: stages 0, 1, 2, 3, 5 and the gate half of 4 are built, aggregation
-included. What is left is patterns (1a) and `required_when`.
+included. What is left is patterns (1a), `required_when` and stage 6.
 
 [`examples/signup`](../../examples/signup) is the form written by hand against
 the surface that existed before any of this, so what the stages are worth is
@@ -610,6 +610,131 @@ row, and the round trip per keystroke. What is left is a model, a closure and
 two buttons. A half-filled form is no longer a resource on the server, because
 none of it is on the server at all.
 
+## Stage 6: the rule only the server can answer, while it is typed
+
+[Stage 3](#stage-3-one-debounce-three-features) promised three things and
+delivered two. The third was a server rule answering while a field is still
+being edited, and it did not arrive, because the generated caller sends a model
+and only a model. This is that stage, and it is the first of this document's
+open questions answered: a server-only rule is declared on the model like every
+other rule, and the macro gives it a route.
+
+```rs
+#[valid(required, checked_by = coupon)]
+code: String,
+```
+
+```rs
+async fn coupon(code: String) -> Result<(), String> {
+    match store::accepts(&code) {
+        true => Ok(()),
+        false => Err(String::from("That code is not one of ours.")),
+    }
+}
+```
+
+The value arrives owned rather than borrowed, because the future outlives the
+call and a borrow would need a lifetime the erasure below cannot hold. The
+message is the application's, since a rule exos does not know cannot have a
+`Violation` exos does, which is what
+[`Refusal::add`](../../crates/exos/src/valid.rs) already says. It is written
+inside a request, so the locale is in scope and this is the one message that may
+count what it is about: "3 characters too many" is free here and still
+[owed](#open-questions) on the browser's side.
+
+### The field does not know the route, and needs no route to know
+
+A binding is written by a template that knows nothing about which handler will
+take the form, and a model can be posted into three of them. Neither the input
+nor the rule can name the submit route. What answers that is that the check is
+not the submit: it is addressed by the field rather than by the form, and the
+field is the one thing both halves already know.
+
+**The address is the two names the binding carries today.** A control renders
+with `data-bind`, the field's generated name, and `data-bind-state`, the
+model's, so `/_exos/check/{model}/{field}` asks the markup for nothing beyond a
+flag saying there is a check to make, and the runtime builds the URL off the
+base it was loaded from the way it already builds `/_exos/subscribe`. The
+template does not change at all:
+
+```rs
+<input id="code" {bind(&form.code)}>
+```
+
+**One route, not one per field.** `#[model]` submits an entry per checked field
+through [`inventory`](../../crates/exos/src/discover.rs), the way a route
+attribute submits itself, each holding a shim the macro monomorphised that
+deserializes the field's own type and awaits the function. The single route
+resolves the pair and calls it. A route per field would be a URL space growing
+with the struct to buy a map lookup either way.
+
+### The control still writes the slot
+
+A check answers about one value, so what comes back is a message or nothing, and
+the control writes its own slot with it exactly as it does for a rule it
+answered itself. It is deliberately not a record write: the whole record is
+written by whatever judged the whole model, so one field's answer setting it
+would clear every other message on the form. That is [stage
+2](#stage-2-the-same-rule-in-the-browser)'s ownership rule one case further out,
+and it is why this stage needs no new step in the effect vocabulary.
+
+**The same function runs at submit**, in the extractor, after the shape rules
+pass and only for a field whose shape held: nothing asks the database whether an
+empty string is a taken address. The client's copy stays feedback, a handler
+still runs against a value something checked, and a submit racing an outstanding
+check is answered by the same function anyway. Two evaluators and one impl, one
+level up from where [valid.rs](../../crates/exos/src/valid.rs) says it about
+`Presence` and `Length`.
+
+**The timing is already built.** Stage 3's debounce is keyed by call site and
+element, so a checked field inside a row is its own timer, and
+last-response-wins drops an answer about a value nobody is holding any more.
+
+**A check in flight is `aria-busy` on the control**, which is where AngularJS's
+`$pending` earns the place stage 2 declined to give it. The attribute is the one
+the request path already writes and a stylesheet already knows, so the
+vocabulary does not grow. It also wants [the busy marker to be
+owned](loose-ends.md#a-busy-marker-is-taken-off-mid-request), which that loose
+end describes and this stage would make visible on any page with a checked
+field.
+
+### What it costs, and what it rules out
+
+**A checked field is an endpoint that answers a question about a value.** "Is
+this address taken" is user enumeration with a friendlier name, and exos mounts
+the route rather than the application, so it is said here rather than
+discovered later. Three things hold it: it is a `POST` carrying `X-Exos` with
+the session cookie, so it is same-origin and attached to a browser exos named;
+the answer comes from the application's own function, which is where a rate
+limit or a refusal to answer belongs; and a rule whose answer is a secret is the
+wrong shape for a form that would have leaked the same answer at submit.
+Same-origin is not the same as harmless, and this is the first route exos mounts
+on an application's behalf that reads the application's data.
+
+**Rejected: a partial model.** The shape this was drawn as, and the one the
+README's edge describes: the caller sends `{code: "..."}` into the submit route
+and something tells the extractor to check only what is there. It costs a second
+body shape, a validation mode in the extractor and a handler that must be kept
+from running, and then it does not answer the question it was drawn for. The
+discount code is ruled on inside the handler body, which no extractor can reach,
+so the rule has to move onto the model whatever the transport is. Once it has,
+the partial body buys nothing. The edge is therefore retired rather than fixed:
+a model is still sent whole, and no longer needs not to be.
+
+**Kept, and not the answer: a second route the application writes.** It works
+today, it stays an ordinary route, and what it costs is the rule written twice,
+once where the check happens and once inside the handler that has to check it
+again. That is the drift this document exists to make impossible.
+
+**Rejected: a rule that reads a sibling.** [Stage
+4](#stage-4-rules-that-only-sometimes-apply)'s answer, unchanged. A rule asks
+one question about one value, and a question about two is the submit. A gate is
+free here regardless, since `required_with` is a condition in front of a rule
+and this is a rule.
+
+**Not offered: a check on `Rows`.** A question about how many rows there are is
+answered at submit, where the rows already are.
+
 ## What exos will not do
 
 - **No form-encoded bodies, and therefore no CSRF token.** A form posts through
@@ -627,12 +752,6 @@ none of it is on the server at all.
 
 ## Open questions
 
-- **How a server-only rule is written.** Either a second route the application
-  writes that answers with errors and nothing else, which duplicates the model's
-  declaration, or a rule on the model that names an async function and lets the
-  macro generate the route, which is consistent with "nothing calls the
-  validator" and drags async into the model layer. The second is more in
-  keeping and less obviously right.
 - **Whether a message may vary with what is typed.** A client-side message is
   baked at render time, so "at least 3 characters" is free while "3 characters
   too many" needs a count that only the browser has. That is exactly the
