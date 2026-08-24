@@ -128,7 +128,9 @@ exos::messages! {
 /// The macro is usable more than once, so messages live next to the feature
 /// that says them rather than in one file every branch touches. The locale set
 /// is named here rather than found by convention, which is what a crate that is
-/// not the application does.
+/// not the application does, and the module is this file's rather than the
+/// macro's: a block expands into plain functions, so whatever a call site says
+/// before `heading` was chosen here.
 mod inbox {
     exos::messages! {
         in crate::Locale {
@@ -149,11 +151,11 @@ async fn page() -> Page {
         <!DOCTYPE html>
         <html { exos::lang(locale) }>
             <body>
-                <button>{ t::clear_selection() }</button>
-                <button>{ t::save_and_close() }</button>
-                <p>{ t::items_selected(3) }</p>
-                <p>{ t::greeting("Ada") }</p>
-                <p>{ t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> }) }</p>
+                <button>{ clear_selection() }</button>
+                <button>{ save_and_close() }</button>
+                <p>{ items_selected(3) }</p>
+                <p>{ greeting("Ada") }</p>
+                <p>{ accept_terms(|inner| view! { <a href="/terms">{ inner }</a> }) }</p>
             </body>
         </html>
     })
@@ -190,25 +192,22 @@ fn spoken<T>(locale: Locale, message: impl FnOnce() -> T) -> T {
 
 #[test]
 fn a_message_is_the_string_of_whatever_language_the_request_is_in() {
-    assert_eq!(spoken(Locale::De, t::clear_selection), "Auswahl aufheben");
-    assert_eq!(spoken(Locale::En, t::clear_selection), "Clear selection");
-    assert_eq!(spoken(Locale::Ar, t::clear_selection), "إلغاء التحديد");
+    assert_eq!(spoken(Locale::De, clear_selection), "Auswahl aufheben");
+    assert_eq!(spoken(Locale::En, clear_selection), "Clear selection");
+    assert_eq!(spoken(Locale::Ar, clear_selection), "إلغاء التحديد");
 }
 
 #[test]
 fn a_count_picks_the_arm_and_is_written_into_it() {
     assert_eq!(
-        spoken(Locale::De, || t::items_selected(1)),
+        spoken(Locale::De, || items_selected(1)),
         "1 Element ausgewählt"
     );
     assert_eq!(
-        spoken(Locale::De, || t::items_selected(7)),
+        spoken(Locale::De, || items_selected(7)),
         "7 Elemente ausgewählt"
     );
-    assert_eq!(
-        spoken(Locale::En, || t::items_selected(0)),
-        "0 items selected"
-    );
+    assert_eq!(spoken(Locale::En, || items_selected(0)), "0 items selected");
 }
 
 /// A `usize` out of `len()` and a literal are both counts, and neither needs a
@@ -218,11 +217,11 @@ fn a_count_is_whatever_whole_number_the_call_site_already_had() {
     let picked: Vec<u32> = vec![4, 9];
 
     assert_eq!(
-        spoken(Locale::En, || t::items_selected(picked.len())),
+        spoken(Locale::En, || items_selected(picked.len())),
         "2 items selected"
     );
     assert_eq!(
-        spoken(Locale::En, || t::items_selected(1_u8)),
+        spoken(Locale::En, || items_selected(1_u8)),
         "1 item selected"
     );
 }
@@ -232,7 +231,7 @@ fn a_count_is_whatever_whole_number_the_call_site_already_had() {
 #[test]
 fn a_negative_count_is_singular_where_its_magnitude_is() {
     assert_eq!(
-        spoken(Locale::En, || t::items_selected(-1_i32)),
+        spoken(Locale::En, || items_selected(-1_i32)),
         "-1 item selected"
     );
 }
@@ -242,11 +241,11 @@ fn a_negative_count_is_singular_where_its_magnitude_is() {
 #[test]
 fn a_count_is_written_the_way_the_language_writes_a_number() {
     assert_eq!(
-        spoken(Locale::De, || t::items_selected(1_234_567)),
+        spoken(Locale::De, || items_selected(1_234_567)),
         "1.234.567 Elemente ausgewählt"
     );
     assert_eq!(
-        spoken(Locale::En, || t::items_selected(1_234_567)),
+        spoken(Locale::En, || items_selected(1_234_567)),
         "1,234,567 items selected"
     );
 }
@@ -255,7 +254,7 @@ fn a_count_is_written_the_way_the_language_writes_a_number() {
 #[test]
 fn a_count_inside_a_slot_is_written_the_same_way() {
     assert_eq!(
-        spoken(Locale::De, || t::unread(12_345)).as_str(),
+        spoken(Locale::De, || unread(12_345)).as_str(),
         "Sie haben <strong>12.345 ungelesene</strong> Nachrichten"
     );
 }
@@ -264,7 +263,7 @@ fn a_count_inside_a_slot_is_written_the_same_way() {
 /// evaluator, which is what proves the two matches line up.
 #[test]
 fn a_language_reaches_every_category_it_has() {
-    let counted = |count: u64| spoken(Locale::Ar, move || t::counted(count));
+    let counted = |count: u64| spoken(Locale::Ar, move || counted(count));
 
     assert_eq!(counted(0), "zero");
     assert_eq!(counted(1), "one");
@@ -276,13 +275,13 @@ fn a_language_reaches_every_category_it_has() {
 
 #[test]
 fn a_language_with_two_categories_reaches_both_of_its_own() {
-    assert_eq!(spoken(Locale::De, || t::counted(1)), "one");
-    assert_eq!(spoken(Locale::De, || t::counted(2)), "other");
+    assert_eq!(spoken(Locale::De, || counted(1)), "one");
+    assert_eq!(spoken(Locale::De, || counted(2)), "other");
 }
 
 #[test]
 fn several_domains_are_told_apart_at_once() {
-    let assigned = |to, count: u32| spoken(Locale::En, move || t::assigned(to, count));
+    let assigned = |to, count: u32| spoken(Locale::En, move || assigned(to, count));
 
     assert_eq!(assigned(Assignee::Me, 1), "1 file assigned to you");
     assert_eq!(assigned(Assignee::Me, 4), "4 files assigned to you");
@@ -297,29 +296,29 @@ fn several_domains_are_told_apart_at_once() {
 #[test]
 fn a_language_that_makes_no_distinction_says_so_once() {
     assert_eq!(
-        spoken(Locale::De, || t::assigned(Assignee::Me, 4)),
+        spoken(Locale::De, || assigned(Assignee::Me, 4)),
         "4 Dateien zugewiesen"
     );
 }
 
 #[test]
 fn a_flag_is_a_domain_without_anything_being_declared() {
-    assert_eq!(spoken(Locale::En, || t::sound(true)), "Sound on");
-    assert_eq!(spoken(Locale::De, || t::sound(false)), "Ton aus");
+    assert_eq!(spoken(Locale::En, || sound(true)), "Sound on");
+    assert_eq!(spoken(Locale::De, || sound(false)), "Ton aus");
 }
 
 #[test]
 fn a_parameter_that_is_only_interpolated_needs_no_arm_of_its_own() {
     assert_eq!(
-        spoken(Locale::En, || t::greeting("Ada")),
+        spoken(Locale::En, || greeting("Ada")),
         "Hello Ada & welcome"
     );
 }
 
 #[test]
 fn a_block_beside_a_feature_says_which_locale_set_it_is_written_against() {
-    assert_eq!(spoken(Locale::De, inbox::t::heading), "Posteingang");
-    assert_eq!(spoken(Locale::En, inbox::t::heading), "Inbox");
+    assert_eq!(spoken(Locale::De, inbox::heading), "Posteingang");
+    assert_eq!(spoken(Locale::En, inbox::heading), "Inbox");
 }
 
 /// The categories a language has, in the order its rules are tried, which is
@@ -336,7 +335,7 @@ fn a_languages_categories_are_a_domain_like_any_other() {
 /// the ones inside the link, stay in the sentence.
 #[test]
 fn a_slot_keeps_the_sentence_whole_and_the_wrapper_at_the_call_site() {
-    let linked = || t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> });
+    let linked = || accept_terms(|inner| view! { <a href="/terms">{ inner }</a> });
 
     assert_eq!(
         spoken(Locale::En, linked).as_str(),
@@ -348,7 +347,7 @@ fn a_slot_keeps_the_sentence_whole_and_the_wrapper_at_the_call_site() {
 /// else, which is the reason a sentence is one message rather than three.
 #[test]
 fn a_slot_holds_whatever_the_language_puts_in_it() {
-    let linked = || t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> });
+    let linked = || accept_terms(|inner| view! { <a href="/terms">{ inner }</a> });
 
     assert_eq!(
         spoken(Locale::De, linked).as_str(),
@@ -360,11 +359,11 @@ fn a_slot_holds_whatever_the_language_puts_in_it() {
 #[test]
 fn emphasis_is_a_slot_with_nothing_to_declare() {
     assert_eq!(
-        spoken(Locale::En, || t::unread(1)).as_str(),
+        spoken(Locale::En, || unread(1)).as_str(),
         "You have <strong>1 unread</strong> message"
     );
     assert_eq!(
-        spoken(Locale::En, || t::unread(4)).as_str(),
+        spoken(Locale::En, || unread(4)).as_str(),
         "You have <strong>4 unread</strong> messages"
     );
 }
@@ -373,7 +372,7 @@ fn emphasis_is_a_slot_with_nothing_to_declare() {
 /// translation can carry is a slot that was declared in Rust.
 #[test]
 fn the_words_inside_a_slot_are_escaped_like_all_the_others() {
-    let wrapped = || t::dismiss(|inner| view! { <b>{ inner }</b> });
+    let wrapped = || dismiss(|inner| view! { <b>{ inner }</b> });
 
     assert_eq!(spoken(Locale::En, wrapped).as_str(), "<b>&lt;close&gt;</b>");
 }
@@ -382,7 +381,7 @@ fn the_words_inside_a_slot_are_escaped_like_all_the_others() {
 /// renders it.
 #[test]
 fn a_message_without_a_slot_carries_its_words_as_they_were_written() {
-    assert_eq!(spoken(Locale::En, t::save_and_close), "Save & close");
+    assert_eq!(spoken(Locale::En, save_and_close), "Save & close");
 }
 
 #[tokio::test]

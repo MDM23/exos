@@ -285,13 +285,14 @@ exos::messages! {
 }
 ```
 
-Generating `t::clear_selection()`, `t::items_selected(count)` and
-`t::assigned(to, count)`, which return `String` and read the locale from the
-request scope. A message with no slots is text, so interpolating one into a
-[`view!`](../site/content/templates.md) escapes it like any other string. `t` is
-a module beside the block, so a second block in one module is a name collision,
-which is the rule "messages live next to what says them" showing up as a
-compile error.
+Generating `clear_selection()`, `items_selected(count)` and
+`assigned(to, count)` where the block stands, which return `String` and read the
+locale from the request scope. A message with no slots is text, so interpolating
+one into a [`view!`](../site/content/templates.md) escapes it like any other
+string. Nothing is wrapped around them, so a message is called by its own name
+and two blocks in one module collide on one, which is the rule "messages live
+next to what says them" showing up as a compile error. A crate that wants a
+prefix puts the block in a module of its own naming.
 
 Arms read like a `match`: in order, first wins, `_` and `..` as wildcards. That
 order carries meaning, so arms are exempt from the alphabetical rule while the
@@ -414,7 +415,7 @@ exos::messages! {
 ```
 
 ```rust
-t::accept_terms(|inner| view! { <a href="/terms">{inner}</a> })
+accept_terms(|inner| view! { <a href="/terms">{inner}</a> })
 ```
 
 A `Slot` parameter is a wrapper, `FnOnce(Markup) -> Markup`, so the href, the
@@ -463,9 +464,9 @@ The argument type decides where the message is resolved, which is the whole
 trick and the reason one call site can serve both sides:
 
 ```rust
-t::items_selected(3)                   // String,     resolved here
-t::items_selected(sel.picked.len())    // Js<String>, resolved in the browser
-t::assigned(who, sel.picked.len())     // Js<String>, only count projected
+items_selected(3)                   // String,     resolved here
+items_selected(sel.picked.len())    // Js<String>, resolved in the browser
+assigned(who, sel.picked.len())     // Js<String>, only count projected
 ```
 
 Only the dimensions that are actually client-side are enumerated. `who` is a
@@ -523,7 +524,7 @@ site, since a wrapper is markup the server already renders.
 written.
 
 A live fragment renders through `detached` and cannot read the request scope,
-so `t::` cannot reach the locale there. Being a topic dimension is how it
+so a message cannot reach the locale there. Being a topic dimension is how it
 reaches it, and `locales!` registers `Locale` as one by itself:
 
 ```rust
@@ -595,7 +596,7 @@ browser, which is the type system expressing that the zone is not a server
 fact:
 
 ```rust
-t::due(when)    // Js<String>, even in a server render
+due(when)    // Js<String>, even in a server render
 ```
 
 So a message carrying a date cannot be used where only a `String` will do, in a
@@ -763,7 +764,7 @@ nothing else catches, and a hand check does not survive the next rustc.
 
 - **What the explicit-locale call form is called.** A trait method on `Locale`
   reads well at the call site (`locale.items_selected(3)`) and costs an import;
-  a second free function (`t::items_selected_in(locale, 3)`) costs a name. The
+  a second free function (`items_selected_in(locale, 3)`) costs a name. The
   choice is not obvious and does not block stages 1 to 3.
 - **Whether a slot can project later.** It needs the runtime to interleave text
   parts with cloned nodes rather than write a string, which is a real piece of

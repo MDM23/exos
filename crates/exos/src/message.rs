@@ -38,11 +38,11 @@
 //! exos::with_scope(|| {
 //!     exos::scope().set(Locale::De);
 //!
-//!     assert_eq!(t::clear_selection(), "Auswahl aufheben");
-//!     assert_eq!(t::items_selected(1), "1 Element ausgewählt");
-//!     assert_eq!(t::items_selected(3), "3 Elemente ausgewählt");
+//!     assert_eq!(clear_selection(), "Auswahl aufheben");
+//!     assert_eq!(items_selected(1), "1 Element ausgewählt");
+//!     assert_eq!(items_selected(3), "3 Elemente ausgewählt");
 //!
-//!     let accepted = t::accept_terms(|inner| exos::view! {
+//!     let accepted = accept_terms(|inner| exos::view! {
 //!         <a href="/terms">{ inner }</a>
 //!     });
 //!
@@ -86,8 +86,8 @@ mod sealed {
 /// # fn main() { exos::with_scope(|| {
 /// let picked: Vec<u32> = vec![7, 9];
 ///
-/// assert_eq!(t::files(picked.len()), "2 files");
-/// assert_eq!(t::files(1), "1 file");
+/// assert_eq!(files(picked.len()), "2 files");
+/// assert_eq!(files(1), "1 file");
 /// # }); }
 /// ```
 ///

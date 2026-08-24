@@ -254,14 +254,16 @@ pub fn locales(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 ///
-/// It generates a module `t` beside the block, holding `t::clear_selection()`
-/// and `t::items_selected(count)`. Both read `exos::locale()` and answer with a
-/// `String`, so a message interpolated into a [`view!`](view) is escaped like
-/// any other string, and no part of one is ever parsed as HTML.
+/// It writes `clear_selection()` and `items_selected(count)` where the block
+/// stands, as public functions and nothing else. Both read `exos::locale()` and
+/// answer with a `String`, so a message interpolated into a [`view!`](view) is
+/// escaped like any other string, and no part of one is ever parsed as HTML.
 ///
 /// Write it wherever the text is used. The macro may be invoked as often as an
 /// application likes, so messages live next to the feature that says them
-/// rather than in one file every branch touches.
+/// rather than in one file every branch touches. Where they want a prefix, the
+/// block goes in a module of the crate's own naming, and `t::clear_selection()`
+/// is a `mod t` around it.
 ///
 /// # Arms
 ///
@@ -298,7 +300,7 @@ pub fn locales(input: TokenStream) -> TokenStream {
 ///     }
 /// }
 ///
-/// t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> })
+/// accept_terms(|inner| view! { <a href="/terms">{ inner }</a> })
 /// ```
 ///
 /// So the href, the classes and the routing stay in Rust while the words stay

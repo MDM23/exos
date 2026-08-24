@@ -191,7 +191,7 @@ pub trait Validate: ModelFields {
 ///     let mut refusal = Refusal::new();
 ///
 ///     if !data::<Codes>().accepts(&form.code) {
-///         refusal.add(Signup::CODE, t::no_such_code());
+///         refusal.add(Signup::CODE, no_such_code());
 ///     }
 ///
 ///     if !refusal.is_empty() {

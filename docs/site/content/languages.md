@@ -94,12 +94,12 @@ exos::messages! {
 }
 ```
 
-That generates a module `t` beside the block:
+That generates a function per message, where the block stands:
 
 ```rust
 view! {
-    <button>{ t::clear_selection() }</button>
-    <p>{ t::items_selected(picked.len()) }</p>
+    <button>{ clear_selection() }</button>
+    <p>{ items_selected(picked.len()) }</p>
 }
 ```
 
@@ -167,7 +167,7 @@ exos::messages! {
 ```
 
 ```rust
-t::accept_terms(|inner| view! { <a href="/terms">{ inner }</a> })
+accept_terms(|inner| view! { <a href="/terms">{ inner }</a> })
 ```
 
 A slot is a wrapper, `FnOnce(Markup) -> Markup`, so the href, the classes and
@@ -211,9 +211,11 @@ breaks the build until every message is translated, and there is no fallback
 that quietly renders English into a German page.
 
 Write the macro as often as you like, so that messages live next to the feature
-that says them. The module it generates is named `t`, which makes it one block
-per module. Your languages are found at `crate::Locale` by convention; write
-`exos::messages!(in path::to::Locale { ... })` where they are somewhere else.
+that says them. It puts nothing around the functions, so where you want a
+prefix, put the block in a module of your own naming and call it whatever
+reads best from the outside. Your languages are found at `crate::Locale` by
+convention; write `exos::messages!(in path::to::Locale { ... })` where they are
+somewhere else.
 
 A count is the one number a message knows is a number. Anything else you
 interpolate is written the way it displays, so format it yourself, with
