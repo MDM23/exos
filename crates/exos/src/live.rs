@@ -41,7 +41,7 @@
 
 use core::hash::{Hash, Hasher as _};
 
-use crate::{Markup, Render, escape_into, fnv::Fnv1a, keys};
+use crate::{Id, Markup, Render, escape_into, fnv::Fnv1a, keys};
 
 mod stream;
 
@@ -109,28 +109,66 @@ impl Topic {
         &self.0
     }
 
-    /// Proof that this server produced this topic.
+    /// Proof that this server served this topic to this viewer.
     ///
     /// A topic id hashes public things, since a fragment name and a record id
     /// are both guessable, so the id alone would let anyone subscribe to
     /// anyone's fragment. The token is what makes a subscription unforgeable:
-    /// it can only be obtained by being served the fragment.
+    /// it can only be obtained by being served the fragment, and only the
+    /// browser it was served to can present it.
     ///
-    /// HMAC-SHA256 under the key [`keys`](crate::keys) configures, truncated
-    /// to 128 bits. It proves the server rendered this topic, which is not yet
-    /// the same as proving it rendered it *for this viewer*: anywhere an id and
-    /// token escape a page together, by a screenshot or a shared profile, the
-    /// holder can subscribe. Binding the tag to a session id is what closes
-    /// that, and needs a session to bind to.
+    /// HMAC-SHA256 under the key [`keys`](crate::keys) configures, over the
+    /// topic and the session together, truncated to 128 bits. Binding it to
+    /// the session is what makes an id and a token escaping a page, by a
+    /// screenshot or a shared profile, worth nothing to whoever finds them.
+    ///
+    /// # It starts a session
+    ///
+    /// Being served a live fragment gives an anonymous visitor a name, because
+    /// there has to be something to bind to. That is a cookie and nothing
+    /// else, since exos keeps no store, so it costs a header rather than a
+    /// row.
+    ///
+    /// # There is not always one
+    ///
+    /// `None` wherever there is no viewer to bind to, which is two places and
+    /// both of them are right:
+    ///
+    /// * **A publish**, which renders outside any request. The patch it sends
+    ///   therefore says nothing about the token, and the element it lands on
+    ///   keeps the grant it was served with. A patch has never been a grant.
+    /// * **Inside another fragment**, whose body renders through
+    ///   [`detached`](crate::detached). A nested fragment's markup is
+    ///   published to everybody watching the outer one, so a token in it would
+    ///   be one viewer's grant handed to all of them. The mask that keeps a
+    ///   fragment's content viewer-independent turns out to be the same rule.
     #[must_use]
-    pub fn token(&self) -> String {
-        keys::tag(LIVE_TOKEN, self.0.as_bytes())
+    pub fn token(&self) -> Option<String> {
+        let id = crate::session::current()?.start();
+
+        Some(keys::tag(LIVE_TOKEN, self.bound(&id).as_bytes()))
     }
 
-    /// Whether `token` was produced for this topic by this server.
+    /// Whether `token` was served to the viewer presenting it, for this topic.
+    ///
+    /// False for a browser carrying no session, since every token was made
+    /// against one. That is a browser refusing cookies, and it costs live
+    /// fragments rather than being quietly waved through.
     #[must_use]
     pub fn verify(&self, token: &str) -> bool {
-        keys::verify(LIVE_TOKEN, self.0.as_bytes(), token)
+        let Some(id) = crate::session::current().and_then(|session| session.id()) else {
+            return false;
+        };
+
+        keys::verify(LIVE_TOKEN, self.bound(&id).as_bytes(), token)
+    }
+
+    /// What the tag is over.
+    ///
+    /// A session id is a fixed-length name, so the two cannot blur into one
+    /// another whatever a fragment happens to be called.
+    fn bound(&self, id: &Id) -> String {
+        format!("{}{id}", self.0)
     }
 }
 
@@ -164,19 +202,40 @@ impl Fragment {
         &self.topic
     }
 
+    /// The markup the topic determines, without the wrapper around it.
+    ///
+    /// The two halves are worth telling apart: this is the same for everybody
+    /// watching, which is the invariant a live fragment is held to, while the
+    /// wrapper carries a grant to one browser and is the only part of a
+    /// fragment that may differ between two viewers.
+    #[must_use]
+    pub fn markup(&self) -> &Markup {
+        &self.markup
+    }
+
     /// The wrapper that carries the subscription, as HTML.
     ///
     /// `display: contents` keeps the wrapper invisible to layout: a fragment
     /// inside a flex row must not become a box in it.
+    ///
+    /// The token is written where there is a viewer to bind one to and left
+    /// out where there is not, which is every publish; see
+    /// [`Topic::token`]. The client keeps a grant a patch does not restate,
+    /// so what a publish sends is the content and the name, and the
+    /// subscription stays the one the page was served with.
     #[must_use]
     pub fn to_markup(&self) -> Markup {
         let mut out = String::from("<exos-live style=\"display:contents\" id=\"");
         escape_into(self.topic.as_str(), &mut out);
+        out.push('"');
 
-        out.push_str("\" data-token=\"");
-        escape_into(&self.topic.token(), &mut out);
+        if let Some(token) = self.topic.token() {
+            out.push_str(" data-token=\"");
+            escape_into(&token, &mut out);
+            out.push('"');
+        }
 
-        out.push_str("\">");
+        out.push('>');
         out.push_str(self.markup.as_str());
         out.push_str("</exos-live>");
 
@@ -241,28 +300,121 @@ mod tests {
         );
     }
 
+    /// The token for a topic, as one browser was served it.
+    ///
+    /// A scope is one request, so two calls are two browsers: nothing here can
+    /// mint a token for a session it is not holding, which is the property the
+    /// binding exists for and would be worth nothing if a test could step
+    /// around it.
+    fn served(topic: &Topic) -> String {
+        crate::with_scope(|| topic.token().expect("a request has a viewer to bind to"))
+    }
+
     #[test]
     fn a_token_only_opens_its_own_topic() {
-        let mine = Topic::new("presence", &(1_u32,));
-        let theirs = Topic::new("presence", &(2_u32,));
+        crate::with_scope(|| {
+            let mine = Topic::new("presence", &(1_u32,));
+            let theirs = Topic::new("presence", &(2_u32,));
 
-        assert!(mine.verify(&mine.token()));
-        assert!(!mine.verify(&theirs.token()));
-        assert!(!mine.verify("0000000000000000"));
+            assert!(mine.verify(&mine.token().expect("a request mints one")));
+            assert!(!mine.verify(&theirs.token().expect("a request mints one")));
+            assert!(!mine.verify("0000000000000000"));
+        });
+    }
+
+    /// The README's first gap, closed. An id and a token that escape a page
+    /// together, by a screenshot or a shared profile, are worth nothing to
+    /// whoever finds them, because the browser they were served to is part of
+    /// what was signed.
+    #[test]
+    fn a_token_is_no_good_to_the_browser_it_was_not_served_to() {
+        let topic = Topic::new("presence", &(1_u32,));
+        let stolen = served(&topic);
+
+        assert!(!crate::with_scope(|| topic.verify(&stolen)));
+        assert!(crate::with_scope(|| topic.verify(
+            &topic.token().expect("a request has a viewer to bind to")
+        )));
+    }
+
+    /// A browser carrying no session has nothing to verify against, and is
+    /// refused rather than waved through: waving it through would be the whole
+    /// binding, undone by deleting a cookie.
+    #[test]
+    fn a_token_without_a_session_verifies_against_nothing() {
+        let topic = Topic::new("presence", &(1_u32,));
+        let token = served(&topic);
+
+        crate::with_scope(|| {
+            // A scope with a session that was never started: the browser sent
+            // no cookie, so there is no name behind this request.
+            assert!(crate::session().id().is_none());
+            assert!(!topic.verify(&token));
+        });
+    }
+
+    /// Being served a live fragment is what names an anonymous visitor, since
+    /// there has to be something to bind the grant to.
+    #[test]
+    fn rendering_one_names_the_browser() {
+        crate::with_scope(|| {
+            assert!(crate::session().id().is_none());
+
+            drop(Topic::new("presence", &(1_u32,)).token());
+
+            assert!(crate::session().id().is_some());
+        });
     }
 
     #[test]
     fn the_wrapper_is_invisible_to_layout_and_carries_the_subscription() {
-        let fragment = Fragment::new(
-            Topic::new("presence", &(1_u32,)),
-            Markup(String::from("<span>online</span>")),
-        );
-
-        let html = fragment.to_markup().into_string();
+        let html = crate::with_scope(|| {
+            Fragment::new(
+                Topic::new("presence", &(1_u32,)),
+                Markup(String::from("<span>online</span>")),
+            )
+            .to_markup()
+            .into_string()
+        });
 
         assert!(html.contains("style=\"display:contents\""));
         assert!(html.contains("id=\"live-presence-"));
         assert!(html.contains("data-token=\""));
         assert!(html.contains("<span>online</span>"));
+    }
+
+    /// What a publish sends, which is rendered outside every request. It names
+    /// the fragment and says nothing about the subscription, because there is
+    /// nobody there to grant one to. The client keeps the grant it was served.
+    #[test]
+    fn a_publish_carries_the_name_and_not_the_grant() {
+        let html = Fragment::new(
+            Topic::new("presence", &(1_u32,)),
+            Markup(String::from("<span>online</span>")),
+        )
+        .to_markup()
+        .into_string();
+
+        assert!(html.contains("id=\"live-presence-"), "{html}");
+        assert!(!html.contains("data-token"), "{html}");
+        assert!(html.contains("<span>online</span>"), "{html}");
+    }
+
+    /// The same rule one level in. A nested fragment's markup is published to
+    /// everybody watching the outer one, so a token in it would be one
+    /// viewer's grant handed to all of them. The mask that keeps a fragment's
+    /// content viewer-independent is what stops it, during a request as much
+    /// as outside one.
+    #[test]
+    fn a_fragment_inside_a_fragment_carries_no_grant_either() {
+        crate::with_scope(|| {
+            let inner = crate::detached(|| {
+                Fragment::new(Topic::new("presence", &(1_u32,)), Markup::default())
+                    .to_markup()
+                    .into_string()
+            });
+
+            assert!(!inner.contains("data-token"), "{inner}");
+        });
     }
 }

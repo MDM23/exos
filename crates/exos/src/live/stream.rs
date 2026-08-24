@@ -584,7 +584,10 @@ pub(crate) fn routes() -> Router {
     reason = "a failing assertion is the point of a test"
 )]
 mod tests {
-    use axum::{body::Body, http::Request};
+    use axum::{
+        body::Body,
+        http::{Request, header},
+    };
     use tower::ServiceExt as _;
 
     use super::*;
@@ -600,6 +603,53 @@ mod tests {
         routes()
             .layer(axum::middleware::from_fn(crate::session::layer))
             .layer(axum::middleware::from_fn(crate::scope::layer))
+    }
+
+    /// What one browser was served: the name it was given, and a token for
+    /// each topic it was shown.
+    ///
+    /// Minting happens in a request, because a token is bound to whoever the
+    /// request was for, and the name has to reach the next request exactly as
+    /// a cookie carries it. There is deliberately no shortcut: a token a test
+    /// could mint for a session it is not holding is one a client could mint
+    /// too.
+    fn browser(topics: &[&Topic]) -> (Id, Vec<(String, String)>) {
+        crate::with_scope(|| {
+            // Named first, so that a browser which has been shown no fragment
+            // at all is still a browser rather than a panic.
+            let name = crate::session().start();
+
+            let watching = topics
+                .iter()
+                .map(|topic| {
+                    let token = topic.token().expect("a request has a viewer to bind to");
+
+                    (topic.as_str().to_owned(), token)
+                })
+                .collect();
+
+            (name, watching)
+        })
+    }
+
+    /// Says what a browser is displaying, the way the runtime does after a
+    /// mutation: one request, carrying the cookie the tokens were minted for.
+    async fn subscribing(name: &Id, connection: &str, topics: &[(String, String)]) -> StatusCode {
+        let body = serde_json::json!({ "connection": connection, "topics": topics }).to_string();
+
+        served()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(SUBSCRIBE)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .header(header::COOKIE, format!("exos={name}"))
+                    .body(Body::from(body))
+                    .expect("a valid request"),
+            )
+            .await
+            .expect("the router answers")
+            .status()
     }
 
     /// Opens a real stream through the router and reads what it says first,
@@ -656,14 +706,12 @@ mod tests {
         let (id, _body) = greeted().await;
 
         let topic = Topic::new("presence", &(1_u32,));
+        let (name, watching) = browser(&[&topic]);
 
-        let status = subscribe(Json(Subscription {
-            connection: id.clone(),
-            topics: vec![(topic.as_str().to_owned(), topic.token())],
-        }))
-        .await;
-
-        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(
+            subscribing(&name, &id, &watching).await,
+            StatusCode::NO_CONTENT
+        );
 
         let registry = connections().lock().expect("the lock is not poisoned");
         assert!(
@@ -690,16 +738,13 @@ mod tests {
         let real = Topic::new("presence", &(42_u32,));
         let forged = Topic::new("presence", &(43_u32,));
 
-        let status = subscribe(Json(Subscription {
-            connection: id.clone(),
-            topics: vec![
-                (real.as_str().to_owned(), real.token()),
-                (forged.as_str().to_owned(), String::from("0000000000000000")),
-            ],
-        }))
-        .await;
+        let (name, mut watching) = browser(&[&real]);
+        watching.push((forged.as_str().to_owned(), String::from("0000000000000000")));
 
-        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(
+            subscribing(&name, &id, &watching).await,
+            StatusCode::NO_CONTENT
+        );
 
         let registry = connections().lock().expect("the lock is not poisoned");
         let topics = &registry.get(&id).expect("the connection is open").topics;
@@ -711,17 +756,42 @@ mod tests {
         );
     }
 
+    /// A token proves the browser presenting it was served the fragment, so a
+    /// pair lifted out of somebody else's page, by a screenshot or a shared
+    /// profile, subscribes to nothing at all.
+    #[tokio::test]
+    async fn a_topic_somebody_else_was_served_is_dropped() {
+        let (id, _receiver) = open(None, HashSet::new());
+
+        let topic = Topic::new("presence", &(44_u32,));
+        let (_theirs, stolen) = browser(&[&topic]);
+        let (mine, _nothing) = browser(&[]);
+
+        assert_eq!(
+            subscribing(&mine, &id, &stolen).await,
+            StatusCode::NO_CONTENT
+        );
+
+        let registry = connections().lock().expect("the lock is not poisoned");
+        assert!(
+            !registry
+                .get(&id)
+                .expect("the connection is open")
+                .topics
+                .contains(topic.as_str())
+        );
+    }
+
     /// A guessed id is indistinguishable from a stream that has since dropped,
     /// and both get the same answer rather than a connection conjured for them.
     #[tokio::test]
     async fn an_unknown_connection_is_told_to_reconnect() {
-        let status = subscribe(Json(Subscription {
-            connection: String::from("never-opened"),
-            topics: Vec::new(),
-        }))
-        .await;
+        let (name, watching) = browser(&[]);
 
-        assert_eq!(status, StatusCode::GONE);
+        assert_eq!(
+            subscribing(&name, "never-opened", &watching).await,
+            StatusCode::GONE
+        );
     }
 
     // ---- who a connection is ------------------------------------------------
@@ -756,14 +826,12 @@ mod tests {
         // connection was viewer 3, handed back as a topic with a real token.
         let claimed = identity::key(&Viewer(3));
         let topic = Topic::from_raw(&claimed);
+        let (name, watching) = browser(&[&topic]);
 
-        let status = subscribe(Json(Subscription {
-            connection: id.clone(),
-            topics: vec![(claimed.clone(), topic.token())],
-        }))
-        .await;
-
-        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(
+            subscribing(&name, &id, &watching).await,
+            StatusCode::NO_CONTENT
+        );
         assert!(!connected(&Viewer(3)));
 
         let registry = connections().lock().expect("the lock is not poisoned");
@@ -883,14 +951,12 @@ mod tests {
 
         let claimed = identity::key(&Viewer(10));
         let topic = Topic::from_raw(&claimed);
+        let (name, watching) = browser(&[&topic]);
 
-        let status = subscribe(Json(Subscription {
-            connection: id,
-            topics: vec![(claimed, topic.token())],
-        }))
-        .await;
-
-        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert_eq!(
+            subscribing(&name, &id, &watching).await,
+            StatusCode::NO_CONTENT
+        );
 
         send(&Viewer(10), &crate::Effect::reload());
         assert_eq!(received(&mut receiver), 0);

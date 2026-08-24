@@ -219,6 +219,13 @@ and [optimistic
 updates](../site/content/calling-the-server.md#optimistic-updates) rests on the
 patch being the thing that corrects it.
 
+`data-token` is now the one attribute a morph will not take off, and it is not
+the precedent this wants. It survives because a publish has no viewer to grant a
+subscription to, so the markup that arrives is *silent* about it rather than
+disagreeing, and a page that does carry one still wins. A busy marker on an
+element a patch rewrote is a real disagreement between two writers, which is the
+ownership this entry is about and that one does not need.
+
 ## Nothing disables a busy control
 
 `aria-busy` is advisory. It says work is happening and prevents none of it, so a

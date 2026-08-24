@@ -824,6 +824,50 @@ test("a tab subscribes with the id the server gave it", async () => {
     assert.deepEqual(request.body.topics, [["presence-1", "token-for-presence-1"]]);
 });
 
+// A publish renders outside every request, so it has no viewer to bind a token
+// to and its patch says nothing about one. The grant was made when the page was
+// served and a patch has never been able to make one, so the element keeps what
+// it has: without this a fragment unsubscribes itself the first time it
+// updates, and the second publish reaches nobody.
+test("a patch that does not restate the grant leaves the subscription alone", async () => {
+    const window = boot(live());
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    stream.emit("patch", `<exos-live id="presence-1"><span>online</span></exos-live>`);
+    await settled();
+
+    const element = window.document.getElementById("presence-1");
+
+    assert.equal(element.dataset.token, "token-for-presence-1");
+    assert.equal(element.textContent, "online", "and the content is the patch's");
+    assert.equal(window.transport.requests.length, 1, "so it has nothing new to say");
+});
+
+// The other half, and the reason this is not simply an attribute the client
+// owns. A rotated session invalidates every outstanding token, the runtime
+// fetches the page back, and the grants it comes back with are the ones that
+// verify: markup that carries a token has to win.
+test("markup that carries a grant replaces the one on the element", async () => {
+    const window = boot(live());
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    stream.emit("patch", `<exos-live id="presence-1" data-token="rotated"></exos-live>`);
+    await settled();
+
+    // Twice: the attribute change is what schedules the sync, and the request
+    // it sends is a turn behind it.
+    await settled();
+
+    assert.equal(window.document.getElementById("presence-1").dataset.token, "rotated");
+    assert.deepEqual(window.transport.requests.at(-1).body.topics, [["presence-1", "rotated"]]);
+});
+
 test("a reconnect subscribes again under the new id", async () => {
     const window = boot(live());
     const [stream] = window.transport.streams;

@@ -79,12 +79,27 @@ stderr: right for `cargo run`, where a restart drops every stream anyway, and
 wrong for a deploy, where two instances would never agree and a restart would
 invalidate every token in flight.
 
-What the token proves is that this server rendered this topic, which is not yet
-that *this viewer* was served it. Anywhere an id and token escape a page
-together, by a screenshot or a shared browser profile, the holder can
-subscribe. Binding the tag to a session id is what closes that. The session to
-bind it to now exists, and the binding itself does not; see
-[the roadmap](https://github.com/MDM23/exos/blob/main/docs/roadmap/sessions-and-identity.md).
+What is signed is the topic **and the session it was served to**, so the token
+proves this viewer was shown this fragment rather than merely that this server
+rendered it once. An id and a token that escape a page together, by a
+screenshot or a shared browser profile, are worth nothing to whoever finds
+them: presented by another browser they verify against a different name and the
+topic is dropped. Three things follow.
+
+Being served a live fragment starts a session. That is a cookie and nothing
+else, since exos keeps no store, so an anonymous visitor costs a header rather
+than a row. A browser that refuses cookies has nothing to bind to and receives
+no live updates.
+
+Signing out or rotating invalidates every token in flight, which is what should
+happen: `rotate` and `end` already close that browser's streams, the runtime
+reconnects and fetches the page back, and the grants it comes back with are the
+ones that verify.
+
+A published patch carries no token, because a publish renders outside every
+request and there is no viewer there to grant anything to. It does not need
+one: the grant was made when the page was served, a patch has never been able
+to make one, and the client keeps what the element already holds.
 
 ## Who a stream belongs to
 

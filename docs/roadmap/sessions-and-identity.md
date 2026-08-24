@@ -2,14 +2,15 @@
 
 Somewhere to put who this is, and a way to reach them.
 
-Status: mostly built, and narrower than it was drawn. Stages 1 to 5 are done and
-so is the key material stage 6 asks for. exos names the browser and carries the
-name in a cookie; what a name *means* turned out to belong to the application,
-and [stage 3](#stage-3-and-no-store-at-all) is the argument for that, made after
-a session store was built and then taken out again.
+Status: built, and narrower than it was drawn. Stages 1 to 6 are done. exos
+names the browser and carries the name in a cookie; what a name *means* turned
+out to belong to the application, and [stage 3](#stage-3-and-no-store-at-all) is
+the argument for that, made after a session store was built and then taken out
+again. A live subscription now proves the browser presenting it was served the
+fragment, which was the README's first listed gap.
 
-What is left is binding the live token, which is the README's first listed gap
-and turned out to be harder than stage 6 thought. Each stage below says where it
+What is left is [stage 7](#stage-7-csrf-which-is-mostly-already-handled), which
+argues that most of it should stay unbuilt. Each stage below says where it
 stands.
 
 ## Three questions, one mechanism
@@ -402,57 +403,82 @@ right for `cargo run` and wrong for everything else. The dependency cost landed
 as predicted: `hmac`, `subtle` and `getrandom`, with `sha2` already in the
 workspace for content hashing.
 
-**What is not built is the binding**, which is the half that closes the
-README's first gap. Today a token is the MAC of the topic id alone, so it
-proves this server rendered the fragment and not that this viewer was served
-it. The message gains the session id:
+**The binding is built**, and it closes the README's first gap. A token used to
+be the MAC of the topic id alone, so it proved this server rendered the fragment
+and not that this viewer was served it. The message gained the session id:
 
 ```text
 token = HMAC-SHA256(subkey("live-token"), topic_id || session_id)[..16]
 ```
 
-Verification at `/_exos/subscribe` gains the session id, which it has, because
-the request carries the cookie. Three things follow. Rendering a live fragment
-calls `session().start()`, so an anonymous visitor served one gets a name, which
-is now a cookie and nothing else and therefore genuinely free. Rotation
-invalidates outstanding subscriptions, which is stage 4's `reload`. And caching
-does not suffer, because [`Page`](../../crates/exos/src/response.rs) already
-answers `no-cache, private`.
+Verification at `/_exos/subscribe` reads the session the request carries, so a
+pair lifted out of somebody else's page verifies against a different name and
+the topic is dropped. Three things follow, as this section always said they
+would. Rendering a live fragment calls `session().start()`, so an anonymous
+visitor served one gets a name, which is a cookie and nothing else and therefore
+genuinely free. Rotation invalidates outstanding subscriptions, which is what
+stage 4's `reload` is for. And caching does not suffer, because
+[`Page`](../../crates/exos/src/response.rs) already answers `no-cache, private`.
 
-This used to say it was a small change to
-[`Topic::token`](../../crates/exos/src/live.rs) and its verifier, waiting only
-on a session id to put in it. The session id now exists and the change is not
-small, because of something neither document had noticed.
+**What made it more than an afternoon is that `publish` renders outside any
+request.** It calls [`Fragment::to_markup`](../../crates/exos/src/live.rs),
+which wrote the `data-token` attribute into the patch it pushes, and it is
+called from background jobs and from handlers acting on somebody else's behalf.
+There is no session there, and `session()` panics outside a request by design.
 
-**`publish` renders a fragment outside any request.** It calls
-[`Fragment::to_markup`](../../crates/exos/src/live.rs), which writes the
-`data-token` attribute into the patch it pushes, and it is called from
-background jobs and from handlers acting on somebody else's behalf. There is no
-session there to bind a token to, and `session()` panics outside a request by
-design. So a token that depends on the viewer cannot be produced on the publish
-path at all, and the patch that arrives would carry a token for the wrong
-session or for none.
+Three ways out were drawn: the morph preserving the attribute, `publish` sending
+the contents without the wrapper, and a token bound to the connection instead.
+The second was called the likely answer and the first was called the cheap one
+that makes the client responsible for a security property.
 
-Three ways out, in the order they are worth thinking about.
+**What was built is the first, and the objection to it was wrong.** The morph
+never removes `data-token`, and markup that carries one overwrites it. The
+client is not being trusted with anything: a token is checked by HMAC on the
+server, and a browser that edits its own DOM can write whatever it likes there
+either way. What the rule actually says is that a patch is not a grant, which
+is the same sentence the second option was reaching for, without a wire format
+change, a new step, or `applyPatch` learning to address the inside of an
+element.
 
-- **The morph preserves `data-token`.** A published patch keeps whatever token
-  the element already carries, on the grounds that the subscription it proves
-  was granted at render time and a patch is not a new grant. Cheapest, and it
-  makes the client's morph responsible for a security property, which is
-  precisely the sort of thing the [loose ends](loose-ends.md) entry on morphing
-  says is expensive to move into a callback.
-- **`publish` sends the markup without the wrapper**, and the client patches the
-  contents of `<exos-live>` rather than replacing it. Arguably more correct
-  anyway: the wrapper is the subscription, the fragment is the content, and a
-  patch has never had a reason to restate the former.
-- **A per-connection token.** The subscription is already checked against a
-  connection the server named, so the tag could bind to the connection id rather
-  than to the session, which is a thing the publish path also does not have but
-  the subscribe path does.
+The one thing the second option had over it is that a token cannot be replaced
+by a patch at all. That is not wanted: a rotated session has to be able to hand
+its tabs new grants, and it does so through the page the runtime fetches back.
 
-The second looks right and is a change to the wire format, the client and
-`to_markup` together. It should be decided before it is written, and it is the
-reason this stage is still open rather than an afternoon's work.
+### What it found
+
+**A rule about removal needs the other half spelled out.** "The client keeps the
+token" and "the client owns the token" are one word apart and the second is a
+tab that can never be re-granted. A rotation ends the streams, the runtime
+repairs the page, and the fresh tokens in it have to win, so the morph writes
+what arrives and only declines to take away what does not.
+
+**The observer was watching the wrong thing for this.** Subscriptions are synced
+on a mutation, and the observer took `childList` only. A page that comes back
+after a rotation with identical markup and fresh tokens produces no node
+mutation at all, so the tab would go on presenting grants the server had stopped
+honouring, silently, until something else on the page happened to change. It now
+watches `data-token` as well, which is the one attribute a subscription is made
+of. A client test fails without it.
+
+**The mask that keeps a fragment viewer-independent is the same rule.** A
+fragment inside a fragment renders through
+[`detached`](../../crates/exos/src/scope.rs), so it cannot read the session and
+carries no token either. That looked like a regression and is the correct
+answer: a nested fragment's markup is published to everybody watching the outer
+topic, so a token in it would be one viewer's grant handed to all of them.
+
+**A fragment has two halves and only now needed telling apart.** Two viewers are
+served the same content under different grants, so the examples' "it says the
+same thing to everybody" tests stopped holding on `to_markup` and now hold on
+[`Fragment::markup`](../../crates/exos/src/live.rs), with the wrapper asserted
+to differ. The invariant did not change; what changed is that the wrapper is no
+longer part of what the topic determines.
+
+**A token can only be had by being served one**, which is what a test has to do
+too. [`tests/directed.rs`](../../crates/exos/tests/directed.rs) fetches a route
+that renders the wrapper and reads the token out of the markup, carrying its
+cookie the whole way, because there is no way in from outside the crate and
+there should not be.
 
 ## Stage 7: CSRF, which is mostly already handled
 

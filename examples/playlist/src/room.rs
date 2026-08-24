@@ -174,9 +174,11 @@ mod tests {
     use super::*;
     use crate::tests::seeded;
 
+    /// The room as a browser is served it. In a request, because the token in
+    /// the wrapper is bound to whoever the request is for.
     fn markup() -> String {
         seeded();
-        room().to_markup().into_string()
+        exos::with_scope(|| room().to_markup().into_string())
     }
 
     /// Being able to subscribe is the authorization, so the wrapper carries a
@@ -190,10 +192,14 @@ mod tests {
     }
 
     /// A topic has to completely determine its content, so nothing in here may
-    /// depend on who is reading it.
+    /// depend on who is reading it. The wrapper is the exception and the only
+    /// one: its token is this browser's grant to watch the topic.
     #[test]
     fn the_room_says_the_same_thing_to_everybody() {
-        assert_eq!(markup(), markup());
+        seeded();
+
+        assert_eq!(room().markup(), room().markup());
+        assert_ne!(markup(), markup(), "and the grant is one browser's");
     }
 
     /// The blur travels in the page, and the sleeve over it opts out of being

@@ -65,11 +65,16 @@
 //!
 //! Nothing is sent until something asks for an id. A crawler, a health check or
 //! an anonymous read gets no `Set-Cookie`, and a browser that already holds the
-//! cookie is not sent it again.
+//! cookie is not sent it again. Rendering a [live](crate::live) fragment does
+//! ask, because the subscription in its wrapper is bound to the browser it was
+//! served to, so a page with one on it names whoever looks at it.
 //!
 //! One edge worth knowing: a session started *during* a stream cannot set a
 //! cookie, because those headers went out when the stream opened. Streams
-//! should read the id and never start one.
+//! should read the id and never start one, and the same holds for a live
+//! fragment rendered into an [`EffectStream`](crate::EffectStream): the name it
+//! starts never reaches the browser, so the token it binds to that name can
+//! never be presented.
 //!
 //! # A name that changes takes this browser's streams with it
 //!
@@ -105,7 +110,7 @@ use axum::{
     response::Response,
 };
 
-use crate::hex;
+use crate::{Scope, hex};
 
 // -----------------------------------------------------------------------------
 //                                  THE SESSION
@@ -187,8 +192,9 @@ pub struct Session(Arc<State>);
 impl Session {
     /// The name the browser sent, if it sent one shaped like a name.
     ///
-    /// `None` is an anonymous visit. Asking does not start a session, so a page
-    /// that only looks costs no cookie.
+    /// `None` is an anonymous visit. Asking does not start a session, so
+    /// looking costs no cookie unless something on the page asks for one, which
+    /// rendering a [live](crate::live) fragment does.
     #[must_use]
     pub fn id(&self) -> Option<Id> {
         self.inner().id.clone()
@@ -315,8 +321,21 @@ impl core::fmt::Debug for Session {
 /// [`scope`](crate::scope) says why.
 #[must_use]
 pub fn session() -> Session {
-    let scope = crate::scope();
+    of(&crate::scope())
+}
 
+/// The session of the request being served, where there is one.
+///
+/// What [`session`] panics about, answered instead. A live fragment's wrapper
+/// renders in a request, inside the mask a fragment's body renders under, and
+/// again from a publish that has no request at all, and the token it carries
+/// has to be produced in all three; see [`scope::current`](crate::scope).
+pub(crate) fn current() -> Option<Session> {
+    crate::scope::current().as_ref().map(of)
+}
+
+/// The session held in a scope, put there if this is the first ask.
+fn of(scope: &Scope) -> Session {
     if let Some(state) = scope.get::<State>() {
         return Session(state);
     }

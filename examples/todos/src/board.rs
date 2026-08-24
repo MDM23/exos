@@ -145,9 +145,11 @@ mod tests {
     use super::*;
     use crate::tests::seed;
 
+    /// The list as a browser is served it. In a request, because the token in
+    /// the wrapper is bound to whoever the request is for.
     fn markup(filter: Filter) -> String {
         seed();
-        board(filter).to_markup().into_string()
+        exos::with_scope(|| board(filter).to_markup().into_string())
     }
 
     /// Being able to subscribe is the authorization, so the wrapper carries a

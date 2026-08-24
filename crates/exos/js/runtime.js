@@ -748,7 +748,17 @@
         document.dispatchEvent(new CustomEvent("exos:mutated"));
     });
 
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    // Nodes, and the one attribute a subscription is made of. What this tab
+    // watches depends on which fragments are on the page and on the grant each
+    // of them carries, so a page that comes back with fresh tokens and
+    // otherwise identical markup produces no node mutation at all, and without
+    // the filter the tab would go on presenting grants the server has stopped
+    // honouring. That is precisely what a rotated session sends.
+    observer.observe(document.documentElement, {
+        attributeFilter: ["data-token"],
+        childList: true,
+        subtree: true,
+    });
 
     // -------------------------------------------------------------------------
     //                                  EVENTS
@@ -1119,6 +1129,13 @@
         }
 
         for (const { name } of [...from.attributes]) {
+            // A subscription is granted by a request and a patch is not one: a
+            // publish renders outside every request, so it has no viewer to
+            // bind a token to and says nothing about one. Markup that does
+            // carry a token is a fresh grant and won above, which is what
+            // makes a rotated session pick the new one up.
+            if (name === "data-token") continue;
+
             if (!to.hasAttribute(name)) from.removeAttribute(name);
         }
 

@@ -256,9 +256,11 @@ mod tests {
         tests::{body, claimed, request, seeded},
     };
 
+    /// A lot as a browser is served it. In a request, because the token in the
+    /// wrapper is bound to whoever the request is for.
     fn markup(id: u32) -> String {
         seeded();
-        lot(id, Role::Bidder).to_markup().into_string()
+        exos::with_scope(|| lot(id, Role::Bidder).to_markup().into_string())
     }
 
     /// One open tab, past its greeting and subscribed to nothing.
@@ -354,9 +356,16 @@ mod tests {
     /// cannot depend on who is reading it, or on anything else that could
     /// differ between two renders. Everything viewer-shaped in this example
     /// travels as a directed effect instead.
+    ///
+    /// The wrapper is the exception, and it is the only one: the token in it
+    /// is this browser's grant to watch the topic, so two viewers are served
+    /// the same lot with a different right to subscribe to it.
     #[test]
     fn a_lot_says_the_same_thing_to_everybody() {
-        assert_eq!(markup(1), markup(1));
+        seeded();
+
+        assert_eq!(lot(1, Role::Bidder).markup(), lot(1, Role::Bidder).markup());
+        assert_ne!(markup(1), markup(1), "and the grant is one browser's");
     }
 
     #[test]

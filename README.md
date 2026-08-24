@@ -159,12 +159,6 @@ build with the oldest supported compiler.
 Early. The shape is settled and the pieces work together, but this has not
 carried a real application yet. Known gaps, roughly in priority order:
 
-- **Live tokens are not bound to a viewer.** `Topic::token` is HMAC-SHA256 under
-  the key `exos::keys` configures, so it proves this server rendered the
-  fragment. It does not prove *this* viewer was served it. The session id to
-  bind the tag to now exists; what is left is that `publish` renders a fragment
-  outside any request, so where the token comes from there has to be settled
-  first.
 - **A model is sent whole or not at all.** The generated caller has no way to
   send one field, so a rule only the server can answer cannot be checked while
   the rest of the form is still empty: it waits for the submit. Repeating
@@ -193,8 +187,9 @@ carried a real application yet. Known gaps, roughly in priority order:
 
 Where each of those is going is written down in [docs/roadmap](docs/roadmap):
 [sessions and identity](docs/roadmap/sessions-and-identity.md) is the one most
-of the others wait on and now names both the browser and, on a live stream, who
-it belongs to, [directed effects](docs/roadmap/directed-effects.md) is built as
+of the others waited on and is now built, so a live subscription proves the
+browser presenting it was served the fragment,
+[directed effects](docs/roadmap/directed-effects.md) is built as
 far as pushing an effect to a person, [forms](docs/roadmap/forms.md) is built as
 far as rules that answer on both sides and calls that wait for the typing to
 stop, and [loose

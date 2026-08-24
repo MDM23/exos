@@ -16,8 +16,9 @@ use std::{
 };
 
 use axum::{
-    body::{Body, BodyDataStream},
-    http::{Request, StatusCode, header},
+    body::{Body, BodyDataStream, to_bytes},
+    extract::Path,
+    http::{Request, Response, StatusCode, header},
 };
 use exos::{Audience, Audiences, Effect, Fragment, Id, Markup, Topic, data, publish, send};
 use tokio::time::timeout;
@@ -68,10 +69,20 @@ fn seeded() {
     });
 }
 
-/// One open tab: the connection the server named it, and the events still to
-/// come. Dropping it closes the stream, so a test holds one for as long as it
-/// expects anything.
+/// Serves the wrapper for one topic, which is the only way a browser comes by
+/// a token: it is minted in a request and bound to the session that request
+/// carried. Nothing outside the server can produce one, so a test gets its
+/// tokens the way a page does rather than around the side.
+#[exos::get("/served/{topic}")]
+async fn serve(Path(topic): Path<String>) -> Effect {
+    Effect::patch(Fragment::new(Topic::from_raw(&topic), Markup::default()).to_markup())
+}
+
+/// One open tab: the browser it belongs to, the connection the server named
+/// it, and the events still to come. Dropping it closes the stream, so a test
+/// holds one for as long as it expects anything.
 struct Tab {
+    name: Id,
     connection: String,
     events: BodyDataStream,
 }
@@ -110,7 +121,11 @@ impl Tab {
             .unwrap_or_else(|| panic!("the greeting names the connection, got {greeting:?}"))
             .to_owned();
 
-        Self { connection, events }
+        Self {
+            name,
+            connection,
+            events,
+        }
     }
 
     /// The next event, as the browser would read it off the wire.
@@ -125,11 +140,11 @@ impl Tab {
             r#"{{"connection":"{}","topics":[["{}","{}"]]}}"#,
             self.connection,
             topic.as_str(),
-            topic.token()
+            self.served(topic).await
         );
 
-        let response = exos::app()
-            .oneshot(
+        let response = self
+            .request(
                 Request::builder()
                     .method("POST")
                     .uri("/_exos/subscribe")
@@ -137,10 +152,49 @@ impl Tab {
                     .body(Body::from(body))
                     .expect("a valid request"),
             )
-            .await
-            .expect("the router answers");
+            .await;
 
         assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    }
+
+    /// The token this browser was served for a topic, read out of the markup
+    /// exactly as the runtime reads it off the element.
+    async fn served(&self, topic: &Topic) -> String {
+        let response = self
+            .request(
+                Request::builder()
+                    .uri(format!("/served/{}", topic.as_str()))
+                    .body(Body::empty())
+                    .expect("a valid request"),
+            )
+            .await;
+
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("the body is whole");
+
+        let markup = String::from_utf8(body.to_vec()).expect("the markup is text");
+
+        markup
+            .split_once("data-token=\"")
+            .and_then(|(_, rest)| rest.split_once('"'))
+            .map(|(token, _)| token.to_owned())
+            .unwrap_or_else(|| panic!("a served fragment carries a token, got {markup:?}"))
+    }
+
+    /// A request from this browser, which means one carrying its cookie.
+    async fn request(&self, mut request: Request<Body>) -> Response<Body> {
+        request.headers_mut().insert(
+            header::COOKIE,
+            format!("exos={}", self.name)
+                .parse()
+                .expect("a name is a header value"),
+        );
+
+        exos::app()
+            .oneshot(request)
+            .await
+            .expect("the router answers")
     }
 }
 

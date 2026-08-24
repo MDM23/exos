@@ -5,13 +5,6 @@ carried a real application yet.
 
 Known gaps, roughly in priority order.
 
-**Live tokens are not bound to a viewer.** `Topic::token` is HMAC-SHA256 under
-the key `exos::keys` configures, so it proves this server rendered the
-fragment. It does not prove *this* viewer was served it. The session id to bind
-the tag to now exists; what is left is that `publish` renders a fragment
-outside any request, so where the token comes from there has to be settled
-first. See [authorization is structural](live-fragments#authorization-is-structural).
-
 **A message cannot reach the browser.** [`locales!`](languages) declares an
 application's languages and `messages!` declares its text, as ordinary Rust
 functions whose arms the compiler holds to every language, so a locale nobody

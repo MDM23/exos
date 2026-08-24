@@ -149,6 +149,21 @@ pub fn scope() -> Scope {
     }
 }
 
+/// The scope of the request being served, where there is one.
+///
+/// The two panics above are the right answer for anything an application
+/// writes, and the wrong one for the token a live fragment's wrapper carries:
+/// that renders in all three states, and the two it cannot read a request in
+/// are the two where there is no viewer to bind a subscription to. Answering
+/// with `None` is what lets the same code say so rather than choosing between
+/// a panic and a token bound to nobody.
+pub(crate) fn current() -> Option<Scope> {
+    match STATE.try_with(Clone::clone) {
+        Ok(State::Request(store)) => Some(Scope(store)),
+        Ok(State::Masked) | Err(_) => None,
+    }
+}
+
 /// Runs `body` in a request scope of its own.
 ///
 /// This is what the layer does for a request, exposed because a test that

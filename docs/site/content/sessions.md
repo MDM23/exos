@@ -138,7 +138,9 @@ async fn add(Json(item): Json<Item>) -> Result<Effect, Error> {
 ```
 
 It is idempotent, so a visitor who already has a name keeps it. `id` never
-mints, so a page that only looks costs no cookie.
+mints, so looking costs no cookie unless something on the page asks for one.
+Rendering a [live fragment](live-fragments) does ask: the subscription in its
+wrapper is bound to the browser it was served to.
 
 ## What is in the cookie
 
@@ -162,7 +164,8 @@ as a secure context, so `cargo run` is unaffected.
 
 Nothing is sent until something asks for a name, and a browser that already has
 the cookie is not sent it again. So an anonymous read, a crawler and a health
-check all leave the response untouched.
+check all leave the response untouched, unless the page they read carries a
+live fragment.
 
 ## Cross-site requests
 
