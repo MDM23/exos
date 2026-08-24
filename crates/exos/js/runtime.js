@@ -856,6 +856,34 @@
         document.dispatchEvent(new CustomEvent(`exos:${step}`, { detail }));
     }
 
+    // Who is waiting on what, so that aria-busy is owned the way a binding owns
+    // what it writes: `reapply` puts it back after a patch, and a request that
+    // ends does not take it off an element another request is still on. A count
+    // rather than a flag, because a debounced field and its form can both be in
+    // flight at once and the first to answer is not the one that finishes it.
+    const waiting = new WeakMap(); // element -> requests in flight
+
+    function busy(el) {
+        if (!el) return;
+
+        waiting.set(el, (waiting.get(el) ?? 0) + 1);
+        el.setAttribute("aria-busy", "true");
+    }
+
+    function idle(el) {
+        if (!el) return;
+
+        const left = (waiting.get(el) ?? 1) - 1;
+
+        if (left > 0) {
+            waiting.set(el, left);
+            return;
+        }
+
+        waiting.delete(el);
+        el.removeAttribute("aria-busy");
+    }
+
     async function request(method, url, el, data) {
         // Claimed synchronously, before anything awaits, so a call made under a
         // debounce key is stamped with the turn it went out on.
@@ -884,7 +912,7 @@
             }
         }
 
-        el?.setAttribute("aria-busy", "true");
+        busy(el);
         announce("busy", { kind: "request", method, url });
 
         try {
@@ -943,7 +971,7 @@
 
             return response;
         } finally {
-            el?.removeAttribute("aria-busy");
+            idle(el);
             announce("idle", { kind: "request", method, url });
         }
     }
@@ -1116,7 +1144,16 @@
     // text, attributes and properties alike. A speculative write from attr_now
     // is deliberately not in that set. It has no second copy to disagree with
     // the patch, which is the whole reason it is not a signal.
+    //
+    // A request in flight owns aria-busy for the same reason: the request path
+    // writes it and the incoming markup cannot know it, so a patch landing
+    // mid-request would take the spinner away, leave the button looking ready
+    // and hand the `finally` an attribute that is already gone. Owned by what
+    // is still waiting rather than by what is on the element, so a marker
+    // cannot outlive the request that set it either.
     function reapply(el) {
+        if (waiting.has(el)) el.setAttribute("aria-busy", "true");
+
         const effects = bound.get(el);
         if (!effects) return;
 

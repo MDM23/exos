@@ -198,33 +198,39 @@ both. Three things came out of writing it.
 
 ## A busy marker is taken off mid-request
 
-[runtime.js](../../crates/exos/js/runtime.js) sets `aria-busy` on the element an
-action was recorded on before the fetch and removes it in a `finally`, so an
-indicator can say where the work is happening and a request that failed cannot
-leave the page looking busy for good. `syncAttributes` then takes off whatever
-the incoming markup does not carry, and `aria-busy` is written by the request
-path rather than by a binding, so it is not in the set `reapply` puts back.
+**Done**, in [runtime.js](../../crates/exos/js/runtime.js). `aria-busy` was set
+on the element an action was recorded on before the fetch and removed in a
+`finally`, and nothing else on the page knew it was there. `syncAttributes`
+takes off whatever the incoming markup does not carry, and the request path
+writes this rather than a binding, so it was not in the set `reapply` puts back:
+a patch landing over that element while its own request was in flight took the
+marker with it, the spinner went, the button looked ready again, and the
+`finally` afterwards removed an attribute that was already gone. It happened
+most readily where it was worst, on a page whose live fragments publish while
+somebody is clicking.
 
-A patch landing over that element while its own request is still in flight
-therefore takes the marker with it: the spinner goes, the button looks ready
-again, and the `finally` afterwards removes an attribute that is already gone.
-It is the same ownership bug the comment above `reapply` describes, one category
-further out, and it happens most readily where it is worst, on a page whose live
-fragments publish while somebody is clicking.
+The marker is owned now, the way a binding's writes are, and the ownership is
+held off the DOM rather than in it: a `WeakMap` of how many requests are waiting
+on each element, which `reapply` reads. Three things came out of writing it.
 
-The fix is to make the request path's marker owned the way a binding's writes
-are. What it must not become is a general rule that the client's attributes
-survive a patch: a speculative `attr_now` write has deliberately no second copy,
-and [optimistic
-updates](../site/content/calling-the-server.md#optimistic-updates) rests on the
-patch being the thing that corrects it.
-
-`data-token` is now the one attribute a morph will not take off, and it is not
-the precedent this wants. It survives because a publish has no viewer to grant a
-subscription to, so the markup that arrives is *silent* about it rather than
-disagreeing, and a page that does carry one still wins. A busy marker on an
-element a patch rewrote is a real disagreement between two writers, which is the
-ownership this entry is about and that one does not need.
+- **Counted rather than flagged.** A debounced field and the form around it can
+  both be in flight on one element, and the first to answer was taking the
+  marker off the other. Owning it without counting would have left that half of
+  the bug in place, one await further along.
+- **What is waiting owns it, not what is on the element.** `reapply` only puts
+  the attribute back, so markup that arrives carrying `aria-busy` still stands
+  where exos is waiting for nothing, and a marker cannot outlive the request
+  that set it. That is the difference from `data-token`, which survives a morph
+  by being skipped: a token is something a publish is *silent* about, and a busy
+  marker on an element a patch rewrote is a real disagreement between two
+  writers.
+- **One attribute, not a rule about attributes.** The client's writes do not
+  generally survive a patch, and must not start to: a speculative `attr_now`
+  write has deliberately no second copy, and [optimistic
+  updates](../site/content/calling-the-server.md#optimistic-updates) rests on
+  the patch being the thing that corrects it. What earns this one its place is
+  that there is something to name as the owner for exactly as long as it is
+  true.
 
 ## Nothing disables a busy control
 

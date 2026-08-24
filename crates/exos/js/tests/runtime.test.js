@@ -542,6 +542,59 @@ test("html arriving with a failure is left where it is", async () => {
     assert.equal(window.document.getElementById("slot").textContent, "before");
 });
 
+// aria-busy is written by the request path rather than by a binding, so it was
+// in nothing `reapply` puts back and the attribute sync took it off an element
+// whose own request was still in flight: the spinner went, the button looked
+// ready again, and the `finally` afterwards removed an attribute that was
+// already gone. It happens most readily where it is worst, on a page whose live
+// fragments publish while somebody is clicking.
+
+/** A button that posts, and the same markup a patch lands with. */
+const acting = `<div id="host"><button id="go" data-on-click="post('/drafts')">x</button></div>`;
+
+test("a patch landing mid-request leaves the busy marker on", async () => {
+    const window = boot(acting);
+    const go = window.document.getElementById("go");
+
+    go.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    assert.equal(go.getAttribute("aria-busy"), "true", "marked before anything awaited");
+
+    window.exos.applyPatch(acting);
+    assert.equal(go.getAttribute("aria-busy"), "true", "and the patch did not take it");
+
+    await settled();
+    await settled();
+
+    assert.ok(!go.hasAttribute("aria-busy"), "taken off once the reply landed");
+});
+
+// The same ownership one step on: a marker belongs to the requests that are
+// waiting, not to whichever of them answers first. A debounced field and the
+// form around it are both in flight on one element often enough.
+test("the first of two requests to answer does not unmark the element", async () => {
+    const window = boot(acting);
+    const go = window.document.getElementById("go");
+    const answers = [];
+
+    window.fetch = () => new Promise((resolve) => answers.push(resolve));
+
+    const click = () => go.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const answer = () => answers.shift()({ ok: true, status: 204, headers: { get: () => null } });
+
+    click();
+    click();
+
+    answer();
+    await settled();
+
+    assert.equal(go.getAttribute("aria-busy"), "true", "the other one is still waiting");
+
+    answer();
+    await settled();
+
+    assert.ok(!go.hasAttribute("aria-busy"), "and gone once nothing is");
+});
+
 // A repeating group is a <template> and however many rows are beside it. The
 // whole point is that a row needs no name: a clone is its own signal scope, so
 // adding one is a DOM copy and the submission reads them back out at the end.
