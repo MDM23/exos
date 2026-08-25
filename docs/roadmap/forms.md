@@ -815,9 +815,12 @@ happens to be the one that knows.
 
 - **Whether a message may vary with what is typed.** A client-side message is
   baked at render time, so "at least 3 characters" is free while "3 characters
-  too many" needs a count that only the browser has. That is exactly the
-  crossing [localization](localization.md) still owes, so client-side messages
-  are fixed strings until it lands, and this is the second thing that wants it.
+  too many" needs a count that only the browser has. The crossing
+  [localization](localization.md) owed has landed for exactly that shape, and
+  taking it up is now this document's rather than that one's:
+  [`complaints`](../../crates/exos/src/valid.rs) hands back a `String`, so a
+  violation that wants a projected sentence needs a way to say so, and the
+  count it would be about is a length the rule has already measured.
 - **What a form does with a rule it cannot show.** A violation on a field with
   no error element in the template is silent today by construction. A debug
   build should probably say so, the way `Effect::set` already asserts against a

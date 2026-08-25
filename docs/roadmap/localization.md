@@ -2,23 +2,26 @@
 
 Messages defined in Rust, rendered wherever the fact they need is known.
 
-Status: [stage 1](#stage-1-the-locale) and [stage 2](#stage-2-messages) are
-built. `exos::locales!` declares the set and
-generates each language's plural categories, out of the CLDR table
-[exos-cldr](../../crates/exos-cldr) vendors as ordinary source, and a committed
-fixture holds `cargo test` and `npm test` to the same answers. `exos::locale()`
-resolves a request through the scope, `Accept-Language` and the fallback,
-`exos::lang` puts the answer on the document, and a response that read the
-header says so with `Vary`. `exos::messages!` declares the text: a function per
-message, a `match` per language, slots for the sentences with a link in them,
-counts written the way each language writes a number, and rustc holding every
-message to every locale. The shape below, one macro with match-like arms and
-one call site that works on both sides, predates exos: it was settled while the
-framework was still a prototype, and lived in a guide draft that was cut when
-the guide was rewritten against code that existed.
+Status: [stage 1](#stage-1-the-locale), [stage 2](#stage-2-messages) and the
+count half of [stage 3](#stage-3-projecting-a-message) are built.
+`exos::locales!` declares the set and generates each language's plural
+categories, out of the CLDR table [exos-cldr](../../crates/exos-cldr) vendors as
+ordinary source, and a committed fixture holds `cargo test` and `npm test` to
+the same answers. `exos::locale()` resolves a request through the scope,
+`Accept-Language` and the fallback, `exos::lang` puts the answer on the
+document, and a response that read the header says so with `Vary`.
+`exos::messages!` declares the text: a function per message, a `match` per
+language, slots for the sentences with a link in them, counts written the way
+each language writes a number, and rustc holding every message to every locale.
+A message handed an expression rather than a number projects, so a count that
+lives in the browser picks its own sentence out of the variants that crossed
+with the page. The shape below, one macro with match-like arms and one call site
+that works on both sides, predates exos: it was settled while the framework was
+still a prototype, and lived in a guide draft that was cut when the guide was
+rewritten against code that existed.
 
-Stage 3 and stage 5 wait on nothing. [Sessions and
-identity](sessions-and-identity.md) already supplies the one thing they need
+Stage 5 waits on nothing. [Sessions and
+identity](sessions-and-identity.md) already supplies the one thing it needs
 from elsewhere, which is a place for an application to say who a request is,
 and that place is built.
 
@@ -460,8 +463,8 @@ whose translation needs no emphasis still answers with markup.
 
 ## Stage 3: projecting a message
 
-The argument type decides where the message is resolved, which is the whole
-trick and the reason one call site can serve both sides:
+**Done, for a count.** The argument type decides where the message is resolved,
+which is the whole trick and the reason one call site can serve both sides:
 
 ```rust
 items_selected(3)                   // String,     resolved here
@@ -517,6 +520,69 @@ which is better than a sentence that renders its own tags as words.
 
 The composition that does work is to project the text and wrap it at the call
 site, since a wrapper is markup the server already renders.
+
+### What it found
+
+**The argument decides, and one argument is what it can decide about.** A
+count arrives as [`Counted`](../../crates/exos/src/message.rs), whose associated
+type is the answer: a whole number answers `String` and a `Js` answers
+`Js<String>`. That is one type parameter, so it is one count. Two of them could
+be on two sides and a function has one return type, so a message with two keeps
+the signature it had, and so does one with a slot. Neither is a check this
+macro performs: both fall out of the count staying `impl Count` there, and
+[`Count`](../../crates/exos/src/message.rs) carries a
+`diagnostic::on_unimplemented` saying why, so what a call site gets is
+"`Js<u32>` is not a count" and a note rather than a bound nobody asked for.
+
+**A blanket impl was not available, and the reason is worth writing down.**
+`impl<T: Count> Counted for T` beside `impl<T> Counted for Js<T>` is an overlap
+as far as coherence can see, whatever the sealing says, so `Counted` is
+implemented per integer type through the macro that already writes `Count` for
+them. The two are declared together, which is what keeps the list from drifting.
+
+**The two halves are closures rather than a trait of their own.** The half that
+still answers here needs the count typed and the half that crosses needs only
+the expression's source, so a first draft gave the generated code a marker
+struct with two methods. It could not hold a parameter declared as `&str`
+without a lifetime the macro would have to invent. Closures capture instead,
+and what `Counted` hands them is what each side actually needs: the magnitude
+and the count already written for one, the source for the other. That also put
+the number formatting one step earlier, which is why the count reaches a
+projecting message's server half as `__written` rather than being formatted
+inside the arm.
+
+**Only what the browser can change is enumerated, and that fell out.** A server
+dimension is resolved before the categories are walked, because the walk is
+inside the arm the locale and the value already chose. `assigned(Me, count)`
+crosses as the two English sentences about you and neither of the ones about
+somebody else, which is the stage's claim arriving for free rather than as
+machinery.
+
+**A language with nothing to choose between crosses once.** An arm written
+`De { .. }` says the same thing whatever the count is, so walking its categories
+would write the same sentence into the table twice. It crosses as one variant
+under `other`, which is the category every language has and the one the runtime
+falls back to.
+
+**What crosses is parts rather than a placeholder.** The macro writes the
+sentence with a hole where the count goes and the server splits on it, so the
+browser joins the number between the parts. A sentence that writes its count
+twice needs nothing said about how often, and no sentinel reaches a page.
+
+**The table rides out on the element that reads it.** A projection is recorded
+while an attribute block is being evaluated and drained by `Attributes::render`,
+which is the element whose expression reads it. Where it lands turns out not to
+matter: an entry is named by a hash of what it says, so the same sentence on a
+hundred rows is one entry, a patch merges its own by arriving, and nothing has
+to agree on a name across a deploy because a document and its entries always
+travel together.
+
+**Not built, and not missed yet: several client dimensions.** The cross product
+above, and the const assertion that bounds it, wait for a message that wants
+them. What that needs is a type-level or over the parameters, since the answer
+type is `Js<String>` when *any* argument is one, and a key per combination
+rather than per message. `msg` is the helper the runtime gained; `plural` and
+`num` are not there, because nothing generates a call to either.
 
 ## Stage 4: fragments, and rendering outside a request
 

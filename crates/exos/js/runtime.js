@@ -247,7 +247,7 @@
                 "$", "el", "ev",
                 "get", "post", "put", "patch", "del",
                 "attr", "append", "focus", "debounce",
-                "rows", "addRow", "dropRow", "rowError", "dirty",
+                "rows", "addRow", "dropRow", "rowError", "dirty", "msg",
                 statement ? source : `return (${source})`,
             );
         } catch (error) {
@@ -464,7 +464,85 @@
             dropRow,
             rowError,
             (name) => isDirty(el, name),
+            say,
         );
+    }
+
+    // -------------------------------------------------------------------------
+    //                                 MESSAGES
+    // -------------------------------------------------------------------------
+
+    // A message whose count is client state cannot be resolved on the server,
+    // so what crosses is its variants in the one language the page was
+    // rendered in, and the browser picks between them.
+    //
+    // The table is the document's rather than an element's, because the same
+    // sentence on a hundred rows is one entry: an expression is compiled once
+    // per source string, and a variant table written into every row's
+    // attribute would be a table and a compiled function per row.
+
+    const messages = new Map(); // key -> { lang, say: { category: parts } }
+
+    // `Intl` objects are not free to build and a message is read inside an
+    // effect, so the two a language needs are kept once each.
+    const formatters = new Map();
+
+    function formatter(lang) {
+        let held = formatters.get(lang);
+
+        if (!held) {
+            held = {
+                plural: new Intl.PluralRules(lang),
+                number: new Intl.NumberFormat(lang),
+            };
+
+            formatters.set(lang, held);
+        }
+
+        return held;
+    }
+
+    // What an expression reads a projected message as. The key names what the
+    // message says rather than where it came from, so an entry that arrives
+    // twice is the same entry and a patch merges its own without asking.
+    function say(key, count) {
+        const entry = messages.get(key);
+
+        if (!entry) {
+            console.error("[exos] no message:", key);
+            return "";
+        }
+
+        const number = Number(count);
+        const { plural, number: written } = formatter(entry.lang);
+
+        // The category is asked about the magnitude, which is what CLDR's `n`
+        // is and what the server asked its own rules about. A language with
+        // nothing to choose between crossed one variant, under the category
+        // every language has.
+        const parts = entry.say[plural.select(Math.abs(number))] ?? entry.say.other;
+        if (!parts) return "";
+
+        // Joined rather than substituted: the count sits between the parts the
+        // server split the sentence into, so a translation that writes it
+        // twice needs nothing said about how often.
+        return parts.join(written.format(number));
+    }
+
+    // Whatever entries an element arrived carrying, read as it is bound. A
+    // patch brings its own, and they arrive on the element whose expression
+    // reads them, so a sentence and the markup that says it are never apart.
+    function collect(el) {
+        const declared = el.getAttribute("data-messages");
+        if (!declared) return;
+
+        try {
+            for (const [key, entry] of Object.entries(JSON.parse(declared))) {
+                messages.set(key, entry);
+            }
+        } catch (error) {
+            console.error("[exos] bad data-messages:", declared, error);
+        }
     }
 
     // Whether a field has been edited, kept in the store like everything else
@@ -661,7 +739,7 @@
     };
 
     const BINDING_SELECTOR = Object.keys(BINDINGS)
-        .concat("data-signals", "data-signals-root")
+        .concat("data-signals", "data-signals-root", "data-messages")
         .map((name) => `[${name}]`)
         .join(",");
 
@@ -709,6 +787,10 @@
         // model's fields are declared this way wherever they appear, so that
         // the signal a template binds is the one Effect::set writes.
         declare(el, "data-signals-root", (name) => name);
+
+        // Before this element's own effects, since the expression that reads a
+        // projected message is usually on the element that carried it out.
+        collect(el);
 
         for (const [attribute, make] of Object.entries(BINDINGS)) {
             const source = el.getAttribute(attribute);

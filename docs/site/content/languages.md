@@ -227,6 +227,39 @@ let locale: Locale = exos::locale();
 locale.number(1_234_567) // "1.234.567" in German
 ```
 
-What is not built is the crossing: a message whose count comes from client
-state should decide in the browser rather than on the server. [The
-roadmap](https://github.com/MDM23/exos/blob/main/docs/roadmap/localization.md) says what that looks like.
+### A count the browser has
+
+A count that lives in client state cannot be counted here, and the argument is
+the whole of what says so. Handed a number, a message answers with the
+sentence; handed an expression, it answers with one:
+
+```rust
+view! {
+    <p>{ items_selected(3) }</p>
+    <p {text(items_selected(picked.get().len()))}></p>
+}
+```
+
+The second one projects. What rides out with the page is that one message in
+the language the request resolved to, split where the number goes, and the
+browser picks between the variants with `Intl.PluralRules` and writes the
+number with `Intl.NumberFormat`. Both answer out of the same CLDR release the
+server counted with, which a committed fixture holds them to, so a page and its
+runtime never disagree about which sentence a count takes.
+
+Only what the browser can change crosses. `assigned(Assignee::Me, count)`
+resolves the assignee here and enumerates the count alone, so a message is
+projected rather than a catalog. The table is the document's and an entry is
+named by what it says, which is what makes the same sentence on a hundred rows
+one entry and a patch's own entries merge on arrival.
+
+Two messages do not project, and both say so at the call site rather than in
+the browser:
+
+- **One with a slot.** A projected sentence is text, and a slot would have the
+  runtime build elements instead.
+- **One with two counts.** They could be on two sides and a function has one
+  return type, so both stay whole numbers.
+
+Either one, handed an expression, is a build failure that says so: `` `Js<u32>`
+is not a count ``.

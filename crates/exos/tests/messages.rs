@@ -161,6 +161,28 @@ async fn page() -> Page {
     })
 }
 
+/// The same three messages, over a count only the browser has.
+///
+/// Nothing about the call sites says which side they are on: the argument is
+/// an expression rather than a number, and that is the whole of the
+/// difference.
+#[exos::get("/messages/projected")]
+async fn projected() -> Page {
+    let locale: Locale = exos::locale();
+    let picked = exos::signal(Vec::<u32>::new());
+
+    Page(view! {
+        <!DOCTYPE html>
+        <html { exos::lang(locale) }>
+            <body {&picked}>
+                <p id="selected" {exos::text(items_selected(picked.get().len()))}></p>
+                <p id="assigned" {exos::text(assigned(Assignee::Me, picked.get().len()))}></p>
+                <p id="here">{ items_selected(3) }</p>
+            </body>
+        </html>
+    })
+}
+
 async fn body(uri: &str, accepted: &str) -> String {
     let request = Request::builder()
         .method("GET")
@@ -412,4 +434,45 @@ async fn a_message_with_a_slot_reaches_the_document_as_markup() {
         html.contains("<p>Please accept the <a href=\"/terms\">terms of service</a>.</p>"),
         "{html}"
     );
+}
+
+/// A count the browser holds cannot be resolved here, so the message answers
+/// with an expression and its variants ride out with the page.
+#[tokio::test]
+async fn a_projected_message_is_read_out_of_a_table_the_document_carries() {
+    let html = body("/messages/projected", "en").await;
+
+    assert!(html.contains("data-text=\"msg(&quot;m"), "{html}");
+    assert!(html.contains("data-messages="), "{html}");
+
+    // The same message resolved here is still the sentence, in the same
+    // document, from a call site that differs only in its argument.
+    assert!(
+        html.contains("<p id=\"here\">3 items selected</p>"),
+        "{html}"
+    );
+}
+
+/// What crosses is one message in one language: the variants of the count and
+/// nothing else, with the sentence split where the number goes.
+#[tokio::test]
+async fn what_crosses_is_the_variants_of_the_language_the_page_is_in() {
+    let html = body("/messages/projected", "de").await;
+
+    assert!(html.contains("&quot;lang&quot;:&quot;de&quot;"), "{html}");
+    assert!(
+        html.contains("&quot;one&quot;:[&quot;&quot;,&quot; Element"),
+        "{html}"
+    );
+    assert!(!html.contains("item selected"), "{html}");
+}
+
+/// A dimension the server knows is resolved on the way out. `assigned` branches
+/// on who as well as on how many, and only the count is enumerated.
+#[tokio::test]
+async fn a_server_side_dimension_does_not_cross_with_it() {
+    let html = body("/messages/projected", "en").await;
+
+    assert!(html.contains("assigned to you"), "{html}");
+    assert!(!html.contains("assigned to somebody"), "{html}");
 }

@@ -159,16 +159,6 @@ build with the oldest supported compiler.
 Early. The shape is settled and the pieces work together, but this has not
 carried a real application yet. Known gaps, roughly in priority order:
 
-- **A message cannot reach the browser.** `exos::locales!` declares an
-  application's languages and `exos::messages!` declares its text, as ordinary
-  Rust functions whose arms the compiler holds to every language, so a locale
-  nobody translated a message into is a build failure rather than an English
-  string in a German page. A sentence with a link in it is one message, because
-  a slot keeps it whole while the href stays in Rust, and a count in one is
-  written the way that language writes a number. What is missing is the
-  crossing: a message whose count comes from client state should cross as its
-  variants and let `Intl.PluralRules` pick, which is what keeps catalogs on the
-  server.
 - **Expressions are compiled with `new Function`**, which a strict CSP without
   `unsafe-eval` blocks. A precompiled mode is the answer.
 - **Running more than one instance.** The connection registry is a process-local
@@ -179,6 +169,11 @@ carried a real application yet. Known gaps, roughly in priority order:
   and JSON-only bodies are three defences rather than one, which is a policy and
   is written down in the guide. It leaks for a handler that accepts a
   form-encoded body, and that is when a token should be built.
+- **A sentence with a link in it cannot cross.** A message whose count is
+  client state projects: its variants in the one language the page was rendered
+  in ride out with it, and `Intl.PluralRules` picks. What cannot is a message
+  with a slot, which would have the runtime build elements rather than text,
+  and a message with two counts, which could be on two sides at once.
 
 Where each of those is going is written down in [docs/roadmap](docs/roadmap):
 [sessions and identity](docs/roadmap/sessions-and-identity.md) is the one most
@@ -188,6 +183,8 @@ browser presenting it was served the fragment,
 far as pushing an effect to a person, [forms](docs/roadmap/forms.md) is built as
 far as rules that answer on both sides and the one rule that answers over the
 wire while a field is typed,
+[localization](docs/roadmap/localization.md) is built as far as a message
+whose count the browser holds,
 [more than one instance](docs/roadmap/more-than-one-instance.md) is the
 bus and everything it changes, and [loose
 ends](docs/roadmap/loose-ends.md) collects the smaller work that waits for

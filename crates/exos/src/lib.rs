@@ -66,7 +66,7 @@ pub use crate::{
     keys::{Keys, keys},
     live::{Fragment, Topic, connected, connection_count, publish, send},
     locale::{Direction, Lang, LocaleSet, PluralCategory, lang, locale},
-    message::{Count, Enumerable},
+    message::{Count, Counted, Enumerable},
     model::{Model, ModelFields, ModelRejection, nested_rows, to_wire},
     number::Symbols,
     render::{AttributeValue, Flag, Markup, Render, escape_display_into, escape_into},
@@ -80,8 +80,9 @@ pub use crate::{
 
 // Named by the `#[model]` expansion, which has to reach them from anywhere.
 #[doc(hidden)]
-pub use crate::valid::{
-    all_valid, any_dirty, asked, chain, complaint, email_js, is_email, model_refusal,
+pub use crate::{
+    message::{HOLE, project},
+    valid::{all_valid, any_dirty, asked, chain, complaint, email_js, is_email, model_refusal},
 };
 
 #[doc(inline)]

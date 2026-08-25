@@ -115,6 +115,17 @@ impl Attributes {
             out.push('"');
         }
 
+        // Whatever the blocks above projected on their way to an expression.
+        // A message that crosses does so as its variants, and they ride out on
+        // the element whose expression reads them rather than being declared
+        // anywhere: the table is the document's and an entry is named by what
+        // is in it, so two elements carrying one entry is one entry.
+        if let Some(messages) = crate::message::projected() {
+            out.push_str(" data-messages=\"");
+            escape_into(&messages, &mut out);
+            out.push('"');
+        }
+
         for (name, value) in &self.other {
             out.push(' ');
             out.push_str(name);

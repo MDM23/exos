@@ -1290,3 +1290,76 @@ test("a repair leaves the page alone when the fetch does not answer with one", a
 
     assert.equal(window.document.getElementById("count").textContent, "1");
 });
+
+// A message whose count is client state crosses as its variants in the one
+// language the page was rendered in, and the browser picks between them.
+// `Intl` is the other half of the agreement the CLDR fixture holds both sides
+// to, so what is checked here is that this side asks it the same question.
+
+/** A paragraph reading a projected message off the table it arrived with. */
+const projected = (say, lang = "de", count = 1) =>
+    `<p id="say" data-signals-root='{"n":${count}}' ` +
+    `data-messages='{"m1":{"lang":"${lang}","say":${JSON.stringify(say)}}}' ` +
+    `data-text="msg('m1', $.n)"></p>`;
+
+const GERMAN = { one: ["", " Element ausgewählt"], other: ["", " Elemente ausgewählt"] };
+
+test("a projected message is picked by the category its count falls in", async () => {
+    const window = boot(projected(GERMAN));
+    await settled();
+
+    const say = window.document.getElementById("say");
+    assert.equal(say.textContent, "1 Element ausgewählt");
+
+    window.exos.signals.n = 4;
+    await settled();
+
+    assert.equal(say.textContent, "4 Elemente ausgewählt");
+});
+
+// The category is asked about the magnitude, which is what CLDR's `n` is and
+// what the server asked its own rules about: a language with a singular puts
+// -1 in it just as it puts 1 there.
+test("a negative count falls where its magnitude does and keeps its sign", async () => {
+    const window = boot(projected(GERMAN, "de", -1));
+    await settled();
+
+    assert.equal(window.document.getElementById("say").textContent, "-1 Element ausgewählt");
+});
+
+// The number is written the way the language writes one, which is the half of
+// the agreement `Intl.NumberFormat` answers for.
+test("a projected count is written the way its language writes a number", async () => {
+    const window = boot(projected({ other: ["", " Elemente"] }, "de", 12345));
+    await settled();
+
+    assert.equal(window.document.getElementById("say").textContent, "12.345 Elemente");
+});
+
+// A language with nothing to choose between crossed one variant, under the
+// category every language has. The count here falls in `one`, which the entry
+// does not carry, so what is checked is the fallback rather than a lookup that
+// happens to hit.
+test("a message that says one thing is read whatever the count is", async () => {
+    const window = boot(projected({ other: ["Dateien: ", ""] }, "de", 1));
+    await settled();
+
+    assert.equal(window.document.getElementById("say").textContent, "Dateien: 1");
+});
+
+// A patch brings its own entries. The key is what the sentence says, so an
+// entry the document already has arrives as itself and one it has never seen
+// is read off the markup that carried it.
+test("a patch carrying a sentence the page has never seen brings its table", async () => {
+    const window = boot(`<div id="host">${projected(GERMAN)}</div>`);
+    await settled();
+
+    window.exos.applyPatch(
+        `<div id="host"><p id="later" ` +
+            `data-messages='{"m2":{"lang":"en","say":{"one":["","  item"],"other":["", " items"]}}}' ` +
+            `data-text="msg('m2', $.n)"></p></div>`,
+    );
+    await settled();
+
+    assert.equal(window.document.getElementById("later").textContent, "1  item");
+});

@@ -65,6 +65,54 @@ enum Kind {
     Value(Box<Type>),
 }
 
+/// Where the count in a message comes from, which is the whole of what a
+/// projection changes about writing one.
+///
+/// Three, because a projecting message is written twice and the half that
+/// still resolves here no longer has the count itself: `exos::Counted` has
+/// measured and written it by then, since only it knows which side the
+/// argument was for.
+#[derive(Clone, Copy)]
+enum Crossing {
+    /// The count the call site handed over.
+    Given,
+    /// A count already measured, for the half of a projecting message that
+    /// still answers here.
+    Measured,
+    /// No count at all: the browser has it, and the text is projected with a
+    /// hole where it goes.
+    Crossed,
+}
+
+impl Crossing {
+    /// What a count interpolates as.
+    fn written(self, name: &Ident, locale: &Path, variant: &Ident) -> TokenStream {
+        match self {
+            Self::Given => quote_spanned! { variant.span() => #locale::#variant.number(#name) },
+            Self::Measured => quote! { __written },
+            Self::Crossed => quote! { ::exos::HOLE },
+        }
+    }
+
+    /// What its category is asked of.
+    ///
+    /// Spanned at the locale, since what the inner `match` looks at is what a
+    /// category missing from this language is reported against.
+    fn category(self, name: &Ident, aliases: &Path, variant: &Ident) -> TokenStream {
+        let aliases = at(aliases, variant.span());
+
+        match self {
+            Self::Given => quote_spanned! { variant.span() =>
+                #aliases::#variant::category(::exos::Count::magnitude(#name))
+            },
+            Self::Measured => quote_spanned! { variant.span() =>
+                #aliases::#variant::category(__magnitude)
+            },
+            Self::Crossed => quote_spanned! { variant.span() => *__category },
+        }
+    }
+}
+
 /// One `De { One } = "…"` line.
 struct Arm {
     /// The locale, as a variant of the set rather than as a tag.
@@ -272,16 +320,75 @@ impl Message {
 
         let name = &self.name;
         let docs = self.documentation();
-        let inputs = self.parameters.iter().map(Parameter::input);
         let assertions = self.assertions(&branched);
-        let arms = self.locales(locale, aliases, &templates, &branched, markup)?;
 
-        // The match carries the message's own span, so that a locale nothing
-        // translated this into is reported at the message rather than at
-        // whichever block it happens to sit in.
+        // A message with one count and no slot answers on whichever side the
+        // count is on. Two counts have no single answer type to give, and a
+        // slot would have to build nodes rather than text, so both keep the
+        // signature they have.
+        let crossing = match markup {
+            false => self.counting(),
+            true => None,
+        };
+
+        let Some(count) = crossing else {
+            let inputs = self
+                .parameters
+                .iter()
+                .map(|parameter| parameter.input(false));
+            let arms = self.locales(
+                locale,
+                aliases,
+                &templates,
+                &branched,
+                markup,
+                Crossing::Given,
+            )?;
+
+            // The match carries the message's own span, so that a locale
+            // nothing translated this into is reported at the message rather
+            // than at whichever block it happens to sit in.
+            let resolved = quote_spanned! { name.span() =>
+                match ::exos::locale::<#locale>() {
+                    #(#arms)*
+                }
+            };
+
+            return Ok(quote! {
+                #(#assertions)*
+
+                #(#docs)*
+                #[must_use]
+                pub fn #name(#(#inputs),*) -> #answer {
+                    #resolved
+                }
+            });
+        };
+
+        let inputs = self
+            .parameters
+            .iter()
+            .map(|parameter| parameter.input(parameter.name == count));
+
+        let here = self.locales(
+            locale,
+            aliases,
+            &templates,
+            &branched,
+            markup,
+            Crossing::Measured,
+        )?;
+        let there = self.crossing(locale, aliases, &templates, &branched, &count)?;
+
         let resolved = quote_spanned! { name.span() =>
-            match ::exos::locale::<#locale>() {
-                #(#arms)*
+            match __locale {
+                #(#here)*
+            }
+        };
+
+        let projected = quote_spanned! { name.span() =>
+            match __locale {
+                #(#there)*
             }
         };
 
@@ -290,10 +397,115 @@ impl Message {
 
             #(#docs)*
             #[must_use]
-            pub fn #name(#(#inputs),*) -> #answer {
-                #resolved
+            pub fn #name<__Count: ::exos::Counted>(#(#inputs),*) -> __Count::Answer {
+                let __locale = ::exos::locale::<#locale>();
+
+                ::exos::Counted::resolve(
+                    #count,
+                    #locale::symbols(__locale),
+                    |__magnitude, __written| #resolved,
+                    |__source| #projected,
+                )
             }
         })
+    }
+
+    /// The count this message projects on, where it has exactly one.
+    ///
+    /// More than one and there is no single answer type to give: two counts
+    /// could be on two sides, and a function has one return type.
+    fn counting(&self) -> Option<Ident> {
+        let mut counts = self
+            .parameters
+            .iter()
+            .filter(|parameter| matches!(parameter.kind, Kind::Plural));
+
+        let first = counts.next()?;
+
+        match counts.next() {
+            Some(_) => None,
+            None => Some(first.name.clone()),
+        }
+    }
+
+    /// One arm per locale, each projecting that language's variants.
+    ///
+    /// The same arms [`Message::locales`] writes, walked once per category the
+    /// language has rather than for the one category a count falls in. What
+    /// crosses is therefore one message in one language, which is the whole
+    /// point of the argument deciding: `who` stays a server value on the way
+    /// out, and only what the browser can change is enumerated.
+    fn crossing(
+        &self,
+        locale: &Path,
+        aliases: &Path,
+        templates: &[Template],
+        branched: &[bool],
+        count: &Ident,
+    ) -> syn::Result<Vec<TokenStream>> {
+        let counted = self.counted(|name| Crossing::Crossed.written(name, locale, name));
+        let mut emitted = Vec::with_capacity(self.arms.len());
+
+        for (variant, arms) in self.grouped() {
+            let alone = arms.len() == 1 && self.arms[arms[0]].patterns.is_none();
+            let subjects = self.subjects(variant, branched, |name| {
+                Crossing::Crossed.category(name, aliases, variant)
+            });
+
+            let counts = branched
+                .iter()
+                .zip(&self.parameters)
+                .any(|(branched, parameter)| *branched && parameter.name == *count);
+
+            // A language whose sentence is the same whatever the count is
+            // crosses as one variant, under the category every language has.
+            // The browser falls back to it, so there is nothing to enumerate
+            // and nothing for the table to carry twice.
+            if subjects.is_empty() || alone || !counts {
+                let text = templates[arms[0]].string(&counted);
+
+                emitted.push(quote! {
+                    #locale::#variant => ::exos::project(
+                        ::exos::LocaleSet::tag(__locale),
+                        ::std::vec![(::exos::PluralCategory::Other, #text)],
+                        __source,
+                    ),
+                });
+
+                continue;
+            }
+
+            let subject = tuple(&subjects, variant.span());
+
+            let inner = arms
+                .iter()
+                .map(|index| {
+                    let patterns = self.patterns(*index, variant, aliases, branched)?;
+                    let pattern = tuple(&patterns, variant.span());
+                    let text = templates[*index].string(&counted);
+
+                    Ok(quote_spanned! { variant.span() => #pattern => #text, })
+                })
+                .collect::<syn::Result<Vec<_>>>()?;
+
+            let aliased = at(aliases, variant.span());
+
+            emitted.push(quote_spanned! { variant.span() =>
+                #locale::#variant => ::exos::project(
+                    ::exos::LocaleSet::tag(__locale),
+                    <#aliased::#variant::Plural as ::exos::Enumerable>::ALL
+                        .iter()
+                        .map(|__category| (
+                            ::exos::PluralCategory::from(*__category),
+                            match #subject { #(#inner)* },
+                        ))
+                        .collect(),
+                    __source,
+                ),
+            });
+        }
+
+        Ok(emitted)
     }
 
     /// Each arm's text, with every placeholder checked against the parameter
@@ -503,27 +715,12 @@ impl Message {
         Ok(())
     }
 
-    /// One outer arm per locale, in the order the locales first appear.
+    /// The arms of each locale, in the order the locales first appear.
     ///
-    /// Arms of one locale are gathered into a single arm holding a `match` of
-    /// their own, which is what lets a message be written as a flat list while
-    /// each language decides its own categories.
-    fn locales(
-        &self,
-        locale: &Path,
-        aliases: &Path,
-        templates: &[Template],
-        branched: &[bool],
-        markup: bool,
-    ) -> syn::Result<Vec<TokenStream>> {
-        let text = |template: &Template, formatted: text::Written<'_>| {
-            if markup {
-                template.markup(formatted)
-            } else {
-                template.string(formatted)
-            }
-        };
-
+    /// Gathering them is what lets a message be written as a flat list while
+    /// each language decides its own categories, and both sides of a
+    /// projection read the same grouping.
+    fn grouped(&self) -> Vec<(&Ident, Vec<usize>)> {
         let mut grouped: Vec<(&Ident, Vec<usize>)> = Vec::new();
 
         for (index, arm) in self.arms.iter().enumerate() {
@@ -536,12 +733,39 @@ impl Message {
             }
         }
 
-        let mut emitted = Vec::with_capacity(grouped.len());
+        grouped
+    }
 
-        for (variant, arms) in grouped {
+    /// One outer arm per locale, in the order the locales first appear.
+    ///
+    /// Arms of one locale are gathered into a single arm holding a `match` of
+    /// their own, which is what lets a message be written as a flat list while
+    /// each language decides its own categories.
+    fn locales(
+        &self,
+        locale: &Path,
+        aliases: &Path,
+        templates: &[Template],
+        branched: &[bool],
+        markup: bool,
+        count: Crossing,
+    ) -> syn::Result<Vec<TokenStream>> {
+        let text = |template: &Template, formatted: text::Written<'_>| {
+            if markup {
+                template.markup(formatted)
+            } else {
+                template.string(formatted)
+            }
+        };
+
+        let mut emitted = Vec::with_capacity(self.arms.len());
+
+        for (variant, arms) in self.grouped() {
             let alone = arms.len() == 1 && self.arms[arms[0]].patterns.is_none();
-            let subjects = self.subjects(variant, aliases, branched);
-            let counted = self.counted(locale, variant);
+            let subjects = self.subjects(variant, branched, |name| {
+                count.category(name, aliases, variant)
+            });
+            let counted = self.counted(|name| count.written(name, locale, variant));
 
             if subjects.is_empty() || alone {
                 if let Some(second) = arms.get(1) {
@@ -591,26 +815,30 @@ impl Message {
     /// that goes in with the language's own digits and separators rather than
     /// with Rust's. Everything else a call site interpolates is written the way
     /// it displays, since a message cannot tell a quantity from an identifier.
-    fn counted(&self, locale: &Path, variant: &Ident) -> Vec<(&Ident, TokenStream)> {
+    ///
+    /// `written` says what it goes in as, which is the language's own
+    /// formatting where the count is known and [`HOLE`](exos::HOLE) where the
+    /// browser will supply it.
+    fn counted(&self, written: impl Fn(&Ident) -> TokenStream) -> Vec<(&Ident, TokenStream)> {
         self.parameters
             .iter()
             .filter(|parameter| matches!(parameter.kind, Kind::Plural))
-            .map(|parameter| {
-                let name = &parameter.name;
-
-                (
-                    name,
-                    quote_spanned! { variant.span() => #locale::#variant.number(#name) },
-                )
-            })
+            .map(|parameter| (&parameter.name, written(&parameter.name)))
             .collect()
     }
 
     /// What one locale's inner `match` looks at, one term per branched
     /// parameter.
-    fn subjects(&self, variant: &Ident, aliases: &Path, branched: &[bool]) -> Vec<TokenStream> {
-        let aliases = at(aliases, variant.span());
-
+    ///
+    /// `category` says how a count reaches its category: asked of the count
+    /// where there is one, and the category itself where a projection is
+    /// walking them.
+    fn subjects(
+        &self,
+        variant: &Ident,
+        branched: &[bool],
+        category: impl Fn(&Ident) -> TokenStream,
+    ) -> Vec<TokenStream> {
         self.parameters
             .iter()
             .zip(branched)
@@ -623,9 +851,7 @@ impl Message {
                     // that language's own type. Spanned at the locale, since
                     // what this is matched against is what a category missing
                     // from this language is reported against.
-                    Kind::Plural => quote_spanned! { variant.span() =>
-                        #aliases::#variant::category(::exos::Count::magnitude(#name))
-                    },
+                    Kind::Plural => category(name),
                     // By reference, so that a parameter which is matched can
                     // still be interpolated, whatever it is. A slot never
                     // reaches this, having been refused as something to
@@ -754,10 +980,14 @@ impl Message {
 
 impl Parameter {
     /// How the parameter arrives at the generated function.
-    fn input(&self) -> TokenStream {
+    ///
+    /// The count a message projects on arrives as whatever decides the side,
+    /// which is the one parameter whose type the message does not fix.
+    fn input(&self, crossing: bool) -> TokenStream {
         let name = &self.name;
 
         match &self.kind {
+            Kind::Plural if crossing => quote! { #name: __Count },
             Kind::Plural => quote! { #name: impl ::exos::Count },
             // The wrapper, which is handed the words the translation put
             // inside it and answers with them wrapped. Once, because that is
@@ -874,29 +1104,81 @@ mod tests {
         );
 
         assert!(
-            expanded.contains(
-                "crate :: __locales :: De :: category (:: exos :: Count :: magnitude (count))"
-            ),
+            expanded.contains("crate :: __locales :: De :: category (__magnitude)"),
             "{expanded}"
         );
         assert!(expanded.contains("crate :: __locales :: De :: Plural :: One =>"));
     }
 
+    /// And where the count is the browser's, the same arms are walked once per
+    /// category the language has, so what crosses is this message in this
+    /// language and nothing else.
+    #[test]
+    fn a_projected_count_crosses_as_the_variants_of_its_own_language() {
+        let expanded = expand_ok(
+            r#"items(count: Plural) {
+                De { One } = "{count} Element",
+                De { _ } = "{count} Elemente",
+            }"#,
+        );
+
+        assert!(
+            expanded
+                .contains("< crate :: __locales :: De :: Plural as :: exos :: Enumerable > :: ALL"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains(r#"format ! ("{count} Element" , count = :: exos :: HOLE)"#),
+            "{expanded}"
+        );
+        assert!(expanded.contains(":: exos :: project ("), "{expanded}");
+    }
+
+    /// A language that says the same thing whatever the count is crosses as
+    /// one variant rather than as several copies of it.
+    #[test]
+    fn a_language_that_does_not_count_crosses_once() {
+        let expanded = expand_ok(r#"items(count: Plural) { Ja { _ } = "{count}件", }"#);
+
+        assert!(
+            expanded.contains(":: exos :: PluralCategory :: Other"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("Enumerable > :: ALL"), "{expanded}");
+    }
+
     /// A count is the one number a message knows is a number, so it goes into
-    /// the sentence through the language rather than through `Display`.
+    /// the sentence through the language rather than through `Display`. Where
+    /// the message projects, the writing has happened one step earlier, in
+    /// whichever half of `Counted` the argument picked.
     #[test]
     fn a_count_is_written_the_way_the_language_being_rendered_writes_one() {
         let expanded = expand_ok(
+            r#"items(count: Plural, of: Plural) {
+                De { _, _ } = "{count} von {of}",
+            }"#,
+        );
+
+        assert!(
+            expanded.contains(
+                r#"format ! ("{count} von {of}" , count = crate :: Locale :: De . number (count)"#
+            ),
+            "{expanded}"
+        );
+
+        let projecting = expand_ok(
             r#"items(count: Plural) {
                 De { _ } = "{count} Elemente",
             }"#,
         );
 
         assert!(
-            expanded.contains(
-                r#"format ! ("{count} Elemente" , count = crate :: Locale :: De . number (count))"#
-            ),
-            "{expanded}"
+            projecting.contains("crate :: Locale :: symbols (__locale)"),
+            "{projecting}"
+        );
+        assert!(
+            projecting.contains(r#"format ! ("{count} Elemente" , count = __written)"#),
+            "{projecting}"
         );
     }
 
@@ -910,12 +1192,20 @@ mod tests {
     }
 
     /// The whole of what a call site says about a count is that it is a whole
-    /// number, so `len()` and a literal both go in without a cast.
+    /// number, so `len()` and a literal both go in without a cast. A message
+    /// with one asks for a little less than that, since an expression for a
+    /// count is also a count from where the call site is standing.
     #[test]
     fn a_count_arrives_as_any_whole_number() {
-        let expanded = expand_ok(r#"items(count: Plural) { En { _ } = "{count}", }"#);
+        let two =
+            expand_ok(r#"items(count: Plural, of: Plural) { En { _, _ } = "{count}/{of}", }"#);
 
-        assert!(expanded.contains("count : impl :: exos :: Count"));
+        assert!(two.contains("count : impl :: exos :: Count"), "{two}");
+
+        let one = expand_ok(r#"items(count: Plural) { En { _ } = "{count}", }"#);
+
+        assert!(one.contains("< __Count : :: exos :: Counted >"), "{one}");
+        assert!(one.contains("-> __Count :: Answer"), "{one}");
     }
 
     #[test]
