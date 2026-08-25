@@ -39,12 +39,35 @@
 //! to watch, and it is what buys the gate out of being a second concept only
 //! forms would have.
 //!
+//! # A rule the server alone can answer
+//!
+//! `checked_by` names a function, and it is the one rule with no browser half:
+//! whether this code exists is a question about the application's data rather
+//! than about the value's shape.
+//!
+//! ```ignore
+//! #[valid(required, checked_by = coupon)]
+//! code: String,
+//!
+//! async fn coupon(code: String) -> Result<(), String> { /* ... */ }
+//! ```
+//!
+//! It is asked twice from that one declaration: while the field is being
+//! edited, over a route exos mounts for every checked field, and again in the
+//! extractor before a handler runs, so a submission is judged by the same
+//! function whatever the browser was told. Neither asks about a value that is
+//! absent or that broke a shape rule first.
+//!
 //! # exos ships no text
 //!
 //! A [`Violation`] is a value, not a sentence, because an application's
 //! languages are its own and [`messages!`](crate::messages) is where its text
 //! lives. [`complaints`] is the one function that turns one into the other, and
 //! the default is English so that `cargo run` says something sensible.
+//!
+//! A message from `checked_by` is the application's outright, the way
+//! [`Refusal::add`]'s is: a rule exos does not know cannot have a [`Violation`]
+//! exos does.
 //!
 //! # Two evaluators, one impl
 //!
@@ -54,11 +77,18 @@
 //! two things: the copies cannot drift, because neither is written by hand at a
 //! call site.
 
-use core::marker::PhantomData;
+use core::{future::Future, marker::PhantomData, pin::Pin};
 use std::{collections::BTreeMap, sync::OnceLock};
 
-use axum::response::{IntoResponse, Response};
-use serde::{Serialize, Serializer};
+use axum::{
+    Json, Router,
+    extract::Path,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    routing::post,
+};
+use serde::{Serialize, Serializer, de::DeserializeOwned};
+use serde_json::Value;
 
 use crate::{Field, Js, ModelFields};
 
@@ -111,9 +141,23 @@ impl Errors {
     /// how a form ends up shouting.
     #[doc(hidden)]
     pub fn add(&mut self, key: impl Into<String>, field: &'static str, violation: Violation) {
-        self.0
-            .entry(key.into())
-            .or_insert_with(|| complain(field, violation));
+        self.refuse(key, || complain(field, violation));
+    }
+
+    /// Records a message somebody else wrote against a field.
+    ///
+    /// What a [`Violation`] cannot carry: a rule exos does not know, answered
+    /// by a handler through [`Refusal`] or by a `checked_by` function. The
+    /// first message on a field still wins, and the message is built only if
+    /// there is a slot for it.
+    fn refuse(&mut self, key: impl Into<String>, message: impl FnOnce() -> String) {
+        self.0.entry(key.into()).or_insert_with(message);
+    }
+
+    /// The same, for the `#[model]` expansion, which has a message in hand.
+    #[doc(hidden)]
+    pub fn said(&mut self, key: impl Into<String>, message: String) {
+        self.refuse(key, || message);
     }
 
     /// Whether anything is wrong.
@@ -190,7 +234,23 @@ pub trait Validate: ModelFields {
     #[doc(hidden)]
     fn validate_into(&self, prefix: &str, errors: &mut Errors);
 
+    /// What only the server can say about this value, under `prefix`.
+    ///
+    /// The `checked_by` half, awaited by [`Model`](crate::Model) once the
+    /// shape rules have run: a field they already refused is not asked about,
+    /// and neither is one that is absent. A model declaring none answers
+    /// immediately, which is why this has a default.
+    #[doc(hidden)]
+    fn check_into(&self, prefix: &str, errors: &mut Errors) -> impl Future<Output = ()> + Send {
+        let _ = (prefix, errors);
+        async {}
+    }
+
     /// What is wrong with this value.
+    ///
+    /// The shape rules alone. What a round trip answers is
+    /// [`check_into`](Validate::check_into), which the extractor awaits
+    /// afterwards.
     fn validate(&self) -> Errors {
         let mut errors = Errors::default();
         self.validate_into("", &mut errors);
@@ -262,10 +322,7 @@ impl<M: Validate> Refusal<M> {
             return;
         };
 
-        self.errors
-            .0
-            .entry((*key).to_owned())
-            .or_insert_with(|| message.into());
+        self.errors.refuse(*key, || message.into());
     }
 
     /// Says what is wrong with the submission rather than with a field of it.
@@ -289,10 +346,7 @@ impl<M: Validate> Refusal<M> {
     /// }
     /// ```
     pub fn say(&mut self, message: impl Into<String>) {
-        self.errors
-            .0
-            .entry(MODEL.to_owned())
-            .or_insert_with(|| message.into());
+        self.errors.refuse(MODEL, || message.into());
     }
 
     /// Whether anything is.
@@ -316,6 +370,104 @@ impl<M: Validate> IntoResponse for Refusal<M> {
             errors: self.errors,
         }
         .into_response()
+    }
+}
+
+// -----------------------------------------------------------------------------
+//                                THE ROUND TRIP
+// -----------------------------------------------------------------------------
+
+/// The route every checked field is asked through.
+///
+/// One route rather than one per field: the pair in the path resolves to an
+/// entry, and a URL space that grew with a struct would buy a map lookup
+/// either way.
+const CHECK: &str = "/_exos/check/{model}/{field}";
+
+/// A field whose rule only the server can answer.
+///
+/// Submitted by the `#[model]` expansion, once per `checked_by`. There is no
+/// reason to name this type yourself.
+#[derive(Clone, Copy)]
+pub struct CheckEntry {
+    model: &'static str,
+    field: &'static str,
+    ask: Ask,
+}
+
+/// The shim `#[model]` monomorphised: the field's own type, deserialized, and
+/// the application's function awaited.
+///
+/// Boxed because the entries are collected into one list and every function
+/// has a future of its own. The value is owned for the same reason: it outlives
+/// the call that made it.
+type Ask = fn(Value) -> Pin<Box<dyn Future<Output = Option<String>> + Send>>;
+
+impl CheckEntry {
+    /// Describes a checked field for the route to resolve.
+    #[must_use]
+    pub const fn new(model: &'static str, field: &'static str, ask: Ask) -> Self {
+        Self { model, field, ask }
+    }
+}
+
+impl core::fmt::Debug for CheckEntry {
+    fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        formatter
+            .debug_struct("CheckEntry")
+            .field("model", &self.model)
+            .field("field", &self.field)
+            .finish_non_exhaustive()
+    }
+}
+
+inventory::collect!(CheckEntry);
+
+/// Mounts the route a field is checked through.
+///
+/// This is the first route exos mounts that reads an application's own data,
+/// and what holds it is what holds every other action: a `POST` with a JSON
+/// body carrying the session cookie, which a cross-origin page cannot make.
+/// The answer is the application's own function, so a rate limit or a refusal
+/// to answer belongs there.
+pub(crate) fn routes() -> Router {
+    Router::new().route(CHECK, post(check))
+}
+
+/// Asks one field's rule about one value.
+///
+/// The answer is the message or nothing, as text: the control writes its own
+/// slot with it, where a record write would clear every other message on the
+/// form.
+async fn check(Path((model, field)): Path<(String, String)>, Json(value): Json<Value>) -> Response {
+    let found = inventory::iter::<CheckEntry>
+        .into_iter()
+        .find(|entry| entry.model == model && entry.field == field);
+
+    let Some(entry) = found else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+
+    (entry.ask)(value).await.unwrap_or_default().into_response()
+}
+
+/// Runs one field's rule, for the shim the `#[model]` expansion writes.
+///
+/// The guard is [`Presence`], the same question the extractor asks before it
+/// awaits the same function: nothing asks the application whether an empty
+/// string is taken. A value that does not deserialize says nothing either, and
+/// the submission is where that is refused.
+#[doc(hidden)]
+pub async fn asked<T, F>(value: Value, ask: impl FnOnce(T) -> F) -> Option<String>
+where
+    T: DeserializeOwned + Presence,
+    F: Future<Output = Result<(), String>>,
+{
+    let value: T = serde_json::from_value(value).ok()?;
+
+    match value.is_present() {
+        true => ask(value).await.err(),
+        false => None,
     }
 }
 

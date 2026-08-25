@@ -38,7 +38,8 @@ pub(crate) struct Signup {
     /// The tax id it needs, on the same terms.
     #[valid(required_with = invoice)]
     pub(crate) vat: String,
-    /// A code only the server can rule on.
+    /// A code only the server can rule on, answered while it is typed.
+    #[valid(checked_by = coupon)]
     pub(crate) code: String,
     /// Which workshops were picked.
     #[valid(required)]
@@ -49,6 +50,19 @@ pub(crate) struct Signup {
     /// row is the row's own rule and lands on the row.
     #[valid(required)]
     pub(crate) attendees: Rows<Attendee>,
+}
+
+/// Whether this code is one the conference issued.
+///
+/// The rule this form exists to have: nothing about the codes reaches the
+/// browser, so it is the one question a control cannot answer for itself. It is
+/// asked while the field is being edited and again at submit, from this one
+/// declaration, and the message is ours because exos has no violation for it.
+async fn coupon(code: String) -> Result<(), String> {
+    match store::accepts(&code) {
+        true => Ok(()),
+        false => Err(String::from("That code is not one of ours.")),
+    }
 }
 
 /// What the form opens with.
@@ -140,10 +154,10 @@ fn field(
 
 /// Accepts a registration, or says what is wrong with it.
 ///
-/// Every rule about a single value was checked by the extractor, rows
-/// included, so a body that broke one never reached this line. What is left is
-/// the one kind a rule on a field cannot express: the kind that needs a fact
-/// this model does not hold.
+/// Every rule about a single value was checked by the extractor, rows and the
+/// discount code included, so a body that broke one never reached this line.
+/// What is left is the one kind no rule on a field can express: a question
+/// about more than one of them.
 #[exos::post("/register")]
 async fn register(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>> {
     let mut refusal = Refusal::new();
@@ -152,11 +166,6 @@ async fn register(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>>
     // anybody should see: a well-behaved page cannot produce it.
     if !data::<Programme>().holds(&form.workshops) {
         refusal.add(Signup::WORKSHOPS, "That is not on the programme.");
-    }
-
-    // The round trip this form exists to have.
-    if !form.code.trim().is_empty() && !store::accepts(&form.code) {
-        refusal.add(Signup::CODE, "That code is not one of ours.");
     }
 
     if !refusal.is_empty() {
@@ -222,7 +231,7 @@ fn confirmation(form: &Signup, attending: &[String], taken: usize) -> Markup {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{get, post};
+    use crate::tests::{check, get, post};
 
     fn draft() -> Signup {
         Signup {
@@ -374,7 +383,9 @@ mod tests {
     }
 
     /// Nothing calls the validator, so a body that breaks a declared rule
-    /// never reaches the handler and comes back as the record anyway.
+    /// never reaches the handler and comes back as the record anyway. The
+    /// rule the server alone can answer is one of those now, so one refusal
+    /// carries the shape rules and the round trip together.
     #[tokio::test]
     async fn a_declared_rule_is_checked_before_the_handler_runs() {
         let signals = Signup::signals();
@@ -394,9 +405,8 @@ mod tests {
             "{stream}"
         );
 
-        // The handler's own rules did not run: the code is wrong and the
-        // extractor refused before anything could ask about it.
-        assert!(!stream.contains("not one of ours"), "{stream}");
+        assert!(stream.contains("not one of ours"), "{stream}");
+        assert!(!stream.contains("You are registered"), "{stream}");
     }
 
     /// A field that now passes is cleared by not being in the record, which is
@@ -437,7 +447,50 @@ mod tests {
         assert!(stream.contains("At least 2 characters."), "{stream}");
     }
 
-    /// The rule that has to be a round trip.
+    /// The rule that has to be a round trip, asked while the field is still
+    /// being edited. The control says which model answers for it and the
+    /// route says what that model's function said, which is the whole of the
+    /// address: no route is named in the template and none could be.
+    #[tokio::test]
+    async fn a_code_is_checked_while_it_is_typed() {
+        let html = get("/").await;
+        let state = <Signup as exos::Validate>::STATE;
+        let field = Signup::signals().code.name().to_owned();
+
+        let code = html
+            .split_once(r#"id="code""#)
+            .and_then(|(_, rest)| rest.split_once('>'))
+            .map(|(tag, _)| tag)
+            .expect("the code field is on the page");
+
+        assert!(
+            code.contains(&format!("data-bind-check=\"{state}\"")),
+            "{code}"
+        );
+
+        assert_eq!(
+            check(state, &field, "nope").await,
+            "That code is not one of ours."
+        );
+        assert_eq!(check(state, &field, "earlybird").await, "");
+    }
+
+    /// And a field nothing but its own rules judge says so by carrying
+    /// nothing, which is what keeps a keystroke there off the network.
+    #[tokio::test]
+    async fn a_field_the_browser_can_judge_asks_nobody() {
+        let html = get("/").await;
+
+        let name = html
+            .split_once(r#"id="name""#)
+            .and_then(|(_, rest)| rest.split_once('>'))
+            .map(|(tag, _)| tag)
+            .expect("the name field is on the page");
+
+        assert!(!name.contains("data-bind-check"), "{name}");
+    }
+
+    /// The same rule at submit, where the client's copy is only ever feedback.
     #[tokio::test]
     async fn a_code_is_ruled_on_by_the_server_alone() {
         let stream = post(

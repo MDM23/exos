@@ -159,11 +159,6 @@ build with the oldest supported compiler.
 Early. The shape is settled and the pieces work together, but this has not
 carried a real application yet. Known gaps, roughly in priority order:
 
-- **A model is sent whole or not at all.** The generated caller has no way to
-  send one field, so a rule only the server can answer cannot be checked while
-  the rest of the form is still empty: it waits for the submit. Repeating
-  groups no longer need it, since rows are a field and ride along with
-  everything else.
 - **A message cannot reach the browser.** `exos::locales!` declares an
   application's languages and `exos::messages!` declares its text, as ordinary
   Rust functions whose arms the compiler holds to every language, so a locale
@@ -191,8 +186,9 @@ of the others waited on and is now built, so a live subscription proves the
 browser presenting it was served the fragment,
 [directed effects](docs/roadmap/directed-effects.md) is built as
 far as pushing an effect to a person, [forms](docs/roadmap/forms.md) is built as
-far as rules that answer on both sides and calls that wait for the typing to
-stop, [more than one instance](docs/roadmap/more-than-one-instance.md) is the
+far as rules that answer on both sides and the one rule that answers over the
+wire while a field is typed,
+[more than one instance](docs/roadmap/more-than-one-instance.md) is the
 bus and everything it changes, and [loose
 ends](docs/roadmap/loose-ends.md) collects the smaller work that waits for
 nothing.

@@ -75,12 +75,14 @@ pub use crate::{
     scope::{Scope, detached, scope, with_scope},
     session::{Id, Session, session},
     signal::{Bound, Field, Placement, Signal, signal},
-    valid::{Errors, Length, Presence, Refusal, Validate, Violation, complaints},
+    valid::{CheckEntry, Errors, Length, Presence, Refusal, Validate, Violation, complaints},
 };
 
 // Named by the `#[model]` expansion, which has to reach them from anywhere.
 #[doc(hidden)]
-pub use crate::valid::{all_valid, any_dirty, chain, complaint, email_js, is_email, model_refusal};
+pub use crate::valid::{
+    all_valid, any_dirty, asked, chain, complaint, email_js, is_email, model_refusal,
+};
 
 #[doc(inline)]
 pub use exos_macro::{

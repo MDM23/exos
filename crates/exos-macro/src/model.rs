@@ -79,6 +79,11 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     let state = signal_name(&name, &format_ident!("__state"));
     let checks = valid::check(&rules);
 
+    // The rules only the server can answer: one entry per checked field for
+    // the route to resolve, and the same functions awaited at submit.
+    let entries = valid::entries(&rules, &state);
+    let awaited = valid::checks(&rules);
+
     // The same rules, asked the other way round. One list, two readers, which
     // is the whole reason they are declared rather than written twice.
     let asked: Vec<TokenStream> = names
@@ -91,6 +96,17 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     let arming: Vec<String> = names
         .iter()
         .map(|field| valid::arms(&rules, field))
+        .collect();
+
+    // A checked field is addressed by this model and its own name, so the
+    // control carries the model it is checked by rather than the record it
+    // writes into: for a field of a row those are two different models.
+    let checking: Vec<&str> = names
+        .iter()
+        .map(|field| match valid::checked(&rules, field) {
+            true => state.as_str(),
+            false => "",
+        })
         .collect();
 
     // What one field is on the handle, how it is built, what it sends, and
@@ -111,38 +127,43 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         .zip(&asked)
         .zip(&labels)
         .zip(&arming)
-        .map(|((((key, row), asked), label), arming)| match row {
-            // The rows the model opens with, which is what `each` renders
-            // before the template. Everything after that is the browser's.
-            Some(_) => quote! {
-                ::exos::RowsOf::new(
-                    #key,
-                    #state,
-                    __initial
-                        .get(#label)
-                        .and_then(::exos::serde_json::Value::as_array)
-                        .cloned()
-                        .unwrap_or_default(),
-                )
+        .zip(&checking)
+        .map(
+            |(((((key, row), asked), label), arming), checking)| match row {
+                // The rows the model opens with, which is what `each` renders
+                // before the template. Everything after that is the browser's.
+                Some(_) => quote! {
+                    ::exos::RowsOf::new(
+                        #key,
+                        #state,
+                        __initial
+                            .get(#label)
+                            .and_then(::exos::serde_json::Value::as_array)
+                            .cloned()
+                            .unwrap_or_default(),
+                    )
+                },
+                None => quote! {{
+                    let __signal = ::exos::Signal::with_value(
+                        #key,
+                        __initial
+                            .get(#label)
+                            .cloned()
+                            .unwrap_or(::exos::serde_json::Value::Null),
+                        // On the document, not on whichever element declares the
+                        // handle: a handler answers with Effect::set, which the
+                        // client applies against the document root.
+                        ::exos::Placement::Document,
+                    );
+
+                    let __asked = #asked;
+
+                    ::exos::Bound::new(__signal, #state, __asked)
+                        .arming(#arming)
+                        .checking(#checking)
+                }},
             },
-            None => quote! {{
-                let __signal = ::exos::Signal::with_value(
-                    #key,
-                    __initial
-                        .get(#label)
-                        .cloned()
-                        .unwrap_or(::exos::serde_json::Value::Null),
-                    // On the document, not on whichever element declares the
-                    // handle: a handler answers with Effect::set, which the
-                    // client applies against the document root.
-                    ::exos::Placement::Document,
-                );
-
-                let __asked = #asked;
-
-                ::exos::Bound::new(__signal, #state, __asked).arming(#arming)
-            }},
-        })
+        )
         .collect();
 
     // A rows field declares nothing: a row's signals belong to the row, and
@@ -200,6 +221,29 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         })
         .collect();
 
+    // The same walk, for the rules a row can only have answered by the server.
+    // Sequential rather than joined: a check is a query, and a form that adds
+    // rows freely would otherwise decide how many run at once.
+    let checked: Vec<TokenStream> = names
+        .iter()
+        .zip(&rows)
+        .zip(&keys)
+        .filter_map(|((field, row), key)| {
+            row.as_ref()?;
+
+            Some(quote! {
+                for (__at, __row) in ::exos::Rows::iter(&self.#field).enumerate() {
+                    ::exos::Validate::check_into(
+                        __row,
+                        &::std::format!("{}{}.{}.", __prefix, #key, __at),
+                        __errors,
+                    )
+                    .await;
+                }
+            })
+        })
+        .collect();
+
     // Every field as one row holds it: on the row's own element, so that a
     // clone of the template is its own scope and nothing has to name it.
     let within: Vec<TokenStream> = keys
@@ -208,28 +252,33 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         .zip(&asked)
         .zip(&labels)
         .zip(&arming)
-        .map(|((((key, row), asked), label), arming)| match row {
-            // Rows of rows would need a group inside a group, and nothing has
-            // asked for one. Left empty rather than silently addressing the
-            // wrong signals.
-            Some(_) => quote! {
-                ::exos::RowsOf::new(#key, __state, ::std::vec::Vec::new())
+        .zip(&checking)
+        .map(
+            |(((((key, row), asked), label), arming), checking)| match row {
+                // Rows of rows would need a group inside a group, and nothing has
+                // asked for one. Left empty rather than silently addressing the
+                // wrong signals.
+                Some(_) => quote! {
+                    ::exos::RowsOf::new(#key, __state, ::std::vec::Vec::new())
+                },
+                None => quote! {{
+                    let __signal = ::exos::Signal::with_value(
+                        #key,
+                        __initial
+                            .get(#label)
+                            .cloned()
+                            .unwrap_or(::exos::serde_json::Value::Null),
+                        ::exos::Placement::Element,
+                    );
+
+                    let __asked = #asked;
+
+                    ::exos::Bound::row(__signal, __state, __asked, __group)
+                        .arming(#arming)
+                        .checking(#checking)
+                }},
             },
-            None => quote! {{
-                let __signal = ::exos::Signal::with_value(
-                    #key,
-                    __initial
-                        .get(#label)
-                        .cloned()
-                        .unwrap_or(::exos::serde_json::Value::Null),
-                    ::exos::Placement::Element,
-                );
-
-                let __asked = #asked;
-
-                ::exos::Bound::row(__signal, __state, __asked, __group).arming(#arming)
-            }},
-        })
+        )
         .collect();
 
     quote! {
@@ -340,7 +389,20 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
                 #checks
                 #(#walked)*
             }
+
+            fn check_into(
+                &self,
+                __prefix: &str,
+                __errors: &mut ::exos::Errors,
+            ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
+                async move {
+                    #awaited
+                    #(#checked)*
+                }
+            }
         }
+
+        #entries
 
         impl ::exos::IntoAttributes for #handle {
             fn write(self, __attributes: &mut ::exos::Attributes) {
@@ -616,6 +678,49 @@ mod tests {
             expanded.contains(&format!(r#"raw ("$.{armed}")"#)),
             "{expanded}"
         );
+    }
+
+    /// A rule the server alone can answer reaches three places from one
+    /// declaration: the route's entry, the submit that runs the same function,
+    /// and the control that has to know there is a round trip to make.
+    #[test]
+    fn a_checked_field_is_registered_awaited_and_carried() {
+        let expanded = expand_ok("struct Draft { #[valid(checked_by = coupon)] code: String }");
+        let state = signal_name(&format_ident!("Draft"), &format_ident!("__state"));
+        let key = signal_name(&format_ident!("Draft"), &format_ident!("code"));
+
+        assert!(
+            expanded.contains(&format!(r#"CheckEntry :: new ("{state}" , "{key}""#)),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains("coupon (:: core :: clone :: Clone"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains(&format!(r#"checking ("{state}")"#)),
+            "{expanded}"
+        );
+    }
+
+    /// And a field without one carries nothing, so the control makes no
+    /// request it has no rule for.
+    #[test]
+    fn an_unchecked_field_carries_no_model_to_ask() {
+        let expanded = expand_ok("struct Draft { sku: String }");
+
+        assert!(expanded.contains(r#"checking ("")"#), "{expanded}");
+        assert!(!expanded.contains("CheckEntry"), "{expanded}");
+    }
+
+    /// A rule that names something other than a function is refused where it
+    /// is written rather than inside an expansion nobody wrote.
+    #[test]
+    fn a_check_that_names_no_function_is_refused() {
+        let expanded =
+            expand_ok(r#"struct Draft { #[valid(checked_by = "coupon")] code: String }"#);
+
+        assert!(expanded.contains("compile_error"));
     }
 
     /// Other serde attributes are none of this macro's business.

@@ -131,6 +131,28 @@ pub(crate) mod tests {
         body(response).await
     }
 
+    /// What a control is told about one value while it is being edited.
+    ///
+    /// The pair in the URL is what the binding carries: the model that answers
+    /// for the field, and the field. A message or nothing, as text, because a
+    /// check is about one value rather than about the form.
+    pub(crate) async fn check(model: &str, field: &str, value: &str) -> String {
+        let response = app()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/_exos/check/{model}/{field}"))
+                    .header("content-type", "application/json")
+                    .body(Body::from(format!("\"{value}\"")))
+                    .expect("a valid request"),
+            )
+            .await
+            .expect("the router answers");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        body(response).await
+    }
+
     /// The event stream an action answers with, refusal or not.
     pub(crate) async fn post(uri: &str, payload: &str) -> String {
         let response = app()

@@ -104,10 +104,12 @@ pub fn nested_rows<T: ModelFields>(value: Value, outwards: bool) -> Value {
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Model<T>(pub T);
 
+/// `Send` on the model, because the checks are awaited with it in hand. Every
+/// model is plain data, so this rules out nothing anybody would write.
 impl<S, T> FromRequest<S> for Model<T>
 where
     S: Send + Sync,
-    T: DeserializeOwned + Validate,
+    T: DeserializeOwned + Send + Validate,
 {
     type Rejection = ModelRejection;
 
@@ -124,7 +126,13 @@ where
         // Checked here rather than in the handler, so that there is no call
         // site to forget and a body runs only against a value whose shape
         // held. What a rule cannot answer, the handler still can.
-        let errors = model.validate();
+        let mut errors = model.validate();
+
+        // And the rules that need the application's own data, awaited after
+        // the shape rules rather than beside them: a field they refused is not
+        // asked about again, whatever the browser had already been told about
+        // it. A submission racing an outstanding check is answered here.
+        model.check_into("", &mut errors).await;
 
         if errors.is_empty() {
             Ok(Self(model))

@@ -47,6 +47,8 @@ pub struct Bind {
     arms: &'static str,
     /// The field's own rules, for the control to answer as it is typed into.
     rules: Option<String>,
+    /// The model that answers the rule this field cannot, where it has one.
+    check: &'static str,
 }
 
 impl IntoAttributes for Bind {
@@ -76,6 +78,13 @@ impl IntoAttributes for Bind {
         if let Some(rules) = self.rules {
             attributes.set("data-bind-rules", rules);
         }
+
+        // The model the round trip is addressed to, and the whole of what says
+        // there is one to make. The field's own name is `data-bind` already, so
+        // the pair the route resolves through is on the control either way.
+        if !self.check.is_empty() {
+            attributes.set("data-bind-check", self.check);
+        }
     }
 }
 
@@ -99,6 +108,7 @@ impl<T: BindKind> Bindable for Signal<T> {
             rules: None,
             group: None,
             arms: "",
+            check: "",
         }
     }
 }
@@ -109,9 +119,10 @@ impl<T: BindKind> Bindable for crate::Bound<T> {
             name: self.name().to_owned(),
             kind: T::KIND,
             state: Some(self.state()),
-            rules: self.checked().map(|rules| rules.source().to_owned()),
+            rules: self.rules().map(|rules| rules.source().to_owned()),
             group: self.group(),
             arms: self.arms(),
+            check: self.check(),
         }
     }
 }

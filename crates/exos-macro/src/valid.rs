@@ -7,7 +7,7 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::{Expr, ExprRange, FieldsNamed, Ident, ItemStruct, Meta, RangeLimits, Token, Type};
+use syn::{Expr, ExprRange, FieldsNamed, Ident, ItemStruct, Meta, Path, RangeLimits, Token, Type};
 
 /// What one field is checked against.
 pub(crate) struct Rules {
@@ -40,6 +40,12 @@ pub(crate) enum Rule {
     },
     /// Shaped like an address.
     Email,
+    /// Whatever the named function says, which is the one rule with no browser
+    /// half and therefore the one that costs a request.
+    CheckedBy {
+        /// The function that answers it.
+        ask: Path,
+    },
 }
 
 /// Reads every field's `#[valid(...)]`.
@@ -106,6 +112,16 @@ fn rule(meta: &Meta) -> syn::Result<Rule> {
                 })
         }
 
+        Meta::NameValue(pair) if pair.path.is_ident("checked_by") => match &pair.value {
+            Expr::Path(ask) => Ok(Rule::CheckedBy {
+                ask: ask.path.clone(),
+            }),
+            other => Err(syn::Error::new_spanned(
+                other,
+                "a server-only rule names one function, as in `checked_by = coupon`",
+            )),
+        },
+
         Meta::NameValue(pair) if pair.path.is_ident("length") => {
             let Expr::Range(range) = &pair.value else {
                 return Err(syn::Error::new_spanned(
@@ -121,7 +137,7 @@ fn rule(meta: &Meta) -> syn::Result<Rule> {
         other => Err(syn::Error::new_spanned(
             other,
             "unknown rule; this macro knows `required`, `required_with = other`, \
-             `email` and `length = a..=b`",
+             `email`, `length = a..=b` and `checked_by = function`",
         )),
     }
 }
@@ -230,6 +246,71 @@ pub(crate) fn arms(declared: &[Rules], field: &Ident) -> String {
         .join(" ")
 }
 
+/// The function that answers for `field`, where the server alone can.
+fn ask_for<'a>(declared: &'a [Rules], field: &Ident) -> Option<&'a Path> {
+    let rules = declared.iter().find(|rules| rules.field == *field)?;
+
+    rules.rules.iter().find_map(|rule| match rule {
+        Rule::CheckedBy { ask } => Some(ask),
+        _ => None,
+    })
+}
+
+/// Whether this field costs a round trip, for the binding that would make it.
+pub(crate) fn checked(declared: &[Rules], field: &Ident) -> bool {
+    ask_for(declared, field).is_some()
+}
+
+/// The route's half: one entry per checked field, resolved by the pair the
+/// control carries.
+///
+/// A shim rather than the function itself, because what arrives off the wire is
+/// a `Value` and every checked field has a type and a future of its own. The
+/// deserializing and the presence guard belong to `exos::asked`, so the route
+/// and the extractor cannot come to different conclusions about one value.
+pub(crate) fn entries(declared: &[Rules], model: &str) -> TokenStream {
+    let entries = declared.iter().filter_map(|Rules { field, key, .. }| {
+        let ask = ask_for(declared, field)?;
+
+        Some(quote! {
+            ::exos::inventory::submit! {
+                ::exos::CheckEntry::new(#model, #key, |__value| {
+                    ::std::boxed::Box::pin(::exos::asked(__value, #ask))
+                })
+            }
+        })
+    });
+
+    quote! { #(#entries)* }
+}
+
+/// The server's other half: the same functions, awaited at submit.
+///
+/// Written under `__prefix` like every other message, and guarded the way the
+/// route's shim is: an absent value is not asked about, and neither is one the
+/// shape rules have already refused.
+pub(crate) fn checks(declared: &[Rules]) -> TokenStream {
+    let checks = declared.iter().filter_map(|Rules { field, key, .. }| {
+        let ask = ask_for(declared, field)?;
+
+        Some(quote! {{
+            let __key = ::std::format!("{}{}", __prefix, #key);
+
+            if __errors.get(&__key).is_none() && ::exos::Presence::is_present(&self.#field) {
+                // Cloned because the future outlives this call, which is the
+                // same reason the function takes the value owned.
+                if let ::core::result::Result::Err(__said) =
+                    #ask(::core::clone::Clone::clone(&self.#field)).await
+                {
+                    __errors.said(__key, __said);
+                }
+            }
+        }})
+    });
+
+    quote! { #(#checks)* }
+}
+
 /// The browser's half: the same rules, as one expression yielding a message.
 ///
 /// Built from the list [`check`] reads, so the two questions are one
@@ -306,6 +387,10 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
                 ::exos::complaint(#label, ::exos::Violation::Malformed),
             )
         }],
+
+        // The one rule the browser cannot ask. What it does instead is send
+        // the value, which the control does off its own binding.
+        Rule::CheckedBy { .. } => Vec::new(),
     });
 
     quote! { ::exos::chain(::std::vec![#(#asked),*]) }
@@ -361,6 +446,9 @@ pub(crate) fn check(declared: &[Rules]) -> TokenStream {
                     __errors.add(#key, #label, ::exos::Violation::Malformed);
                 }
             },
+
+            // Answered by [`checks`], which is awaited once these have run.
+            Rule::CheckedBy { .. } => quote! {},
         });
 
             quote! { #(#questions)* }

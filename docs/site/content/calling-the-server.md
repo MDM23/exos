@@ -131,10 +131,13 @@ root:
 <html data-exos-progress="off" data-exos-progress-delay="300">
 ```
 
-Every round trip is announced on `document` as `exos:busy` and `exos:idle`,
-actions included, with `detail.kind` saying which it was. The bar reads that
-pair and ignores everything that is not a navigation, and an indicator of your
-own reads the same one:
+Every round trip a call makes is announced on `document` as `exos:busy` and
+`exos:idle`, actions included, with `detail.kind` saying which it was. The one
+exception is a [`checked_by`](models#rules-on-a-model) field asking about what
+is being typed into it: that says `aria-busy` on the control and nothing else,
+because a page-wide indicator per keystroke is not one. The bar reads the pair
+and ignores everything that is not a navigation, and an indicator of your own
+reads the same one:
 
 ```js
 document.addEventListener("exos:busy", (event) => {

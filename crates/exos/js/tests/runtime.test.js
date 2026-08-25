@@ -264,6 +264,78 @@ test("editing a gate retires what was said about the fields it arms", async () =
     assert.deepEqual({ ...window.exos.signals.errors }, { name: "kept" });
 });
 
+/**
+ * A field with a rule the server alone can answer.
+ *
+ * `data-bind-check` is the model that answers for it, and `data-bind` is the
+ * field, so the two names the binding already carries are the whole address.
+ */
+const checkable = (rules = "") =>
+    `<input id="field" data-signals-root='{"errors":{}}' data-bind="code" ` +
+    `data-bind-kind="string" data-bind-state="errors" data-bind-check="m1"` +
+    (rules ? ` data-bind-rules='${rules}'` : "") +
+    ">";
+
+/** Longer than the fixed delay a checked field waits out. */
+const CHECKED = 340;
+
+// The wish stage 3 could not deliver: a rule that needs the server, answered
+// while the field is still being edited rather than at submit.
+test("a field the server alone can judge asks it once the typing stops", async () => {
+    const window = boot(checkable());
+    window.transport.responses.body = "not one of ours";
+
+    await type(window, "nope");
+    assert.equal(window.transport.requests.length, 0, "and not once per keystroke");
+
+    await after(CHECKED);
+    await settled();
+
+    assert.deepEqual(window.transport.requests, [{ url: "/_exos/check/m1/code", body: "nope" }]);
+    assert.equal(window.exos.signals.errors.code, "not one of ours");
+});
+
+// The guard the extractor applies too: nothing asks the application whether an
+// empty string is taken, and a value the control has already refused is not
+// worth a request either.
+test("nothing is asked about a value the control already complains about", async () => {
+    const window = boot(checkable(`$.code.length < 3 ? "too short" : ""`));
+
+    await type(window, "no");
+    await after(CHECKED);
+
+    assert.equal(window.transport.requests.length, 0);
+    assert.equal(window.exos.signals.errors.code, "too short");
+});
+
+// Two checks can overlap on a slow connection and answer in the other order.
+// What decides it is the value rather than the order: the edit that overtook
+// this one has already retired whatever was said about what it was about.
+test("an answer about a value nobody is holding any more is dropped", async () => {
+    const window = boot(checkable());
+    const answers = [];
+    window.fetch = () => new Promise((resolve) => answers.push(resolve));
+
+    await type(window, "nope");
+    await after(CHECKED);
+
+    const field = window.document.getElementById("field");
+    assert.equal(field.getAttribute("aria-busy"), "true", "a check in flight says so");
+
+    await type(window, "nopealike");
+
+    answers.shift()({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        text: () => Promise.resolve("not one of ours"),
+    });
+    await settled();
+
+    assert.equal(window.exos.signals.errors.code, undefined);
+    assert.ok(!field.hasAttribute("aria-busy"), "and the marker goes with the answer");
+});
+
 // Whether anything in a form has been edited, which is one flag beside the
 // per-field ones rather than a fold over however many fields it has.
 test("a model knows whether any of its controls has been edited", async () => {

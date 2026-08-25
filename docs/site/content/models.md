@@ -220,17 +220,56 @@ Nothing speaks until a field has been edited, because a form that is red before
 it is read is worse than no validation. A message from the server shows
 whenever there is one, since the server only speaks after a submit.
 
-**A rule exos cannot know is a `Refusal`.** Whether a code is spent or a name
-is taken needs the data, so it stays ordinary Rust in the handler and answers
-in the same shape, and nothing a viewer sees says which side decided:
+**A rule about one value that needs the server is `checked_by`.** Whether this
+code exists is a question about the application's data rather than about the
+value's shape, so it names a function instead of describing a shape:
+
+```rust
+#[valid(required, checked_by = coupon)]
+code: String,
+```
+
+```rust
+async fn coupon(code: String) -> Result<(), String> {
+    match data::<Codes>().accepts(&code) {
+        true => Ok(()),
+        false => Err(String::from("That code is not one of ours.")),
+    }
+}
+```
+
+That one declaration is asked twice. The control asks it once the typing stops,
+over a route exos mounts, and writes the answer into the same slot every other
+message lands in; the extractor asks the same function again before the handler
+runs, because the browser's copy is feedback and never authority. The message
+is yours outright, since a rule exos does not know cannot have a violation exos
+does, and it is written inside a request, so the locale is in scope.
+
+Neither half asks about a value that is absent or that a shape rule has already
+refused: nothing asks the database whether an empty string is taken. While a
+check is in flight the control carries `aria-busy`, which is the attribute
+every other round trip already uses.
+
+Two things to know before writing one. It is an endpoint that answers a
+question about a value, so a rule whose answer is a secret is the wrong shape
+for a form that would have leaked the same answer at submit, and where a rate
+limit belongs is inside your own function. And it costs a request per field
+per pause in typing, which is why it is the rule of last resort rather than the
+first.
+
+**A question about more than one field is a `Refusal`.** A rule sees one value,
+so anything comparing two of them stays ordinary Rust in the handler and
+answers in the same shape. Nothing a viewer sees says which side decided:
 
 ```rust
 #[exos::post("/signup")]
 async fn signup(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>> {
     let mut refusal = Refusal::new();
 
-    if !data::<Codes>().accepts(&form.code) {
-        refusal.add(Signup::CODE, "That code is not one of ours.");
+    let seats = data::<Programme>().seats(&form.workshops);
+
+    if form.attendees.iter().count() > seats {
+        refusal.add(Signup::ATTENDEES, "More people than there are seats.");
     }
 
     if !refusal.is_empty() {
@@ -241,8 +280,8 @@ async fn signup(Model(form): Model<Signup>) -> Result<Effect, Refusal<Signup>> {
 }
 ```
 
-`Signup::CODE` is a token rather than a name, so renaming the field breaks that
-line instead of quietly addressing nothing.
+`Signup::ATTENDEES` is a token rather than a name, so renaming the field breaks
+that line instead of quietly addressing nothing.
 
 **A refusal about the submission is `say`.** Whether these two are a login is a
 question about the pair, and answering it on the password says something the

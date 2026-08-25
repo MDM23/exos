@@ -3,8 +3,8 @@
 Rules written once, checked on both sides, and the one round trip that carries
 what only the server knows.
 
-Status: stages 0, 1, 2, 3, 5 and the gate half of 4 are built, aggregation
-included. What is left is patterns (1a), `required_when` and stage 6.
+Status: stages 0, 1, 2, 3, 5, 6 and the gate half of 4 are built, aggregation
+included. What is left is patterns (1a) and `required_when`.
 
 [`examples/signup`](../../examples/signup) is the form written by hand against
 the surface that existed before any of this, so what the stages are worth is
@@ -615,8 +615,8 @@ none of it is on the server at all.
 
 ## Stage 6: the rule only the server can answer, while it is typed
 
-[Stage 3](#stage-3-one-debounce-three-features) promised three things and
-delivered two. The third was a server rule answering while a field is still
+**Done.** [Stage 3](#stage-3-one-debounce-three-features) promised three things
+and delivered two. The third was a server rule answering while a field is still
 being edited, and it did not arrive, because the generated caller sends a model
 and only a model. This is that stage, and it is the first of this document's
 open questions answered: a server-only rule is declared on the model like every
@@ -653,12 +653,11 @@ nor the rule can name the submit route. What answers that is that the check is
 not the submit: it is addressed by the field rather than by the form, and the
 field is the one thing both halves already know.
 
-**The address is the two names the binding carries today.** A control renders
-with `data-bind`, the field's generated name, and `data-bind-state`, the
-model's, so `/_exos/check/{model}/{field}` asks the markup for nothing beyond a
-flag saying there is a check to make, and the runtime builds the URL off the
-base it was loaded from the way it already builds `/_exos/subscribe`. The
-template does not change at all:
+**The address is two names the binding carries.** A control renders with
+`data-bind`, the field's generated name, and the model it is checked by, so
+`/_exos/check/{model}/{field}` asks the markup for nothing else and the runtime
+builds the URL off the base it was loaded from the way it already builds
+`/_exos/subscribe`. The template does not change at all:
 
 ```rs
 <input id="code" {bind(&form.code)}>
@@ -689,9 +688,9 @@ check is answered by the same function anyway. Two evaluators and one impl, one
 level up from where [valid.rs](../../crates/exos/src/valid.rs) says it about
 `Presence` and `Length`.
 
-**The timing is already built.** Stage 3's debounce is keyed by call site and
-element, so a checked field inside a row is its own timer, and
-last-response-wins drops an answer about a value nobody is holding any more.
+**The timing is already built.** Stage 3's debounce is the mechanism, keyed here
+by the field and by where it is declared, so a checked field inside a row is its
+own timer and two checked fields in one row are two.
 
 **A check in flight is `aria-busy` on the control**, which is where AngularJS's
 `$pending` earns the place stage 2 declined to give it. The attribute is the one
@@ -737,6 +736,65 @@ and this is a rule.
 
 **Not offered: a check on `Rows`.** A question about how many rows there are is
 answered at submit, where the rows already are.
+
+### What it found
+
+**The model in the address is not the record.** This stage drew the pair as
+`data-bind` and `data-bind-state`, on the grounds that both are on the control
+already. They are, and they are not the same two names: a field of a row writes
+its message into the **form's** record and is checked by the **row model** that
+declared the rule. Reusing `data-bind-state` would have addressed every checked
+row field to a model that never declared it, which resolves to nothing and
+fails as a 404 nobody would connect to the cause. The control carries the model
+that answers for it instead, under a name of its own, and that attribute is also
+the flag saying there is a check to make. The two-name address survives, and one
+of the two had to be new.
+
+**What drops a stale answer is the value, not the turn.** Stage 3's
+last-response-wins counts requests under a debounce key, and that is the wrong
+question here by one step: the edit that overtakes an in-flight check happens
+*before* its replacement request goes out, so the counter still calls the older
+answer current and it lands as a message about a value nobody is holding. What
+this compares instead is the value the answer was about against the value in the
+box, which is what the rule was always trying to say. It also meant the check
+needed nothing from `request`.
+
+**A check is not a request the page announces.** It goes out through `fetch`
+rather than through the request path, because what comes back is a message
+rather than an effect or a document, and because `exos:busy` on every keystroke
+would put the page's progress indicator on a field somebody is typing into.
+`aria-busy` on the control is the whole of what it says, which is the attribute
+this stage was already going to use.
+
+**The delay is fixed, and that is what a rule on a model means.** `debounce`
+takes one at the call site because a template has one; a rule declared on a
+field has no call site to write a number at, and a field that is checked is
+checked the same way wherever it is rendered. 300ms, in the runtime, beside the
+guide's own example.
+
+**Presence is the guard on both halves and lives in one place.** The client
+sends whatever is in the box and the shim asks
+[`Presence`](../../crates/exos/src/valid.rs) before it awaits anything, so the
+question "is this worth asking about" has one definition rather than a Rust one
+and a JavaScript one that disagree about `0` and about whitespace. What the
+client does skip is a value its own rules already complain about, which costs
+nothing to know and is the same reason the extractor skips a field it has
+already refused.
+
+**It took a `Send` bound on the model.** The extractor holds the model across
+the await, so `Model<T>` now needs `T: Send`. Every model is plain data, so it
+rules out nothing anybody would write, but it is a bound in a public signature
+and worth saying out loud rather than discovering from an error message.
+
+**Not everything the server alone knows wants a round trip.**
+[`examples/signup`](../../examples/signup) had two rules in its handler and only
+one of them moved. The discount code became a `checked_by` and took its
+`Refusal` arm with it. The workshops check stayed, and the reason is the
+finding: it guards against ids no well-behaved page can produce, so nobody is
+ever meant to see its message, and asking the server on every click would be a
+request per checkbox to answer a question the honest answer to is always yes.
+`checked_by` is for a rule a person is waiting on, not for every rule the server
+happens to be the one that knows.
 
 ## What exos will not do
 

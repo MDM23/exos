@@ -272,9 +272,10 @@ pub fn signal<T: Serialize>(initial: T) -> Signal<T> {
 pub struct Bound<T> {
     signal: Signal<T>,
     state: &'static str,
-    checked: Option<Js<String>>,
+    rules: Option<Js<String>>,
     group: Option<&'static str>,
     arms: &'static str,
+    check: &'static str,
 }
 
 impl<T> Bound<T> {
@@ -285,13 +286,14 @@ impl<T> Bound<T> {
     /// all three.
     #[doc(hidden)]
     #[must_use]
-    pub const fn new(signal: Signal<T>, state: &'static str, checked: Option<Js<String>>) -> Self {
+    pub const fn new(signal: Signal<T>, state: &'static str, rules: Option<Js<String>>) -> Self {
         Self {
             signal,
             state,
-            checked,
+            rules,
             group: None,
             arms: "",
+            check: "",
         }
     }
 
@@ -306,15 +308,16 @@ impl<T> Bound<T> {
     pub const fn row(
         signal: Signal<T>,
         state: &'static str,
-        checked: Option<Js<String>>,
+        rules: Option<Js<String>>,
         group: &'static str,
     ) -> Self {
         Self {
             signal,
             state,
-            checked,
+            rules,
             group: Some(group),
             arms: "",
+            check: "",
         }
     }
 
@@ -337,6 +340,27 @@ impl<T> Bound<T> {
         self.arms
     }
 
+    /// Says which model answers this field's round trip, where it has one.
+    ///
+    /// The model's own name rather than the record's: a field of a row writes
+    /// its message into the form's record and is checked by the row model that
+    /// declared the rule, and those are two different models.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn checking(mut self, check: &'static str) -> Self {
+        self.check = check;
+        self
+    }
+
+    /// That model, as the binding carries it.
+    ///
+    /// Empty where nothing about this field needs the server, which is what
+    /// tells the control there is no round trip to make.
+    #[must_use]
+    pub const fn check(&self) -> &'static str {
+        self.check
+    }
+
     /// The rows field this is one row's copy of, where it is one.
     #[must_use]
     pub const fn group(&self) -> Option<&'static str> {
@@ -355,8 +379,8 @@ impl<T> Bound<T> {
     /// the runtime evaluates them and writes the answer into the record, so
     /// there is one slot a message lives in whoever decided it.
     #[must_use]
-    pub const fn checked(&self) -> Option<&Js<String>> {
-        self.checked.as_ref()
+    pub const fn rules(&self) -> Option<&Js<String>> {
+        self.rules.as_ref()
     }
 
     /// What is wrong with this field, or the empty string.

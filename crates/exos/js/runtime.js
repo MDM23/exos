@@ -843,6 +843,13 @@
             } else {
                 write(key, coerce(el.value, kind));
             }
+
+            // And whatever this field's rules cannot answer, once the typing
+            // stops. Keyed by the field as well as by where it is declared, so
+            // two checked fields in one row are two timers rather than one.
+            if (el.hasAttribute("data-bind-check")) {
+                debounceCall(el, `~check/${name}`, CHECKING, () => checkField(el));
+            }
         });
     }
 
@@ -995,6 +1002,71 @@
         } finally {
             idle(el);
             announce("idle", { kind: "request", method, url });
+        }
+    }
+
+    // How long a checked field waits after the last keystroke. Fixed rather
+    // than declared: the rule is on the model, where there is no call site to
+    // write a delay at, and a field that is checked is checked the same way
+    // wherever it is rendered.
+    const CHECKING = 300;
+
+    // The one rule a control cannot answer for itself, asked of the model that
+    // declares it. The pair in the URL is what the binding already carries: the
+    // model it is checked by, and the field's own name.
+    //
+    // Deliberately not `request`. What comes back is a message rather than an
+    // effect or a document, and it goes into this control's own slot: writing
+    // the record would clear every other message on the form, and announcing
+    // this as a round trip would put the page's progress indicator on every
+    // keystroke. `aria-busy` on the control is what says a check is in flight.
+    async function checkField(el) {
+        const name = el.getAttribute("data-bind");
+        const model = el.getAttribute("data-bind-check");
+        const state = el.getAttribute("data-bind-state");
+        if (!name || !model || !state) return;
+
+        const key = resolve(el, name);
+        const slot = resolve(el, state);
+        const at = recordKey(el, name);
+
+        // A value its own rules already complain about is not one to ask the
+        // server about, which is the guard the extractor applies as well:
+        // nothing asks the application whether an empty string is taken.
+        if ((read(slot) ?? {})[at]) return;
+
+        const asked = read(key);
+        busy(el);
+
+        try {
+            const response = await fetch(`${BASE}/_exos/check/${model}/${name}`, {
+                method: "POST",
+                headers: { "X-Exos": "true", "Content-Type": "application/json" },
+                body: JSON.stringify(asked ?? null),
+            });
+
+            if (!response.ok) {
+                console.error(`[exos] ${name} could not be checked:`, response.status, el);
+                return;
+            }
+
+            const said = await response.text();
+
+            // An answer about a value nobody is holding any more is dropped.
+            // Two checks can overlap on a slow connection and answer in the
+            // other order, and the edit that overtook this one has already
+            // retired what was said about the value it was about.
+            if (!said || !Object.is(read(key), asked)) return;
+
+            const record = read(slot) ?? {};
+            if (record[at] !== said) write(slot, { ...record, [at]: said });
+        } catch (error) {
+            // Nothing rethrows: a check nobody asked for, made because
+            // somebody is typing, must not become an unhandled rejection every
+            // time the network blinks.
+            console.error(`[exos] ${name} could not be checked:`, error, el);
+        } finally {
+            idle(el);
         }
     }
 
