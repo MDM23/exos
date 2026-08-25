@@ -22,23 +22,21 @@ use core::fmt::{self, Display, Write as _};
 /// assert_eq!(raw.render().as_str(), "<b>bold</b>");
 /// ```
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[must_use = "markup that is not rendered into a response does nothing"]
 pub struct Markup(pub String);
 
 impl Markup {
     /// The markup as a string slice.
-    #[must_use = "reading the markup without using it does nothing"]
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
     /// Consumes the value and returns the underlying string.
-    #[must_use = "reading the markup without using it does nothing"]
     pub fn into_string(self) -> String {
         self.0
     }
 
     /// Whether anything was rendered.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -76,7 +74,6 @@ pub trait Render {
     fn render_to(&self, out: &mut String);
 
     /// Renders into a fresh [`Markup`].
-    #[must_use]
     fn render(&self) -> Markup {
         let mut out = String::new();
         self.render_to(&mut out);

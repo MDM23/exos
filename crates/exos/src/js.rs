@@ -40,6 +40,7 @@ mod combinator;
 /// API builds that claim holds by construction; [`Js::raw`] is the one place
 /// you assert it yourself.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[must_use = "an expression does nothing until it is placed on an attribute"]
 pub struct Js<T: ?Sized> {
     source: String,
     marker: PhantomData<fn() -> T>,
@@ -57,7 +58,6 @@ impl<T: ?Sized> Js<T> {
     /// let coarse = Js::<bool>::raw("matchMedia('(hover: none)').matches");
     /// assert_eq!(coarse.source(), "matchMedia('(hover: none)').matches");
     /// ```
-    #[must_use]
     pub fn raw(source: impl Into<String>) -> Self {
         Self {
             source: source.into(),
@@ -66,13 +66,11 @@ impl<T: ?Sized> Js<T> {
     }
 
     /// The JavaScript source.
-    #[must_use]
     pub fn source(&self) -> &str {
         &self.source
     }
 
     /// Consumes the expression and returns its source.
-    #[must_use]
     pub fn into_source(self) -> String {
         self.source
     }
@@ -80,7 +78,6 @@ impl<T: ?Sized> Js<T> {
     /// Reinterprets the expression's type without changing it.
     ///
     /// Carries the same caveat as [`Js::raw`]: nothing verifies the new claim.
-    #[must_use]
     pub fn cast<U>(self) -> Js<U> {
         Js {
             source: self.source,
@@ -162,7 +159,6 @@ thread_local! {
 ///
 /// assert_eq!(script, "a(); b()");
 /// ```
-#[must_use]
 pub fn record(body: impl FnOnce()) -> String {
     FRAMES.with(|frames| frames.borrow_mut().push(Vec::new()));
     body();
@@ -324,7 +320,6 @@ pub fn call(method: &str, url: &str, payload: Option<String>) {
 ///
 /// Everything crossing into JavaScript goes through this rather than being
 /// pasted, so a quote in a value cannot break out of the expression.
-#[must_use]
 pub fn quote_js(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_else(|_| String::from("\"\""))
 }

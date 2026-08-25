@@ -49,7 +49,6 @@ impl<T: ?Sized> Js<T> {
     ///
     /// A template literal rather than `+`, since `+` over two numbers adds them
     /// and this has no way to know whether either side is one.
-    #[must_use]
     pub fn concat<U>(self, other: impl IntoJs<U>) -> Js<String> {
         Js::raw(format!(
             "`${{{}}}${{{}}}`",
@@ -61,7 +60,6 @@ impl<T: ?Sized> Js<T> {
 
 impl Js<bool> {
     /// `a && b`.
-    #[must_use]
     pub fn and(self, other: impl IntoJs<bool>) -> Self {
         Self::raw(format!(
             "{} && {}",
@@ -71,7 +69,6 @@ impl Js<bool> {
     }
 
     /// `a || b`.
-    #[must_use]
     pub fn or(self, other: impl IntoJs<bool>) -> Self {
         Self::raw(format!(
             "{} || {}",
@@ -84,7 +81,6 @@ impl Js<bool> {
     ///
     /// Both exist because the method chains and the operator reads better on
     /// its own.
-    #[must_use]
     #[expect(
         clippy::should_implement_trait,
         reason = "Not is implemented too; the method form is what chains"
@@ -109,7 +105,6 @@ macro_rules! comparable {
             impl Js<$type> {
                 /// `===`, because `==` cannot be overloaded to return a
                 /// [`Js<bool>`].
-                #[must_use]
                 pub fn eq(self, other: impl IntoJs<$type>) -> Js<bool> {
                     Js::raw(format!(
                         "{} === {}",
@@ -119,7 +114,6 @@ macro_rules! comparable {
                 }
 
                 /// `!==`.
-                #[must_use]
                 pub fn ne(self, other: impl IntoJs<$type>) -> Js<bool> {
                     Js::raw(format!(
                         "{} !== {}",
@@ -140,37 +134,31 @@ macro_rules! numeric {
         $(
             impl Js<$type> {
                 /// `a > b`.
-                #[must_use]
                 pub fn gt(self, other: impl IntoJs<$type>) -> Js<bool> {
                     Js::raw(format!("{} > {}", self.grouped(), other.into_js().grouped()))
                 }
 
                 /// `a < b`.
-                #[must_use]
                 pub fn lt(self, other: impl IntoJs<$type>) -> Js<bool> {
                     Js::raw(format!("{} < {}", self.grouped(), other.into_js().grouped()))
                 }
 
                 /// `a >= b`.
-                #[must_use]
                 pub fn ge(self, other: impl IntoJs<$type>) -> Js<bool> {
                     Js::raw(format!("{} >= {}", self.grouped(), other.into_js().grouped()))
                 }
 
                 /// `a <= b`.
-                #[must_use]
                 pub fn le(self, other: impl IntoJs<$type>) -> Js<bool> {
                     Js::raw(format!("{} <= {}", self.grouped(), other.into_js().grouped()))
                 }
 
                 /// `a + b`.
-                #[must_use]
                 pub fn plus(self, other: impl IntoJs<$type>) -> Self {
                     Self::raw(format!("{} + {}", self.grouped(), other.into_js().grouped()))
                 }
 
                 /// `a - b`.
-                #[must_use]
                 pub fn minus(self, other: impl IntoJs<$type>) -> Self {
                     Self::raw(format!("{} - {}", self.grouped(), other.into_js().grouped()))
                 }
@@ -183,13 +171,11 @@ numeric!(f64, i32, u32);
 
 impl Js<String> {
     /// Whether the string is empty.
-    #[must_use]
     pub fn is_empty(self) -> Js<bool> {
         Js::raw(format!("{}.length === 0", self.grouped()))
     }
 
     /// The length in UTF-16 code units, which is what JavaScript counts.
-    #[must_use]
     pub fn len(self) -> Js<u32> {
         Js::raw(format!("{}.length", self.grouped()))
     }
@@ -201,7 +187,6 @@ impl Js<String> {
     /// needle is a string, and `Self` at this point is already `Js<String>`, so
     /// asking for `IntoJs<Self>` asks for an expression yielding an expression
     /// and nothing implements it.
-    #[must_use]
     pub fn contains(self, needle: impl IntoJs<String>) -> Js<bool> {
         Js::raw(format!(
             "{}.includes({})",
@@ -211,13 +196,11 @@ impl Js<String> {
     }
 
     /// The string in lower case, for comparing two of them as a reader would.
-    #[must_use]
     pub fn to_lowercase(self) -> Self {
         Self::raw(format!("{}.toLowerCase()", self.grouped()))
     }
 
     /// The string without leading or trailing whitespace.
-    #[must_use]
     pub fn trim(self) -> Self {
         Self::raw(format!("{}.trim()", self.grouped()))
     }
@@ -225,26 +208,22 @@ impl Js<String> {
 
 impl<T> Js<Vec<T>> {
     /// How many items there are.
-    #[must_use]
     pub fn len(self) -> Js<u32> {
         Js::raw(format!("{}.length", self.grouped()))
     }
 
     /// Whether the collection is empty.
-    #[must_use]
     pub fn is_empty(self) -> Js<bool> {
         Js::raw(format!("{}.length === 0", self.grouped()))
     }
 
     /// Whether it holds anything, which reads better than negating
     /// [`is_empty`](Self::is_empty) at a call site.
-    #[must_use]
     pub fn any(self) -> Js<bool> {
         Js::raw(format!("{}.length > 0", self.grouped()))
     }
 
     /// Whether `value` is among the items.
-    #[must_use]
     pub fn contains(self, value: impl IntoJs<T>) -> Js<bool> {
         Js::raw(format!(
             "{}.includes({})",

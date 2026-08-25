@@ -155,7 +155,6 @@ pub enum PluralCategory {
 
 impl Direction {
     /// What HTML's `dir` attribute calls this.
-    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::LeftToRight => "ltr",
@@ -166,7 +165,6 @@ impl Direction {
 
 impl PluralCategory {
     /// The CLDR keyword, which is what `Intl.PluralRules` answers with.
-    #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Few => "few",
@@ -212,7 +210,6 @@ impl PluralCategory {
 /// as [`scope`](crate::scope) does and for the same reasons. A fragment renders
 /// again from whatever publishes it, so a language it read out of the request
 /// would be the language of whoever happened to trigger the publish.
-#[must_use]
 pub fn locale<L: LocaleSet>() -> L {
     let scope = crate::scope();
 
@@ -363,7 +360,6 @@ impl IntoAttributes for Lang {
 /// The locale is passed rather than resolved, so that a document rendered in a
 /// language which is not the request's, which is what a language switcher's
 /// preview is, still says which one it is in.
-#[must_use]
 pub fn lang(locale: impl LocaleSet) -> Lang {
     Lang {
         tag: locale.tag(),

@@ -105,7 +105,6 @@ pub fn base(path: impl Into<String>) {
 /// Empty until the first request has been seen, which is why it is read while
 /// rendering rather than kept anywhere: a page renders inside a request, so the
 /// answer is already in by the time one asks.
-#[must_use]
 pub fn base_path() -> &'static str {
     BASE.get().map_or("", String::as_str)
 }
@@ -141,7 +140,6 @@ pub(crate) fn path() -> &'static str {
 /// It does take any number of leading slashes down to one, so a path that
 /// arrived from outside cannot turn into `//example.com` and send somebody to
 /// another host.
-#[must_use]
 pub fn url(path: impl AsRef<str>) -> String {
     format!("{}/{}", base_path(), path.as_ref().trim_start_matches('/'))
 }

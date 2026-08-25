@@ -29,7 +29,6 @@ pub(crate) fn pipeline(extension: &str) -> Pipeline {
 /// assert_eq!(exos_build::content_type("woff2"), Some("font/woff2"));
 /// assert_eq!(exos_build::content_type("xyz"), None);
 /// ```
-#[must_use]
 pub fn content_type(extension: &str) -> Option<&'static str> {
     Some(match extension {
         "avif" => "image/avif",

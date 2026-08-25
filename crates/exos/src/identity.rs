@@ -90,9 +90,10 @@ pub trait Audience: Hash {
 /// # #[derive(Hash)]
 /// # struct Team(u32);
 /// # impl Audience for Team { const NAME: &'static str = "team"; }
-/// Audiences::of(&Viewer(7)).and(&Team(3));
+/// let both = Audiences::of(&Viewer(7)).and(&Team(3));
 /// ```
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[must_use = "an audience set does nothing until a delivery is addressed to it"]
 pub struct Audiences(HashSet<String>);
 
 impl Audiences {
@@ -100,19 +101,16 @@ impl Audiences {
     ///
     /// Not a failure. A visitor exos has never heard of has a stream and no
     /// audiences, and the fragments on their page still update.
-    #[must_use]
     pub fn none() -> Self {
         Self::default()
     }
 
     /// The set holding `audience` alone.
-    #[must_use]
     pub fn of<A: Audience>(audience: &A) -> Self {
         Self::none().and(audience)
     }
 
     /// The same set, also addressed as `audience`.
-    #[must_use]
     pub fn and<A: Audience>(mut self, audience: &A) -> Self {
         self.0.insert(key(audience));
         self

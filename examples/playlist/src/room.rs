@@ -147,7 +147,6 @@ pub(crate) fn publish_room() {
 /// A refusal is worth a sentence, because the visible half of it is a row
 /// coming back and a listener deserves to know why. Nothing refused clears
 /// whatever the last one said, so the note never outlives what it was about.
-#[must_use]
 pub(crate) fn say(refused: Option<String>) -> Effect {
     let note = refused.map_or_else(String::new, |title| {
         format!("\u{201c}{title}\u{201d} is playing, so it stayed.")

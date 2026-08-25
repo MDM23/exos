@@ -51,7 +51,6 @@ impl Keys {
     /// The secret is hashed rather than used raw, so a passphrase and 64 bytes
     /// of random both give 32 bytes of key and the caller never has to think
     /// about length.
-    #[must_use]
     pub fn from_secret(secret: impl AsRef<[u8]>) -> Self {
         Self(Sha256::digest(secret.as_ref()).into())
     }
@@ -62,7 +61,6 @@ impl Keys {
     ///
     /// If the operating system has no entropy to give. There is no sensible
     /// fallback: a guessable signing key is worse than not starting.
-    #[must_use]
     pub fn random() -> Self {
         let mut key = [0_u8; 32];
 

@@ -63,13 +63,11 @@ pub(crate) struct Lot {
 
 impl Lot {
     /// What it stands at.
-    #[must_use]
     pub(crate) fn price(&self) -> u32 {
         self.bids.last().map_or(self.reserve, |bid| bid.amount)
     }
 
     /// Who bid last, and therefore who loses when somebody bids again.
-    #[must_use]
     pub(crate) fn leader(&self) -> Option<&Bidder> {
         self.bids.last().map(|bid| &bid.who)
     }
@@ -93,7 +91,6 @@ pub(crate) struct Lots(Mutex<Vec<Lot>>);
 
 impl Lots {
     /// A sale with something in it, so the example has something to watch.
-    #[must_use]
     pub(crate) fn seed() -> Self {
         let seeds = [
             ("A brass ship's clock", 120),
@@ -122,7 +119,6 @@ impl Lots {
     /// # Panics
     ///
     /// If the lock was poisoned by a panic in another thread while held.
-    #[must_use]
     pub(crate) fn snapshot(&self) -> Vec<Lot> {
         self.0
             .lock()
@@ -135,7 +131,6 @@ impl Lots {
     /// # Panics
     ///
     /// If the lock was poisoned; see [`snapshot`](Self::snapshot).
-    #[must_use]
     pub(crate) fn one(&self, id: u32) -> Option<Lot> {
         self.0
             .lock()
@@ -287,7 +282,6 @@ pub(crate) struct Accounts {
 
 impl Accounts {
     /// A few people to be, since the example has no sign-up.
-    #[must_use]
     pub(crate) fn seed() -> Self {
         let seeds = [
             (1, "Ada", Role::Bidder),
@@ -309,7 +303,6 @@ impl Accounts {
     }
 
     /// Everybody it is possible to be.
-    #[must_use]
     pub(crate) fn everybody(&self) -> &[Account] {
         &self.people
     }
@@ -325,7 +318,6 @@ impl Accounts {
     }
 
     /// One person by id, which is what a fragment has rather than a name.
-    #[must_use]
     pub(crate) fn account(&self, id: u32) -> Option<Account> {
         self.people.iter().find(|account| account.id == id).cloned()
     }
@@ -382,7 +374,6 @@ impl Guests {
     /// # Panics
     ///
     /// If the lock was poisoned; see [`issue`](Self::issue).
-    #[must_use]
     pub(crate) fn number(&self, name: &Id) -> Option<u32> {
         self.0
             .lock()

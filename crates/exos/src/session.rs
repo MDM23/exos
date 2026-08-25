@@ -139,7 +139,6 @@ impl Id {
     /// If the operating system has no entropy to give, which is where
     /// [`Keys::random`](crate::Keys::random) already stands and has the same
     /// answer: a guessable id is worse than not starting.
-    #[must_use]
     pub fn random() -> Self {
         let mut bytes = [0_u8; ID_BYTES];
 
@@ -154,13 +153,11 @@ impl Id {
     /// Deliberately not [`FromStr`](core::str::FromStr): this is the untrusted
     /// direction, and the shape check is the point. Without it a cookie could
     /// name a database row of any length and any content the sender liked.
-    #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         hex::is(text, ID_BYTES).then(|| Self(text.to_owned()))
     }
 
     /// The id, as an application keys on it.
-    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -195,7 +192,6 @@ impl Session {
     /// `None` is an anonymous visit. Asking does not start a session, so
     /// looking costs no cookie unless something on the page asks for one, which
     /// rendering a [live](crate::live) fragment does.
-    #[must_use]
     pub fn id(&self) -> Option<Id> {
         self.inner().id.clone()
     }
@@ -205,7 +201,6 @@ impl Session {
     /// Idempotent: a visitor who already has a name keeps it. This is what an
     /// anonymous shopping cart wants, and it is the wrong call at a sign-in,
     /// where [`rotate`](Self::rotate) is.
-    #[must_use]
     pub fn start(&self) -> Id {
         let mut inner = self.inner();
 
@@ -271,7 +266,6 @@ impl Session {
     /// on its way out. The reconnect is expected rather than a symptom, and
     /// every millisecond of it is a tab showing a name that is no longer this
     /// browser's.
-    #[must_use]
     pub fn rotate(&self) -> Id {
         let id = Id::random();
 
@@ -319,7 +313,6 @@ impl core::fmt::Debug for Session {
 /// If there is no request, or if the caller is inside a live fragment. Both are
 /// programming mistakes rather than conditions to handle, and
 /// [`scope`](crate::scope) says why.
-#[must_use]
 pub fn session() -> Session {
     of(&crate::scope())
 }

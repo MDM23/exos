@@ -76,13 +76,11 @@ impl<T> Rows<T> {
     }
 
     /// How many there are.
-    #[must_use]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Whether there are none.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
@@ -214,7 +212,6 @@ impl<T> core::fmt::Debug for RowsOf<T> {
 impl<T> RowsOf<T> {
     /// Called by the `#[model]` expansion, which knows all three.
     #[doc(hidden)]
-    #[must_use]
     pub fn new(key: &'static str, state: &'static str, initial: Vec<Value>) -> Self {
         Self {
             key,
@@ -225,7 +222,6 @@ impl<T> RowsOf<T> {
     }
 
     /// The name the group is rendered under. For a test, and for debugging.
-    #[must_use]
     pub const fn key(&self) -> &'static str {
         self.key
     }
@@ -269,7 +265,6 @@ impl<T> RowsOf<T> {
     /// A rule on a `Rows` field is about how many rows there are rather than
     /// about any one of them. Only the server answers it: the rows are not a
     /// signal, so there is nothing on the client to count.
-    #[must_use]
     pub fn error(&self) -> Js<String> {
         Js::raw(format!(
             "($.{state}[{key}] ?? \"\")",
@@ -279,7 +274,6 @@ impl<T> RowsOf<T> {
     }
 
     /// Whether anything is.
-    #[must_use]
     pub fn invalid(&self) -> Js<bool> {
         !self.error().is_empty()
     }
@@ -295,7 +289,6 @@ impl<T: RowModel + Default + Serialize> RowsOf<T> {
     /// The empty row is the row model's `Default` rather than nothing at all,
     /// because a field that starts as `null` is a field the server cannot read
     /// back: a row added and never typed into still has to be a row.
-    #[must_use]
     pub fn each(&self, render: impl Fn(&Row<T::Handle>) -> Markup) -> Markup {
         let empty = serde_json::to_value(T::default()).unwrap_or(Value::Null);
         let blank = render(&Row::new(T::row(&empty, self.state, self.key)));
@@ -318,7 +311,6 @@ impl<T: RowModel + Default + Serialize> RowsOf<T> {
     /// Not a client-side loop over data: the values are in the DOM already and
     /// this walks them once, at the moment the body is built.
     #[doc(hidden)]
-    #[must_use]
     pub fn payload(&self) -> String {
         let keys: Vec<String> = T::keys().iter().map(|key| quote_js(key)).collect();
 

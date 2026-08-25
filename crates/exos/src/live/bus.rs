@@ -162,7 +162,6 @@ impl Frame {
     }
 
     /// Which set the key is matched against.
-    #[must_use]
     pub const fn kind(&self) -> Kind {
         match self.carries {
             Carries::Topic { .. } => Kind::Topic,
@@ -172,13 +171,11 @@ impl Frame {
     }
 
     /// What a connection has to be watching to receive this.
-    #[must_use]
     pub fn key(&self) -> &str {
         &self.key
     }
 
     /// The trace this belongs to, or empty.
-    #[must_use]
     pub fn trace(&self) -> &str {
         &self.trace
     }
@@ -206,7 +203,6 @@ impl Frame {
     /// two binaries, so how it is spelled is part of the format and not a
     /// preference, and two nodes configured with different opinions about it
     /// would be a cluster that looks connected and delivers nothing.
-    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         serde_json::to_vec(self).unwrap_or_default()
     }
@@ -217,7 +213,6 @@ impl Frame {
     /// node running an older build ignores a kind it has never heard of
     /// instead of failing, so a cluster mid-rollover delivers what both halves
     /// understand and nothing else.
-    #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         serde_json::from_slice(bytes).ok()
     }

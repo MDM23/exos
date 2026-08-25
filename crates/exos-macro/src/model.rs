@@ -297,7 +297,6 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
             #(#tokens)*
 
             /// Signal handles for this model's fields, named after them.
-            #[must_use]
             pub fn signals() -> #handle
             where
                 Self: ::core::default::Default + ::exos::serde::Serialize,
@@ -315,13 +314,11 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
             /// One read of the record every message lands in, so a row and a
             /// refusal count for as much as a rule the browser answered. A
             /// form nobody has touched is valid: nothing has judged it yet.
-            #[must_use]
             pub fn valid(&self) -> ::exos::Js<bool> {
                 ::exos::all_valid(#state)
             }
 
             /// Whether any of its controls has been edited.
-            #[must_use]
             pub fn dirty(&self) -> ::exos::Js<bool> {
                 ::exos::any_dirty(#state)
             }
@@ -331,7 +328,6 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
             ///
             /// Empty while there is nothing to say, so a template reads it the
             /// way it reads a field's own message.
-            #[must_use]
             pub fn refusal(&self) -> ::exos::Js<::std::string::String> {
                 ::exos::model_refusal(#state)
             }
@@ -340,7 +336,6 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
             ///
             /// About the model itself, where [`valid`](Self::valid) is about
             /// everything anything has left in the record.
-            #[must_use]
             pub fn refused(&self) -> ::exos::Js<bool> {
                 !self.refusal().is_empty()
             }

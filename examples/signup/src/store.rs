@@ -27,7 +27,6 @@ pub(crate) struct Programme(Vec<Workshop>);
 
 impl Programme {
     /// A programme long enough that filtering it is worth doing.
-    #[must_use]
     pub(crate) fn seed() -> Self {
         let seeds = [
             ("Async Rust from the bottom up", "Monday"),

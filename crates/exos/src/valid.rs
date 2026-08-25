@@ -161,13 +161,11 @@ impl Errors {
     }
 
     /// Whether anything is wrong.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
     /// What is wrong with one field, by its wire name.
-    #[must_use]
     pub fn get(&self, key: &str) -> Option<&str> {
         self.0.get(key).map(String::as_str)
     }
@@ -188,7 +186,6 @@ impl Serialize for Errors {
 /// and whichever row it was about. Generated onto the model's handle, where it
 /// is `form.valid()`.
 #[doc(hidden)]
-#[must_use]
 pub fn all_valid(state: &str) -> Js<bool> {
     Js::raw(format!("Object.keys($.{state} ?? {{}}).length === 0"))
 }
@@ -198,7 +195,6 @@ pub fn all_valid(state: &str) -> Js<bool> {
 /// The same read a field's message is, off the key no field can spell.
 /// Generated onto the model's handle, where it is `form.refusal()`.
 #[doc(hidden)]
-#[must_use]
 pub fn model_refusal(state: &str) -> Js<String> {
     Js::raw(format!(
         "($.{state}[{key}] ?? \"\")",
@@ -212,7 +208,6 @@ pub fn model_refusal(state: &str) -> Js<String> {
 /// sets, so this is a read rather than a fold, and a row counts like any other
 /// control. Generated onto the handle as `form.dirty()`.
 #[doc(hidden)]
-#[must_use]
 pub fn any_dirty(state: &str) -> Js<bool> {
     Js::raw(format!("dirty({})", crate::quote_js(state)))
 }
@@ -292,7 +287,6 @@ pub struct Refusal<M> {
 
 impl<M: Validate> Refusal<M> {
     /// A refusal with nothing wrong yet.
-    #[must_use]
     pub fn new() -> Self {
         Self {
             errors: Errors::default(),
@@ -350,7 +344,6 @@ impl<M: Validate> Refusal<M> {
     }
 
     /// Whether anything is.
-    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.errors.is_empty()
     }
@@ -405,7 +398,6 @@ type Ask = fn(Value) -> Pin<Box<dyn Future<Output = Option<String>> + Send>>;
 
 impl CheckEntry {
     /// Describes a checked field for the route to resolve.
-    #[must_use]
     pub const fn new(model: &'static str, field: &'static str, ask: Ask) -> Self {
         Self { model, field, ask }
     }
@@ -506,7 +498,6 @@ pub fn complaints(say: impl Fn(&str, Violation) -> String + Send + Sync + 'stati
 /// The browser's copy of a message is baked in at render time, which is when
 /// the locale is known and where the application's own wording lives.
 #[doc(hidden)]
-#[must_use]
 pub fn complaint(field: &str, violation: Violation) -> String {
     complain(field, violation)
 }
@@ -517,7 +508,6 @@ pub fn complaint(field: &str, violation: Violation) -> String {
 /// conditional in the vocabulary and this is generated rather than written.
 /// First match wins, which is the rule [`Errors::add`] follows on the server.
 #[doc(hidden)]
-#[must_use]
 pub fn chain(rules: Vec<(Js<bool>, String)>) -> Option<Js<String>> {
     if rules.is_empty() {
         return None;
@@ -662,7 +652,6 @@ impl<T> Length for Vec<T> {
 /// something with a dot in it. Every stricter rule rejects an address that
 /// works, and the only real test of an address is sending to it.
 #[doc(hidden)]
-#[must_use]
 pub fn is_email(value: &str) -> bool {
     let mut parts = value.split('@');
 
@@ -678,7 +667,6 @@ pub fn is_email(value: &str) -> bool {
 /// Written with [`Js::raw`] because the combinators cannot say it yet, and
 /// kept next to [`is_email`] so the two are read together.
 #[doc(hidden)]
-#[must_use]
 pub fn email_js(value: &Js<String>) -> Js<bool> {
     Js::raw(format!(
         "/^[^@]+@[^@.]+(\\.[^@.]+)+$/.test({})",

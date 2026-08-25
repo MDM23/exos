@@ -48,7 +48,6 @@ pub(crate) const PREFIX: &str = "/_exos";
 ///
 /// A [`String`] rather than an [`Asset`], because a query is not part of any
 /// file name.
-#[must_use]
 pub fn runtime() -> String {
     let url = crate::asset!("js/exos.js").url();
 
@@ -83,13 +82,11 @@ pub struct Asset(&'static str);
 
 impl Asset {
     /// Names one built asset. Called by [`asset!`](crate::asset).
-    #[must_use]
     pub const fn new(file: &'static str) -> Self {
         Self(file)
     }
 
     /// The hashed file name, such as `app-9f2c1b4e.css`.
-    #[must_use]
     pub const fn file(&self) -> &'static str {
         self.0
     }
@@ -98,7 +95,6 @@ impl Asset {
     ///
     /// Only worth calling where a URL has to be a [`String`]: in a view the
     /// asset renders as one.
-    #[must_use]
     pub fn url(&self) -> String {
         self.render().into_string()
     }
@@ -118,7 +114,6 @@ impl Asset {
     /// code: an `asset!` inside a generic function nothing instantiates. That
     /// asset has no URL that serves either, which is a build-shaped fault
     /// rather than a request-shaped one, and it should say so at startup.
-    #[must_use]
     pub fn bytes(&self) -> &'static [u8] {
         crate::discover::asset_sets()
             .iter()
@@ -166,7 +161,6 @@ pub struct Embedded {
 
 impl Embedded {
     /// Describes one built asset. Called by [`asset!`](crate::asset).
-    #[must_use]
     pub const fn new(
         name: &'static str,
         file: &'static str,
@@ -182,19 +176,16 @@ impl Embedded {
     }
 
     /// The logical name, such as `app.css`.
-    #[must_use]
     pub const fn name(&self) -> &'static str {
         self.name
     }
 
     /// A handle to this asset, which is what a page needs.
-    #[must_use]
     pub const fn asset(&self) -> Asset {
         Asset(self.file)
     }
 
     /// The bytes, as they are served.
-    #[must_use]
     pub const fn bytes(&self) -> &'static [u8] {
         self.bytes
     }
@@ -206,13 +197,11 @@ pub struct AssetSet(pub &'static [Embedded]);
 
 impl AssetSet {
     /// The asset with this logical name, if the set has one.
-    #[must_use]
     pub fn get(&self, name: &str) -> Option<&'static Embedded> {
         self.0.iter().find(|embedded| embedded.name == name)
     }
 
     /// The asset served under this hashed file name.
-    #[must_use]
     pub fn by_file(&self, file: &str) -> Option<&'static Embedded> {
         self.0.iter().find(|embedded| embedded.file == file)
     }

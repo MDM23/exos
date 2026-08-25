@@ -43,13 +43,11 @@ pub(crate) struct Queue {
 
 impl Queue {
     /// The track that is on.
-    #[must_use]
     pub(crate) fn playing(&self) -> Option<&Track> {
         self.tracks.iter().find(|track| track.id == self.playing)
     }
 
     /// Whether `id` is the one on.
-    #[must_use]
     pub(crate) fn is_playing(&self, id: u32) -> bool {
         self.playing == id
     }
@@ -61,7 +59,6 @@ pub(crate) struct Room(Mutex<Queue>);
 
 impl Room {
     /// A queue with something in it, so the example has something to play.
-    #[must_use]
     pub(crate) fn seed() -> Self {
         // The art is embedded here and hashed here. `asset!` puts the file in
         // the binary and hands back the name it is served under, and
@@ -119,7 +116,6 @@ impl Room {
     /// # Panics
     ///
     /// If the lock was poisoned by a panic in another thread while held.
-    #[must_use]
     pub(crate) fn snapshot(&self) -> Queue {
         self.0
             .lock()

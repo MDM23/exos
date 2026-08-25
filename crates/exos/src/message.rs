@@ -134,7 +134,6 @@ pub trait Count: Copy + Display + sealed::Count {
     ///
     /// A plural rule asks about the absolute value: a language that has a
     /// singular puts -1 in it just as it puts 1 there.
-    #[must_use]
     fn magnitude(self) -> u64;
 
     /// Whether the count is below zero.
@@ -142,7 +141,6 @@ pub trait Count: Copy + Display + sealed::Count {
     /// The sign decides nothing about which arm a message takes, and only
     /// which character the number is written with; see
     /// [`Symbols`](crate::Symbols), where that is not always a hyphen.
-    #[must_use]
     fn is_negative(self) -> bool;
 }
 
@@ -347,7 +345,6 @@ thread_local! {
 /// Called by the `messages!` expansion. `say` is the text per plural category,
 /// each split on [`HOLE`] into the parts the count goes between.
 #[doc(hidden)]
-#[must_use]
 pub fn project(lang: &'static str, say: Vec<(PluralCategory, String)>, count: &str) -> Js<String> {
     let mut entry = Map::new();
 

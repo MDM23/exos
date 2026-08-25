@@ -52,7 +52,6 @@ pub enum EventType {
 
 impl EventType {
     /// The DOM name, which is also what the attribute is spelled with.
-    #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Change => "change",
@@ -79,13 +78,11 @@ pub struct Event;
 
 impl Event {
     /// The element the event came from.
-    #[must_use]
     pub fn target(self) -> Target {
         Target
     }
 
     /// The key that was pressed.
-    #[must_use]
     pub fn key(self) -> Js<String> {
         Js::raw("ev.key")
     }
@@ -115,13 +112,11 @@ pub struct Target;
 
 impl Target {
     /// The control's value.
-    #[must_use]
     pub fn value(self) -> Js<String> {
         Js::raw("ev.target.value")
     }
 
     /// Whether a checkbox or radio is checked.
-    #[must_use]
     pub fn checked(self) -> Js<bool> {
         Js::raw("ev.target.checked")
     }
@@ -130,7 +125,6 @@ impl Target {
 /// A delegated handler for any event the runtime carries.
 ///
 /// The closure records; it does not run in the browser itself.
-#[must_use]
 pub fn on(event: EventType, handler: impl FnOnce(Event)) -> Attr {
     Attr::new(
         format!("data-on-{}", event.name()),
@@ -139,19 +133,16 @@ pub fn on(event: EventType, handler: impl FnOnce(Event)) -> Attr {
 }
 
 /// A delegated `change` handler.
-#[must_use]
 pub fn on_change(handler: impl FnOnce(Event)) -> Attr {
     on(EventType::Change, handler)
 }
 
 /// A delegated `click` handler.
-#[must_use]
 pub fn on_click(handler: impl FnOnce(Event)) -> Attr {
     on(EventType::Click, handler)
 }
 
 /// A delegated `dblclick` handler.
-#[must_use]
 pub fn on_dblclick(handler: impl FnOnce(Event)) -> Attr {
     on(EventType::DblClick, handler)
 }
@@ -160,25 +151,21 @@ pub fn on_dblclick(handler: impl FnOnce(Event)) -> Attr {
 ///
 /// The bubbling counterpart of `blur`, which does not bubble and so cannot be
 /// delegated at all. This is what "the field lost focus" is spelled as.
-#[must_use]
 pub fn on_focusout(handler: impl FnOnce(Event)) -> Attr {
     on(EventType::FocusOut, handler)
 }
 
 /// A delegated `input` handler.
-#[must_use]
 pub fn on_input(handler: impl FnOnce(Event)) -> Attr {
     on(EventType::Input, handler)
 }
 
 /// A delegated `keydown` handler.
-#[must_use]
 pub fn on_keydown(handler: impl FnOnce(Event)) -> Attr {
     on(EventType::KeyDown, handler)
 }
 
 /// A delegated `submit` handler. The default submission is suppressed.
-#[must_use]
 pub fn on_submit(handler: impl FnOnce(Event)) -> Attr {
     on(EventType::Submit, handler)
 }

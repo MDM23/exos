@@ -61,7 +61,6 @@ pub fn provide<T: Send + Sync + 'static>(value: T) -> Option<Arc<T>> {
 /// # Panics
 ///
 /// If the registry lock was poisoned; see [`provide`].
-#[must_use]
 pub fn try_data<T: Send + Sync + 'static>() -> Option<Arc<T>> {
     let registry = registry()
         .read()
@@ -83,7 +82,6 @@ pub fn try_data<T: Send + Sync + 'static>() -> Option<Arc<T>> {
 /// # Panics
 ///
 /// If no value of type `T` has been [`provide`]d.
-#[must_use]
 pub fn data<T: Send + Sync + 'static>() -> Arc<T> {
     try_data::<T>().unwrap_or_else(|| {
         panic!(

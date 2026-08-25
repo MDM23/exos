@@ -83,7 +83,6 @@ impl Scope {
     ///
     /// If the store lock was poisoned by a panic in another thread while it was
     /// held. Nothing here can panic while holding it.
-    #[must_use]
     pub fn get<T: Send + Sync + 'static>(&self) -> Option<Arc<T>> {
         self.0
             .read()
@@ -133,7 +132,6 @@ impl core::fmt::Debug for Scope {
 /// If there is no request, or if the caller is inside a live fragment. Both are
 /// programming mistakes rather than conditions to handle, and the module docs
 /// say why.
-#[must_use]
 pub fn scope() -> Scope {
     match STATE.try_with(Clone::clone) {
         Ok(State::Request(store)) => Scope(store),

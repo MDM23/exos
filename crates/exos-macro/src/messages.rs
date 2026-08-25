@@ -358,7 +358,6 @@ impl Message {
                 #(#assertions)*
 
                 #(#docs)*
-                #[must_use]
                 pub fn #name(#(#inputs),*) -> #answer {
                     #resolved
                 }
@@ -396,7 +395,6 @@ impl Message {
             #(#assertions)*
 
             #(#docs)*
-            #[must_use]
             pub fn #name<__Count: ::exos::Counted>(#(#inputs),*) -> __Count::Answer {
                 let __locale = ::exos::locale::<#locale>();
 

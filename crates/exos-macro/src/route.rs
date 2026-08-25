@@ -108,7 +108,6 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
             /// Built from the route's own path and the types its handler
             /// destructures, so a renamed route or a changed parameter breaks
             /// every link to it rather than producing one that 404s.
-            #[must_use]
             pub fn url(#(#path_parameters),*) -> ::std::string::String {
                 ::exos::url(::std::format!(#format, #(#arguments),*))
             }

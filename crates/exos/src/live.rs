@@ -88,7 +88,6 @@ impl Topic {
     /// implementations. Adding a field to a type used as a fragment argument
     /// renames every topic it appears in, which is a deploy that has to drop
     /// its documents.
-    #[must_use]
     pub fn new(name: &str, arguments: &impl Hash) -> Self {
         let mut hasher = Fnv1a::new();
         name.hash(&mut hasher);
@@ -102,13 +101,11 @@ impl Topic {
     /// Deliberately not a `From` implementation: this is the untrusted
     /// direction, and the only useful thing to do with the result is
     /// [`verify`](Self::verify).
-    #[must_use]
     pub fn from_raw(id: &str) -> Self {
         Self(id.to_owned())
     }
 
     /// The topic as it appears in the DOM.
-    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -146,7 +143,6 @@ impl Topic {
     ///   published to everybody watching the outer one, so a token in it would
     ///   be one viewer's grant handed to all of them. The mask that keeps a
     ///   fragment's content viewer-independent turns out to be the same rule.
-    #[must_use]
     pub fn token(&self) -> Option<String> {
         let id = crate::session::current()?.start();
 
@@ -158,7 +154,6 @@ impl Topic {
     /// False for a browser carrying no session, since every token was made
     /// against one. That is a browser refusing cookies, and it costs live
     /// fragments rather than being quietly waved through.
-    #[must_use]
     pub fn verify(&self, token: &str) -> bool {
         let Some(id) = crate::session::current().and_then(|session| session.id()) else {
             return false;
@@ -195,13 +190,11 @@ pub struct Fragment {
 
 impl Fragment {
     /// Pairs markup with the topic that identifies it.
-    #[must_use]
     pub fn new(topic: Topic, markup: Markup) -> Self {
         Self { topic, markup }
     }
 
     /// The topic this fragment answers to.
-    #[must_use]
     pub fn topic(&self) -> &Topic {
         &self.topic
     }
@@ -212,7 +205,6 @@ impl Fragment {
     /// watching, which is the invariant a live fragment is held to, while the
     /// wrapper carries a grant to one browser and is the only part of a
     /// fragment that may differ between two viewers.
-    #[must_use]
     pub fn markup(&self) -> &Markup {
         &self.markup
     }
@@ -227,7 +219,6 @@ impl Fragment {
     /// [`Topic::token`]. The client keeps a grant a patch does not restate,
     /// so what a publish sends is the content and the name, and the
     /// subscription stays the one the page was served with.
-    #[must_use]
     pub fn to_markup(&self) -> Markup {
         let mut out = String::from("<exos-live style=\"display:contents\" id=\"");
         escape_into(self.topic.as_str(), &mut out);

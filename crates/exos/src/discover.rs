@@ -38,13 +38,11 @@ impl RouteEntry {
     /// `build` returns the handler already wrapped in its method: a function
     /// pointer rather than a value, because an axum handler is generic and
     /// this is the shape that erases those generics without boxing.
-    #[must_use]
     pub const fn new(path: &'static str, build: fn() -> MethodRouter) -> Self {
         Self { path, build }
     }
 
     /// The path this route mounts at, in axum's syntax.
-    #[must_use]
     pub const fn path(&self) -> &'static str {
         self.path
     }
@@ -67,7 +65,6 @@ pub struct AssetSetEntry(AssetSet);
 
 impl AssetSetEntry {
     /// Registers a set of assets for [`app`] to serve.
-    #[must_use]
     pub const fn new(set: AssetSet) -> Self {
         Self(set)
     }

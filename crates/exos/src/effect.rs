@@ -112,6 +112,7 @@ impl Step {
 /// Order is meaningful: the client applies them as given, so clearing a
 /// selection before patching the list it referred to does what it reads like.
 #[derive(Clone, Debug, Default, PartialEq)]
+#[must_use = "an effect does nothing until it is returned from a handler"]
 pub struct Effect {
     steps: Vec<Step>,
 }
@@ -121,55 +122,46 @@ impl Effect {
     ///
     /// A successful action whose result the client already painted
     /// optimistically usually wants this.
-    #[must_use]
     pub fn none() -> Self {
         Self::default()
     }
 
     /// Starts with a patch.
-    #[must_use]
     pub fn patch(markup: impl Into<Markup>) -> Self {
         Self::none().and_patch(markup)
     }
 
     /// Starts by writing a signal.
-    #[must_use]
     pub fn set<T: Serialize>(signal: &Signal<T>, value: T) -> Self {
         Self::none().and_set(signal, value)
     }
 
     /// Starts with a removal.
-    #[must_use]
     pub fn remove(selector: impl Into<String>) -> Self {
         Self::none().and_remove(selector)
     }
 
     /// Starts with a navigation.
-    #[must_use]
     pub fn navigate(url: impl Into<String>) -> Self {
         Self::none().and_navigate(url)
     }
 
     /// Starts by replacing the active page.
-    #[must_use]
     pub fn page(markup: impl Into<Markup>) -> Self {
         Self::none().and_page(markup)
     }
 
     /// Starts by retitling the document.
-    #[must_use]
     pub fn title(text: impl Into<String>) -> Self {
         Self::none().and_title(text)
     }
 
     /// Reloads the document.
-    #[must_use]
     pub fn reload() -> Self {
         Self::none().push(Step::Reload)
     }
 
     /// Adds a patch.
-    #[must_use]
     pub fn and_patch(self, markup: impl Into<Markup>) -> Self {
         self.push(Step::Patch(markup.into()))
     }
@@ -190,7 +182,6 @@ impl Effect {
     /// # Panics
     ///
     /// In debug builds, if `signal` is not declared on the document.
-    #[must_use]
     pub fn and_set<T: Serialize>(mut self, signal: &Signal<T>, value: T) -> Self {
         debug_assert_eq!(
             signal.placement(),
@@ -219,19 +210,16 @@ impl Effect {
     }
 
     /// Adds a removal.
-    #[must_use]
     pub fn and_remove(self, selector: impl Into<String>) -> Self {
         self.push(Step::Remove(selector.into()))
     }
 
     /// Adds a navigation.
-    #[must_use]
     pub fn and_navigate(self, url: impl Into<String>) -> Self {
         self.push(Step::Navigate(url.into()))
     }
 
     /// Adds a page replacement.
-    #[must_use]
     pub fn and_page(self, markup: impl Into<Markup>) -> Self {
         self.push(Step::Page(markup.into()))
     }
@@ -242,25 +230,21 @@ impl Effect {
     /// about an application's name or how a page's title joins it, so this and
     /// the `<title>` the document was served with are composed the same way
     /// only because the application composes them in one place.
-    #[must_use]
     pub fn and_title(self, text: impl Into<String>) -> Self {
         self.push(Step::Title(text.into()))
     }
 
     /// Moves the keyboard focus.
-    #[must_use]
     pub fn focus(self, selector: impl Into<String>) -> Self {
         self.push(Step::Focus(selector.into()))
     }
 
     /// Scrolls an element into view.
-    #[must_use]
     pub fn scroll(self, selector: impl Into<String>) -> Self {
         self.push(Step::Scroll(selector.into()))
     }
 
     /// The steps, in the order the client will apply them.
-    #[must_use]
     pub fn steps(&self) -> &[Step] {
         &self.steps
     }
@@ -269,13 +253,11 @@ impl Effect {
     ///
     /// What [`EffectStream`](crate::EffectStream) frames, since a step on its
     /// way to the wire has no reason to be copied first.
-    #[must_use]
     pub fn into_steps(self) -> Vec<Step> {
         self.steps
     }
 
     /// The server-sent-event framed body.
-    #[must_use]
     pub fn to_stream(&self) -> String {
         let mut out = String::new();
 

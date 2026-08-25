@@ -124,7 +124,6 @@ impl<T> Signal<T> {
     /// `T: Serialize` for each field on its own. Public only because that
     /// expansion lands in another crate.
     #[doc(hidden)]
-    #[must_use]
     pub fn with_value(name: impl Into<String>, initial: Value, placement: Placement) -> Self {
         Self {
             name: name.into(),
@@ -135,7 +134,6 @@ impl<T> Signal<T> {
     }
 
     /// Where this signal's name is resolved from.
-    #[must_use]
     pub const fn placement(&self) -> Placement {
         self.placement
     }
@@ -145,19 +143,16 @@ impl<T> Signal<T> {
     /// For a signal from [`signal`] this is generated and carries no promise:
     /// it is here to be read while debugging, not to be written into a
     /// template. Reach the signal through the handle instead.
-    #[must_use]
     pub fn name(&self) -> &str {
         &self.name
     }
 
     /// The value it starts at.
-    #[must_use]
     pub fn initial(&self) -> &Value {
         &self.initial
     }
 
     /// Reads the signal in the browser.
-    #[must_use]
     pub fn get(&self) -> Js<T> {
         Js::raw(format!("$.{}", self.name))
     }
@@ -255,7 +250,6 @@ impl<T> Signal<Vec<T>> {
 /// speculatively by a click the server can refuse. Held here it stays hidden
 /// until a reload. Held on a `#[model]` field, the reply that refuses can show
 /// it again.
-#[must_use]
 #[track_caller]
 pub fn signal<T: Serialize>(initial: T) -> Signal<T> {
     Signal::new(generated(Location::caller()), initial)
@@ -269,6 +263,7 @@ pub fn signal<T: Serialize>(initial: T) -> Signal<T> {
 /// the value, which is why a plain [`signal`] is not one of these: nothing
 /// declares rules about a signal nothing off the page can name.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[must_use = "a field does nothing until it is bound to a control"]
 pub struct Bound<T> {
     signal: Signal<T>,
     state: &'static str,
@@ -285,7 +280,6 @@ impl<T> Bound<T> {
     /// Called by the `#[model]` expansion, which is the only thing that knows
     /// all three.
     #[doc(hidden)]
-    #[must_use]
     pub const fn new(signal: Signal<T>, state: &'static str, rules: Option<Js<String>>) -> Self {
         Self {
             signal,
@@ -304,7 +298,6 @@ impl<T> Bound<T> {
     /// every row of one group carries the same field names, so the key is only
     /// complete once the browser can say which row this is.
     #[doc(hidden)]
-    #[must_use]
     pub const fn row(
         signal: Signal<T>,
         state: &'static str,
@@ -328,14 +321,12 @@ impl<T> Bound<T> {
     /// the runtime retires what was said about them, which is how unticking a
     /// box takes the complaints about the section it revealed with it.
     #[doc(hidden)]
-    #[must_use]
     pub const fn arming(mut self, arms: &'static str) -> Self {
         self.arms = arms;
         self
     }
 
     /// Those fields, as the binding carries them.
-    #[must_use]
     pub const fn arms(&self) -> &'static str {
         self.arms
     }
@@ -346,7 +337,6 @@ impl<T> Bound<T> {
     /// its message into the form's record and is checked by the row model that
     /// declared the rule, and those are two different models.
     #[doc(hidden)]
-    #[must_use]
     pub const fn checking(mut self, check: &'static str) -> Self {
         self.check = check;
         self
@@ -356,19 +346,16 @@ impl<T> Bound<T> {
     ///
     /// Empty where nothing about this field needs the server, which is what
     /// tells the control there is no round trip to make.
-    #[must_use]
     pub const fn check(&self) -> &'static str {
         self.check
     }
 
     /// The rows field this is one row's copy of, where it is one.
-    #[must_use]
     pub const fn group(&self) -> Option<&'static str> {
         self.group
     }
 
     /// The name of the record this field's message is written into.
-    #[must_use]
     pub const fn state(&self) -> &'static str {
         self.state
     }
@@ -378,7 +365,6 @@ impl<T> Bound<T> {
     /// Carried to the control by [`bind`](crate::bind) rather than read here:
     /// the runtime evaluates them and writes the answer into the record, so
     /// there is one slot a message lives in whoever decided it.
-    #[must_use]
     pub const fn rules(&self) -> Option<&Js<String>> {
         self.rules.as_ref()
     }
@@ -389,7 +375,6 @@ impl<T> Bound<T> {
     /// server writes it on a refusal; the control writes it as it is typed
     /// into, which is also what takes a stale verdict away, since a value
     /// nobody has judged since it changed cannot have a message about it.
-    #[must_use]
     pub fn error(&self) -> Js<String> {
         let key = crate::quote_js(self.signal.name());
 
@@ -406,7 +391,6 @@ impl<T> Bound<T> {
     }
 
     /// Whether anything is.
-    #[must_use]
     pub fn invalid(&self) -> Js<bool> {
         !self.error().is_empty()
     }
@@ -456,7 +440,6 @@ impl<M> Field<M> {
     /// Called by the `#[model]` expansion, which lands in another crate. There
     /// is no reason to name a field by hand.
     #[doc(hidden)]
-    #[must_use]
     pub const fn new(name: &'static str) -> Self {
         Self {
             name,
@@ -465,7 +448,6 @@ impl<M> Field<M> {
     }
 
     /// The field's name.
-    #[must_use]
     pub const fn name(&self) -> &'static str {
         self.name
     }

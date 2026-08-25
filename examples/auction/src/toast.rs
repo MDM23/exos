@@ -106,7 +106,6 @@ pub(crate) fn banner() -> Markup {
 ///
 /// Two writes and one event on the wire, because consecutive `set`s merge into
 /// a single signals step and the client assigns once.
-#[must_use]
 pub(crate) fn note(note: Note, message: impl Into<String>) -> Effect {
     let toast = Toast::signals();
 
@@ -134,7 +133,6 @@ pub(crate) fn tell(bidder: &Bidder, kind: Note, message: impl Into<String>) {
 /// and whatever is done about it. The honest use is the one in
 /// [`room::hammer`](crate::room::hammer), which records the result either way
 /// and treats reaching somebody as the accelerator it is.
-#[must_use]
 pub(crate) fn reaches(bidder: &Bidder) -> bool {
     match bidder {
         Bidder::Viewer(id) => exos::connected(&Viewer(*id)),

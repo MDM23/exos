@@ -56,7 +56,6 @@ pub trait ModelFields {
     /// Without it the renaming would stop one level down and the row would
     /// arrive as a body serde cannot read.
     #[doc(hidden)]
-    #[must_use]
     fn nested(field: &str, value: Value, outwards: bool) -> Value {
         let _ = (field, outwards);
         value
@@ -68,7 +67,6 @@ pub trait ModelFields {
 /// Called by the `#[model]` expansion, which is the only thing that knows
 /// which fields hold rows and of what.
 #[doc(hidden)]
-#[must_use]
 pub fn nested_rows<T: ModelFields>(value: Value, outwards: bool) -> Value {
     let Value::Array(rows) = value else {
         return value;
@@ -190,7 +188,6 @@ fn outward<T: ModelFields>(fields: &Map<String, Value>) -> Map<String, Value> {
 /// The value serializes under its field names and the keys are renamed
 /// afterwards, so the model's own `Serialize` stays whatever it is for every
 /// other use it has.
-#[must_use]
 pub fn to_wire<T: ModelFields + Serialize>(value: &T) -> String {
     let Ok(Value::Object(fields)) = serde_json::to_value(value) else {
         return String::from("{}");

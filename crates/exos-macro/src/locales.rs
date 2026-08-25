@@ -162,7 +162,6 @@ impl Declaration {
                 /// It is what `lang` on the document carries, and what the
                 /// browser hands to `Intl`, so the two halves of a page agree
                 /// on the language by agreeing on this string.
-                #[must_use]
                 pub const fn tag(self) -> &'static str {
                     match self {
                         #(Self::#variants => #tags,)*
@@ -173,7 +172,6 @@ impl Declaration {
                 ///
                 /// From the script the tag names, or from the one CLDR expects
                 /// the language to be written in where it names none.
-                #[must_use]
                 pub const fn direction(self) -> ::exos::Direction {
                     match self {
                         #(Self::#variants => #directions,)*
@@ -186,7 +184,6 @@ impl Declaration {
                 /// this answers for what an application declared and not for
                 /// what a browser asked for. Matching an `Accept-Language`
                 /// header is a wider question, and it belongs to resolution.
-                #[must_use]
                 pub fn from_tag(tag: &str) -> ::core::option::Option<Self> {
                     Self::ALL
                         .iter()
@@ -199,7 +196,6 @@ impl Declaration {
                 /// CLDR's answer for the language, which is what the browser's
                 /// `Intl.NumberFormat` answers with too, so that a page and
                 /// its runtime write a number the same way.
-                #[must_use]
                 pub const fn symbols(self) -> ::exos::Symbols {
                     match self {
                         #(Self::#variants => #symbols,)*
@@ -212,7 +208,6 @@ impl Declaration {
                 /// What a message does with a count it puts into a sentence.
                 /// An application formatting one itself, or formatting
                 /// anything else numeric, is the same call.
-                #[must_use]
                 pub fn number(self, count: impl ::exos::Count) -> ::std::string::String {
                     ::exos::Symbols::number(&self.symbols(), count)
                 }
@@ -224,7 +219,6 @@ impl Declaration {
                 /// categories are exactly the ones the language has. This one
                 /// crosses locales, which is what a projection into the
                 /// browser and a test need, and what a message never does.
-                #[must_use]
                 pub fn category(self, count: u64) -> ::exos::PluralCategory {
                     match self {
                         #(Self::#variants => #modules::category(count).into(),)*
@@ -489,7 +483,6 @@ impl Declared {
                 /// Counted in whole numbers, so the operands CLDR has for the
                 /// digits after a decimal point are zero and the rule collapses
                 /// to what is written here.
-                #[must_use]
                 pub const fn category(#count: u64) -> Plural {
                     #body
                 }

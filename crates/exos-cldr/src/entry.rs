@@ -121,7 +121,6 @@ impl Entry {
     /// assert_eq!(Entry::lookup("PT-br").map(|entry| entry.tag), Some("pt"));
     /// assert!(Entry::lookup("klingon").is_none());
     /// ```
-    #[must_use]
     pub fn lookup(tag: &str) -> Option<&'static Self> {
         let mut candidate = tag;
 
@@ -154,7 +153,6 @@ impl Entry {
     /// # Ok(())
     /// # }
     /// ```
-    #[must_use]
     pub fn direction_of(&self, tag: &str) -> Direction {
         let script = tag
             .split('-')
@@ -177,7 +175,6 @@ impl Entry {
 
 impl Category {
     /// The CLDR keyword, which is what `Intl.PluralRules` answers with.
-    #[must_use]
     pub const fn keyword(self) -> &'static str {
         match self {
             Self::Few => "few",
@@ -193,7 +190,6 @@ impl Category {
 impl Rule {
     /// Whether this rule applies to every count, which the last rule of every
     /// locale does and no other rule may.
-    #[must_use]
     pub const fn is_unconditional(&self) -> bool {
         self.condition.is_empty()
     }

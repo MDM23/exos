@@ -43,7 +43,6 @@ pub struct Attributes {
 
 impl Attributes {
     /// An empty set.
-    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -84,7 +83,6 @@ impl Attributes {
     }
 
     /// The value currently held for `name`, if any.
-    #[must_use]
     pub fn get(&self, name: &str) -> Option<&str> {
         self.other
             .iter()
@@ -93,7 +91,6 @@ impl Attributes {
     }
 
     /// Renders as ` name="value"` pairs, ready to sit inside an open tag.
-    #[must_use]
     pub fn render(&self) -> String {
         let mut out = String::new();
 

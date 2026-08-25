@@ -63,7 +63,6 @@ impl Symbols {
     /// assert_eq!(Locale::Fa.symbols().number(-12_345), "‎−۱۲٬۳۴۵");
     /// # }
     /// ```
-    #[must_use]
     pub fn number(&self, count: impl Count) -> String {
         let mut written = String::new();
 

@@ -132,8 +132,11 @@ tests` item itself.
   `PartialEq`, `PartialOrd`, wherever the semantics hold. Every public type
   implements `Debug`.
 - Put bounds on the `impl`, not on the struct definition.
-- `#[must_use]` on anything whose result is the whole point, with a message
-  saying what to do about it.
+- `#[must_use]` where dropping the value loses work that cannot be got back,
+  with a message saying what to do about it. Put it on the type, not on every
+  function returning one: `Effect`, `Js` and `Markup` carry it, so nothing that
+  builds one has to. A pure getter does not get one; discarding it is dead code
+  a reader sees, and the attribute costs a line on every accessor in the crate.
 
 ## Errors and panics
 

@@ -24,7 +24,6 @@ pub(crate) struct Todos(Mutex<Vec<Todo>>);
 
 impl Todos {
     /// A list with something in it, so the example has something to show.
-    #[must_use]
     pub(crate) fn seed() -> Self {
         let seeds = [
             ("Read the exos guide", true),
@@ -50,7 +49,6 @@ impl Todos {
     /// # Panics
     ///
     /// If the lock was poisoned by a panic in another thread while held.
-    #[must_use]
     pub(crate) fn snapshot(&self) -> Vec<Todo> {
         self.0
             .lock()
@@ -151,13 +149,11 @@ pub(crate) fn set_all(todos: &mut [Todo], done: bool) {
 }
 
 /// How many are still to do.
-#[must_use]
 pub(crate) fn remaining(todos: &[Todo]) -> usize {
     todos.iter().filter(|todo| !todo.done).count()
 }
 
 /// How many are done.
-#[must_use]
 pub(crate) fn completed(todos: &[Todo]) -> usize {
     todos.len() - remaining(todos)
 }

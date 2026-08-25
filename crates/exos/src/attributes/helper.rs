@@ -8,11 +8,11 @@ use crate::{
 
 /// One `name="value"` pair produced by a helper.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[must_use = "an attribute does nothing until it is written onto an element"]
 pub struct Attr(String, String);
 
 impl Attr {
     /// A raw attribute, for the cases the helpers do not cover.
-    #[must_use]
     pub fn new(name: impl Into<String>, value: impl Into<String>) -> Self {
         Self(name.into(), value.into())
     }
@@ -26,6 +26,7 @@ impl IntoAttributes for Attr {
 
 /// One class, toggled by a client-side condition.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[must_use = "an attribute does nothing until it is written onto an element"]
 pub struct Class(&'static str, Js<bool>);
 
 impl IntoAttributes for Class {
@@ -36,6 +37,7 @@ impl IntoAttributes for Class {
 
 /// A binding: the signal's name, its type, and what may be wrong with it.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[must_use = "an attribute does nothing until it is written onto an element"]
 pub struct Bind {
     name: String,
     kind: &'static str,
@@ -159,25 +161,21 @@ impl<T: BindKind> BindKind for Vec<T> {
 }
 
 /// Text content, kept in sync with the expression.
-#[must_use]
 pub fn text<T>(expression: Js<T>) -> Attr {
     Attr::new("data-text", source(expression))
 }
 
 /// Toggles the `hidden` attribute.
-#[must_use]
 pub fn show(condition: impl crate::IntoJs<bool>) -> Attr {
     Attr::new("data-show", condition.into_js().into_source())
 }
 
 /// One class toggle. Repeat the block for more.
-#[must_use]
 pub fn class(name: &'static str, condition: impl crate::IntoJs<bool>) -> Class {
     Class(name, condition.into_js())
 }
 
 /// One reactive attribute.
-#[must_use]
 pub fn attr<T>(name: &'static str, value: Js<T>) -> Attr {
     Attr::new(
         "data-attr",
@@ -186,7 +184,6 @@ pub fn attr<T>(name: &'static str, value: Js<T>) -> Attr {
 }
 
 /// One reactive property: `value`, `checked`, `indeterminate` and the like.
-#[must_use]
 pub fn prop<T>(name: &'static str, value: Js<T>) -> Attr {
     Attr::new(
         "data-prop",
@@ -199,13 +196,11 @@ pub fn prop<T>(name: &'static str, value: Js<T>) -> Attr {
 /// On a checkbox whose signal is a `Vec`, checking collects the element's
 /// `value` into the array, which is what lets selecting many rows work with no
 /// per-row bookkeeping.
-#[must_use]
 pub fn bind(value: &impl Bindable) -> Bind {
     value.binding()
 }
 
 /// Never morph this element: a media player, a third-party widget.
-#[must_use]
 pub fn preserve() -> Attr {
     Attr::new("data-preserve", String::new())
 }

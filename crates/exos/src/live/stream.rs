@@ -166,7 +166,6 @@ fn connections() -> &'static Connections {
 ///
 /// If the registry lock was poisoned by a panic in another thread while it was
 /// held. Nothing here can panic while holding it.
-#[must_use]
 pub fn connection_count() -> usize {
     connections()
         .lock()
@@ -192,7 +191,6 @@ pub fn connection_count() -> usize {
 /// # Panics
 ///
 /// If the registry lock was poisoned; see [`connection_count`].
-#[must_use]
 pub fn connected<A: Audience>(audience: &A) -> bool {
     let key = identity::key(audience);
 

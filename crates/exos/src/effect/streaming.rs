@@ -63,6 +63,7 @@ use crate::{Effect, Step};
 /// reply, so it ends when the handler does, and a comment arriving in the
 /// middle of one would be a frame the client has no step for.
 #[derive(Debug)]
+#[must_use = "an effect stream does nothing until it is returned from a handler"]
 pub struct EffectStream<S>(S);
 
 impl<S> EffectStream<S>
@@ -70,7 +71,6 @@ where
     S: Stream<Item = Effect> + Send + Unpin + 'static,
 {
     /// Answers with `effects` as they arrive.
-    #[must_use = "an effect stream does nothing until it is returned from a handler"]
     pub fn new(effects: S) -> Self {
         Self(effects)
     }
