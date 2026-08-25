@@ -2,10 +2,19 @@
 
 What a second process breaks, and the one piece of state that cannot be moved.
 
-Status: not built. The README calls this the one gap that cannot be added
-quietly later, and this document is why: it is not a feature beside the others
-but a set of guarantees that shrink, and the shrinking has to be decided
-deliberately rather than discovered by whoever runs two nodes first.
+Status: stages 1 and 3 are built. A [`Frame`](../../crates/exos/src/live/bus.rs)
+crosses, `exos::bus` says how, `exos::deliver` is what an application's
+subscriber hands one back to, and a publish and a send fan out through it
+local-first. What is **not** built is stage 2, which is what breaks first: a
+subscription that lands on a node holding no such connection still answers
+`410`, so a browser round-robined between two nodes still cannot settle. Two
+instances are therefore not yet a deployment, and the section below says why
+that is the ranking rather than the publish.
+
+The README calls this the one gap that cannot be added quietly later, and this
+document is why: it is not a feature beside the others but a set of guarantees
+that shrink, and the shrinking has to be decided deliberately rather than
+discovered by whoever runs two nodes first.
 
 ## Most of exos is already ready, by holding nothing
 
@@ -99,14 +108,20 @@ backups never hold anything that logs anybody in.
 
 ## Stage 1: a bus is two functions and no dependency
 
+**Done.**
+
 exos ships no broker adapter, the same way it ships no session store, and for
 the same reason: the choice is the application's and exos would learn nothing by
 being told. What it ships is the two ends.
 
 ```rust
-exos::bus(async |frame: exos::Frame| {
-    redis.publish("exos", frame.as_bytes()).await?;
-    Ok(())
+exos::bus(move |frame: exos::Frame| {
+    let redis = redis.clone();
+
+    async move {
+        redis.publish("exos", frame.to_bytes()).await?;
+        Ok(())
+    }
 });
 
 // The application owns its own subscriber loop, and its reconnection.
@@ -158,6 +173,8 @@ that runs behind an ordinary load balancer and one that quietly shapes a
 deployment around itself.
 
 ## Stage 3: publish and send fan out
+
+**Done**, local-first.
 
 `publish` renders locally, once, and the frame carries the rendered patch.
 
@@ -211,6 +228,50 @@ documentation promises that a publish followed by a send arrives in that order
 at any tab receiving both, because one connection has one channel and both send
 under the registry lock. Across a bus those are two keys and therefore two
 orders, so it holds for a local connection and not for a remote one.
+
+### What building the two ends found
+
+**An adapter is a closure answering with a future, not an async closure.** This
+document drew `bus(async |frame| ...)` and it does not compile against a
+spawned send: the future an async closure returns borrows what the closure
+captured, so it is neither `'static` nor provably `Send`, and the bound that
+would say otherwise names an associated type stable Rust cannot. The shape that
+works is the ordinary one, cloning the client into the future, which is what
+every broker client is cheap to clone for. It is written down in the guide and
+pinned by the test bus being written the same way.
+
+**A frame is spawned onto a runtime, so registering names one.** A publish is
+synchronous and an adapter is not, and a sync callback would be worse than the
+plumbing: whatever it did with the frame would happen while `publish` holds the
+ordering lock, so a network write there would serialize every publish in the
+process behind it. `bus` therefore takes the handle at registration and panics
+outside a runtime, and a send prefers the runtime it is publishing from, which
+is what lets a test with a runtime per test register once.
+
+**The receiving node's delivery is the sending node's, exactly as drawn.** The
+walk over the registry became one function taking a kind, a key and the framed
+steps, and `publish`, `send` and `deliver` are its three callers. That was the
+whole of stage 3 beyond the frame: no second delivery path, and nothing to keep
+in step between local and remote.
+
+**The unconfigured key is now fatal rather than a warning**, which
+["what a rolling deploy costs"](#what-a-rolling-deploy-costs) below called the
+one entry that was work. `exos::bus` refuses to register without
+[`exos::keys`](../../crates/exos/src/keys.rs), and it needs a flag of its own to
+know: by the time anything asks, the fallback has usually filled the key in, so
+what is recorded is whether an application said it rather than whether one is
+there.
+
+**The trace field is on the frame from the first version**, empty until
+[observability](observability.md) has something to put in it. That document
+calls this the entry with a deadline, and the golden test now pins the bytes it
+is part of.
+
+**Two nodes remain untestable in one process**, as this document said. What the
+tests cover is the two ends: the codec as a golden value, a publish and a send
+handing over a frame carrying what a local tab received, and a frame handed
+back reaching the connections its kind and key name and no others. The
+topology is what a broker adds.
 
 ## Stage 4: a rotation crosses too
 
@@ -308,13 +369,14 @@ first person to hit them will be reading this page.
   deployment has this, and solves it by keeping both versions reachable for the
   length of the rollover.
 
-And one that is work: **with a bus registered, an unconfigured signing key
-should be fatal.** Today it is a random key per process and a line on stderr,
-which is right for `cargo run`. Behind a load balancer a token minted by one
-node verifies nowhere else, and the symptom is fragments that stop updating
+And one that was work and is **done**: **with a bus registered, an unconfigured
+signing key is fatal.** Without one it is a random key per process and a line on
+stderr, which is right for `cargo run`. Behind a load balancer a token minted by
+one node verifies nowhere else, and the symptom is fragments that stop updating
 after a reconnect, which reads as a network glitch and is the exact failure the
 FNV entry in [loose ends](loose-ends.md) already went to trouble to eliminate.
-Registering a bus is the moment exos can know this rather than warn about it.
+Registering a bus is the moment exos can know this rather than warn about it, so
+`exos::keys` goes first and `exos::bus` says so if it did not.
 
 ## What it costs
 

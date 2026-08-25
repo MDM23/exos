@@ -236,3 +236,62 @@ Order is guaranteed per connection and nowhere else. A connection has one
 channel and both calls send under the same lock, so a publish followed by a
 send arrives in that order at every tab that gets both. Two connections are
 ordered against each other in no way at all.
+
+## More than one instance
+
+A connection is a socket, so the registry belongs to the process that opened
+it. Publishing from a second process reaches its own tabs and nobody else's.
+What crosses instead is the message: exos ships the two ends of a bus and no
+broker, the same way it ships no session store.
+
+```rust
+exos::keys(Keys::from_secret(std::env::var("EXOS_SECRET")?));
+
+exos::bus(move |frame| {
+    let redis = redis.clone();
+
+    async move {
+        redis.publish("exos", frame.to_bytes()).await?;
+        Ok(())
+    }
+});
+
+// Your own subscriber loop, and your own reconnection.
+tokio::spawn(async move {
+    while let Some(message) = subscription.next().await {
+        if let Some(frame) = Frame::from_bytes(message.payload()) {
+            exos::deliver(frame);
+        }
+    }
+});
+```
+
+A closure answering with a future rather than an async closure: the future an
+async closure returns borrows what it captured, and a frame is sent from a
+spawned task that outlives the call. Cloning the client into the future is what
+every broker client is cheap to clone for.
+
+`publish` and `send` then fan out. Local tabs are delivered to first and the
+frame goes to the bus after, so a broker outage costs a cluster its cross-node
+liveness rather than its liveness. What crosses is the rendered patch and never
+a request to render one, because a topic is a hash of a name and its arguments
+and no receiving node could invoke the function from it.
+
+Three things to know before running two of anything:
+
+- **A signing key is no longer optional.** `exos::bus` refuses to register
+  without `exos::keys`, because a random key per process is a token that
+  verifies on the node that minted it and nowhere else.
+- **The subscription is not forwarded yet.** A tab holds its stream to one node
+  and sends `/_exos/subscribe` wherever the load balancer points, and a node
+  holding no such connection answers `410`, which the client correctly reads as
+  "reconnect". Round-robin two nodes and that is a loop. Until that lands, a
+  cluster wants sticky sessions.
+- **Ordering narrows.** Within one node the last patch a tab receives for a
+  topic is still the newest. Across nodes there is nothing serializing two
+  publishes, and a publish followed by a send holds its order for a local
+  connection and not for a remote one.
+
+A frame carries no session name, no connection id, no fragment arguments and no
+token. A key is already a hash, so a broker's operator, its logs and its backups
+never hold anything that logs anybody in.

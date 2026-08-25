@@ -8,10 +8,11 @@ Known gaps, roughly in priority order.
 **Expressions are compiled with `new Function`**, which a strict CSP without
 `unsafe-eval` blocks. A precompiled mode is the answer.
 
-**Running more than one instance.** The connection registry is a process-local
-map, so a [publish](live-fragments) reaches only the tabs connected to the
-instance that sent it. It needs a bus, and it is the one gap here that cannot
-be added quietly later.
+**Running more than one instance needs sticky sessions.** A publish and a send
+[cross to the other nodes](live-fragments#more-than-one-instance) through a bus
+you register. What is not built is the other direction: a tab subscribes
+wherever the load balancer points, and a node holding no such connection
+answers `410`, which a browser correctly reads as "reconnect".
 
 **No CSRF token.** `SameSite=Lax` on the session cookie, the `X-Exos` header
 and JSON-only bodies are three defences rather than one, which is a policy and
@@ -37,8 +38,8 @@ is built as far as pushing an effect to a person.
 is built as far as a message whose count the browser holds, and says what a
 live fragment in eight languages costs.
 [More than one instance](https://github.com/MDM23/exos/blob/main/docs/roadmap/more-than-one-instance.md)
-is the bus, what a subscription and a rotation have to do to cross one, and
-which of the ordering guarantees survive.
+is built as far as the bus itself, and says what a subscription and a rotation
+still have to do to cross one, and which of the ordering guarantees survive.
 [Loose ends](https://github.com/MDM23/exos/blob/main/docs/roadmap/loose-ends.md)
 collects the smaller work that waits for nothing.
 

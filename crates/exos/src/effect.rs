@@ -83,6 +83,15 @@ impl Step {
     /// that is all name and no payload would silently do nothing on the one
     /// path that frames it strictly. It repeats its own name, which is the
     /// payload that cannot be mistaken for a value.
+    /// The same pair, owned, for a step on its way to another node.
+    ///
+    /// A [`Frame`](crate::Frame) carries steps already framed, so a receiving
+    /// node needs to know nothing about what a step is.
+    pub(crate) fn framed(&self) -> (String, String) {
+        let (event, data) = self.frame();
+        (event.to_owned(), data)
+    }
+
     fn frame(&self) -> (&'static str, String) {
         match self {
             Self::Focus(selector) => ("focus", selector.clone()),

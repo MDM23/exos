@@ -55,7 +55,10 @@ use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 use crate::{
     Id, Step, hex,
     identity::{self, Audience},
-    live::Topic,
+    live::{
+        Topic,
+        bus::{self, Frame, Kind},
+    },
 };
 
 /// Where the stream and the subscription endpoint are mounted.
@@ -246,33 +249,26 @@ pub fn connected<A: Audience>(audience: &A) -> bool {
 /// followed by a send arrives in that order at every tab that gets both. Two
 /// connections are ordered against each other in no way at all.
 ///
+/// With a [`bus`](crate::bus) registered that holds for a tab on this node and
+/// not for one on another: a publish and a send are two keys and therefore two
+/// frames, and nothing orders them against each other on the way across.
+///
 /// # Panics
 ///
 /// If the registry lock was poisoned; see [`connection_count`].
 pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
     // Framed once rather than per connection, since every recipient gets the
     // same bytes and a fan-out is the shape this is for.
-    let events: Vec<Event> = effect.steps().iter().cloned().map(Event::from).collect();
+    let steps: Vec<(String, String)> = effect.steps().iter().map(Step::framed).collect();
 
-    if events.is_empty() {
+    if steps.is_empty() {
         return;
     }
 
     let key = identity::key(audience);
 
-    let registry = connections()
-        .lock()
-        .expect("the registry lock is never held across a panic");
-
-    for connection in registry.values() {
-        if connection.audiences.contains(&key) {
-            for event in &events {
-                // A closed receiver is a tab that went away between the check
-                // and this send; the cleanup path removes it.
-                drop(connection.sender.send(event.clone()));
-            }
-        }
-    }
+    dispatch(Kind::Audience, &key, &steps);
+    bus::cross(|| Frame::new(Kind::Audience, key, steps));
 }
 
 /// Renders a fragment and sends it to every connection watching it.
@@ -304,6 +300,11 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
 /// goes last is current. The type is what enforces it, since a `Fragment`
 /// rendered beforehand can no longer be handed to this.
 ///
+/// That is a fact about serializing two operations in one process. With a
+/// [`bus`](crate::bus) registered it holds for the tabs on this node, and two
+/// nodes publishing the same topic arrive at a third in whatever order the
+/// broker gives.
+///
 /// # What it costs
 ///
 /// Publishes are serialized against each other, so an expensive fragment holds
@@ -325,18 +326,47 @@ pub fn publish(render: impl FnOnce() -> crate::Fragment) {
     let _order = order().lock().unwrap_or_else(PoisonError::into_inner);
 
     let fragment = render();
-    let event = Event::from(Step::Patch(fragment.to_markup()));
+    let steps = vec![Step::Patch(fragment.to_markup()).framed()];
     let topic = fragment.topic().as_str();
+
+    dispatch(Kind::Topic, topic, &steps);
+
+    // Local first, and the frame carries the rendered patch rather than a
+    // request to render one: a topic is a hash of a name and its arguments, so
+    // no node can invoke the function from it. Rendering once for the whole
+    // cluster is the only shape available and is also the cheaper one.
+    bus::cross(|| Frame::new(Kind::Topic, topic, steps));
+}
+
+/// Pushes one delivery at every connection watching `key`.
+///
+/// The one walk, whether the delivery was made here or arrived from another
+/// node: a frame is keyed by what the registry is already keyed by, so
+/// [`deliver`](crate::deliver) is this function and nothing else.
+pub(crate) fn dispatch(kind: Kind, key: &str, steps: &[(String, String)]) {
+    // Framed once rather than per connection, since every recipient gets the
+    // same bytes and a fan-out is the shape this is for.
+    let events: Vec<Event> = steps
+        .iter()
+        .map(|(name, data)| Event::default().event(name.clone()).data(data.clone()))
+        .collect();
 
     let registry = connections()
         .lock()
         .expect("the registry lock is never held across a panic");
 
     for connection in registry.values() {
-        if connection.topics.contains(topic) {
-            // A closed receiver is a tab that went away between the check and
-            // this send; the cleanup path removes it.
-            drop(connection.sender.send(event.clone()));
+        let watching = match kind {
+            Kind::Topic => connection.topics.contains(key),
+            Kind::Audience => connection.audiences.contains(key),
+        };
+
+        if watching {
+            for event in &events {
+                // A closed receiver is a tab that went away between the check
+                // and this send; the cleanup path removes it.
+                drop(connection.sender.send(event.clone()));
+            }
         }
     }
 }
@@ -965,6 +995,63 @@ mod tests {
         // that was never going to receive anything.
         publish(|| crate::Fragment::new(topic, Markup::default()));
         assert_eq!(received(&mut receiver), 1);
+    }
+
+    // ---- a delivery from another node ---------------------------------------
+
+    /// One step, framed the way a frame carries them.
+    fn crossed() -> Vec<(String, String)> {
+        vec![(String::from("patch"), String::from("<p id=\"x\"></p>"))]
+    }
+
+    /// A frame is keyed by what the registry is already keyed by, so a
+    /// delivery from elsewhere reaches exactly what a local publish would.
+    #[tokio::test]
+    async fn a_frame_reaches_the_connection_watching_its_key() {
+        let (id, mut watching) = open(None, HashSet::new());
+        let (_id, mut elsewhere) = open(None, HashSet::new());
+
+        let topic = Topic::new("presence", &(20_u32,));
+        let (name, proof) = browser(&[&topic]);
+
+        assert_eq!(
+            subscribing(&name, &id, &proof).await,
+            StatusCode::NO_CONTENT
+        );
+
+        crate::deliver(Frame::new(Kind::Topic, topic.as_str(), crossed()));
+
+        assert_eq!(received(&mut watching), 1);
+        assert_eq!(received(&mut elsewhere), 0, "and nothing else at all");
+    }
+
+    /// The separation the two sets exist for, one level out. A key that spells
+    /// an audience exactly reaches the person when it arrives as an audience
+    /// and the tab watching it when it arrives as a topic, and never the other
+    /// way round, so a frame cannot address a tab as somebody.
+    #[tokio::test]
+    async fn a_frame_reaches_the_set_its_kind_names_and_no_other() {
+        let key = identity::key(&Viewer(21));
+        let (_id, mut person) = open(None, identity::Audiences::of(&Viewer(21)).into_keys());
+        let (id, mut tab) = open(None, HashSet::new());
+
+        let topic = Topic::from_raw(&key);
+        let (name, proof) = browser(&[&topic]);
+
+        assert_eq!(
+            subscribing(&name, &id, &proof).await,
+            StatusCode::NO_CONTENT
+        );
+
+        crate::deliver(Frame::new(Kind::Audience, key.clone(), crossed()));
+
+        assert_eq!(received(&mut person), 1);
+        assert_eq!(received(&mut tab), 0, "watching it is not being it");
+
+        crate::deliver(Frame::new(Kind::Topic, key, crossed()));
+
+        assert_eq!(received(&mut tab), 1);
+        assert_eq!(received(&mut person), 0, "and being it is not watching it");
     }
 
     // ---- what a rotation does to a stream -----------------------------------

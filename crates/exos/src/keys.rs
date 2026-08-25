@@ -21,7 +21,10 @@
 //! agree, and a deploy invalidates every token in flight. The warning is there
 //! because the failure mode is otherwise silent until it isn't.
 
-use std::sync::OnceLock;
+use std::sync::{
+    OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 
 use hmac::{Hmac, Mac as _};
 use sha2::{Digest as _, Sha256};
@@ -90,6 +93,9 @@ fn mac(key: &[u8; 32], message: &[u8]) -> [u8; 32] {
 
 static KEYS: OnceLock<Keys> = OnceLock::new();
 
+/// Whether an application said what the key is.
+static SAID: AtomicBool = AtomicBool::new(false);
+
 /// Configures the key everything signed derives from.
 ///
 /// Call it once, before serving.
@@ -106,6 +112,18 @@ pub fn keys(keys: Keys) {
         "the signing key is already in place; exos::keys goes once, before \
          anything is served"
     );
+
+    SAID.store(true, Ordering::Relaxed);
+}
+
+/// Whether the key everything is signed with was chosen rather than fallen
+/// back to.
+///
+/// Its own flag rather than asking whether [`KEYS`] holds anything, because by
+/// the time anything asks, the fallback has usually filled it in. What a
+/// [`bus`](crate::bus) needs to know is where the key came from.
+pub(crate) fn configured_by_hand() -> bool {
+    SAID.load(Ordering::Relaxed)
 }
 
 /// The configured key, or the random one this process fell back to.

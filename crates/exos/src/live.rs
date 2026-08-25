@@ -43,9 +43,13 @@ use core::hash::{Hash, Hasher as _};
 
 use crate::{Id, Markup, Render, escape_into, fnv::Fnv1a, keys};
 
+mod bus;
 mod stream;
 
-pub use crate::live::stream::{connected, connection_count, publish, send};
+pub use crate::live::{
+    bus::{Frame, Kind, Sent, bus, deliver},
+    stream::{connected, connection_count, publish, send},
+};
 
 pub(crate) use crate::live::stream::{disconnect, routes};
 
