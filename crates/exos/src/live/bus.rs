@@ -71,7 +71,9 @@ pub type Sent = Result<(), Box<dyn core::error::Error + Send + Sync>>;
 /// whether a key was proved by being served or derived from who somebody is
 /// would depend on a check nobody can see, and the first frame that forgot it
 /// would let a tab be addressed as somebody. The third is one connection, and
-/// is how a request that landed on the wrong node reaches the right one.
+/// is how a request that landed on the wrong node reaches the right one. The
+/// fourth is one browser, and is the only address here that ends something
+/// rather than delivering it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Kind {
@@ -81,14 +83,17 @@ pub enum Kind {
     Audience,
     /// One open stream, as the node holding it knows itself to.
     Connection,
+    /// One browser, as the name in its cookie reduces.
+    Session,
 }
 
 /// What a frame carries, which is decided by what it is addressed at.
 ///
-/// The two are a delivery and a subscription, and they are not the same shape:
-/// one is pushed at a browser and the other rewrites what a connection is
-/// watching. Tagged by `kind` on the wire, so the tag a reader sees and the
-/// payload it goes with cannot come apart.
+/// The three are a delivery, a subscription and a revocation, and they are not
+/// the same shape: one is pushed at a browser, one rewrites what a connection
+/// is watching, and one ends every stream a browser has here. Tagged by `kind`
+/// on the wire, so the tag a reader sees and the payload it goes with cannot
+/// come apart.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum Carries {
@@ -110,6 +115,13 @@ enum Carries {
     /// fragment, and the node that has the cookie is the node that can check
     /// it, so nothing is verified twice and no token crosses.
     Connection { topics: Vec<String> },
+    /// Nothing at all: every stream this browser opened here is over.
+    ///
+    /// A rotation is the same decision on every node, so what crosses is the
+    /// decision and not its consequences. There is nothing to carry with it:
+    /// the key says which browser, and what a node does about it is the walk
+    /// it would have done had the request landed on itself.
+    Session {},
 }
 
 /// One message, on its way to the nodes this one is not.
@@ -161,12 +173,22 @@ impl Frame {
         }
     }
 
+    /// The end of every stream one browser has, wherever it has one.
+    pub(crate) fn revocation(key: impl Into<String>) -> Self {
+        Self {
+            carries: Carries::Session {},
+            key: key.into(),
+            trace: String::new(),
+        }
+    }
+
     /// Which set the key is matched against.
     pub const fn kind(&self) -> Kind {
         match self.carries {
             Carries::Topic { .. } => Kind::Topic,
             Carries::Audience { .. } => Kind::Audience,
             Carries::Connection { .. } => Kind::Connection,
+            Carries::Session {} => Kind::Session,
         }
     }
 
@@ -184,7 +206,7 @@ impl Frame {
     pub(crate) fn steps(&self) -> &[(String, String)] {
         match &self.carries {
             Carries::Topic { steps } | Carries::Audience { steps } => steps,
-            Carries::Connection { .. } => &[],
+            Carries::Connection { .. } | Carries::Session {} => &[],
         }
     }
 
@@ -331,6 +353,10 @@ pub fn deliver(frame: Frame) {
         // Not a delivery: a subscription says what one connection is watching,
         // and the node that holds it is the only one this reaches.
         Kind::Connection => crate::live::stream::resubscribe(frame.key(), frame.topics()),
+        // Nor is a revocation. How many streams it ended here is a local fact
+        // and answers nobody: the node that rotated the name is not waiting on
+        // it, and the browser finds out by its stream ending.
+        Kind::Session => drop(crate::live::stream::revoke(frame.key())),
         kind => crate::live::stream::dispatch(kind, frame.key(), frame.steps()),
     }
 }
@@ -376,6 +402,13 @@ mod tests {
             .expect("UTF-8"),
             r#"{"kind":"connection","topics":["presence-1a2b3c4d"],"key":"connection-4f2e","trace":""}"#
         );
+
+        // A revocation is its key and nothing else, which is the whole of what
+        // a node needs to do the same thing to its own registry.
+        assert_eq!(
+            String::from_utf8(Frame::revocation("session-9e01").to_bytes()).expect("UTF-8"),
+            r#"{"kind":"session","key":"session-9e01","trace":""}"#
+        );
     }
 
     #[test]
@@ -385,9 +418,13 @@ mod tests {
 
     /// A build that has never heard of a kind ignores the frame rather than
     /// failing, which is what lets a cluster roll over one node at a time.
+    ///
+    /// `node` stands for whatever a later build adds. It was `session` until
+    /// a revocation became one, and that is the shape of the case: the frame a
+    /// newer node sends is a frame this one has no arm for.
     #[test]
     fn a_frame_this_build_does_not_understand_is_dropped() {
-        let later = br#"{"kind":"session","key":"k","steps":[],"trace":""}"#;
+        let later = br#"{"kind":"node","key":"k","steps":[],"trace":""}"#;
 
         assert_eq!(Frame::from_bytes(later), None);
         assert_eq!(Frame::from_bytes(b"not a frame at all"), None);

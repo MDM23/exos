@@ -37,7 +37,7 @@
 //! separate fields rather than one: merged, whether a key was proved or derived
 //! would depend on a check nobody can see from the type.
 
-use core::time::Duration;
+use core::{hash::Hash, time::Duration};
 use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
@@ -142,14 +142,19 @@ struct Connection {
     /// keys rather than against a bearer name.
     key: String,
     sender: broadcast::Sender<Event>,
-    /// The session name this stream opened under, so that a rotation can find
-    /// it again.
+    /// What the browser this stream opened under is called on a bus, so that a
+    /// rotation can find it again.
+    ///
+    /// The reduction rather than the name, for the reason `key` is: a rotation
+    /// on another node arrives keyed, and matching it against the name would be
+    /// a second way of asking the same question. The registry then holds no
+    /// cookie either.
     ///
     /// `None` is a stream opened by a browser carrying no cookie at all. It
     /// stays `None` and is never matched by anything, because a nameless
     /// connection belongs to no browser in particular and treating them as a
     /// group would treat every anonymous visitor as one person.
-    session: Option<Id>,
+    session: Option<String>,
     topics: HashSet<String>,
 }
 
@@ -389,10 +394,11 @@ pub(crate) fn dispatch(kind: Kind, key: &str, steps: &[(String, String)]) {
         let watching = match kind {
             Kind::Topic => connection.topics.contains(key),
             Kind::Audience => connection.audiences.contains(key),
-            // Not a delivery. A frame naming one connection says what it is
-            // watching, and [`deliver`](crate::deliver) hands that to
-            // [`resubscribe`] instead of here.
-            Kind::Connection => false,
+            // Not deliveries. A frame naming one connection says what it is
+            // watching and one naming a browser ends its streams, and
+            // [`deliver`](crate::deliver) hands those to [`resubscribe`] and
+            // [`revoke`] instead of here.
+            Kind::Connection | Kind::Session => false,
         };
 
         if watching {
@@ -469,13 +475,15 @@ fn minted_here(id: &str) -> bool {
         .is_some_and(|(prefix, _)| prefix == node())
 }
 
-/// What a frame naming one connection is keyed by.
+/// What a frame naming one connection or one browser is keyed by.
 ///
 /// The same reduction an audience gets, for the same reason: a connection id
-/// is a bearer name, so what crosses a bus is what it reduces to and never the
-/// id itself.
-fn reduction(id: &str) -> String {
-    Topic::new("connection", &id).as_str().to_owned()
+/// and a session name are both bearer names, so what crosses a bus is what
+/// they reduce to and never themselves. One function rather than two, because
+/// two would be two chances for a sender and a receiver to spell a key
+/// differently.
+fn reduction(of: &str, value: &impl Hash) -> String {
+    Topic::new(of, value).as_str().to_owned()
 }
 
 /// Registers a connection under a fresh id, with the receiver its response
@@ -483,7 +491,7 @@ fn reduction(id: &str) -> String {
 ///
 /// The audiences arrive here rather than being written afterwards, so there is
 /// no moment where a connection is reachable and does not yet know who it is.
-fn open(session: Option<Id>, audiences: HashSet<String>) -> (String, broadcast::Receiver<Event>) {
+fn open(session: Option<&Id>, audiences: HashSet<String>) -> (String, broadcast::Receiver<Event>) {
     let id = mint();
     let (sender, receiver) = broadcast::channel(CAPACITY);
 
@@ -494,9 +502,9 @@ fn open(session: Option<Id>, audiences: HashSet<String>) -> (String, broadcast::
             id.clone(),
             Connection {
                 audiences,
-                key: reduction(&id),
+                key: reduction("connection", &id),
                 sender,
-                session,
+                session: session.map(|name| reduction("session", name)),
                 topics: HashSet::new(),
             },
         );
@@ -528,10 +536,33 @@ fn open(session: Option<Id>, audiences: HashSet<String>) -> (String, broadcast::
 /// A connection that opened under no name is never matched, whatever `name`
 /// is: see [`Connection::session`].
 ///
+/// # It reaches the browser's tabs on the other nodes too
+///
+/// A browser is one cookie and many tabs, and the tabs may be streaming from
+/// anywhere. So the name is reduced and the reduction crosses, and every node
+/// does to its own registry what this one did to its: a rotation is the same
+/// decision everywhere rather than a request to be carried out. What comes back
+/// is this node's count, because the other nodes are not asked and nothing here
+/// waits for them.
+///
 /// # Panics
 ///
 /// If the registry lock was poisoned; see [`connection_count`].
 pub(crate) fn disconnect(name: &Id) -> usize {
+    let key = reduction("session", name);
+    let ended = revoke(&key);
+
+    bus::cross(|| Frame::revocation(key));
+
+    ended
+}
+
+/// Ends every stream opened by the browser `key` names, and says how many.
+///
+/// The walk, whether the rotation happened here or on another node: a
+/// connection remembers what its browser is called on a bus, so
+/// [`deliver`](crate::deliver) is this function and nothing else.
+pub(crate) fn revoke(key: &str) -> usize {
     let mut registry = connections()
         .lock()
         .expect("the registry lock is never held across a panic");
@@ -539,7 +570,7 @@ pub(crate) fn disconnect(name: &Id) -> usize {
     let before = registry.len();
 
     registry.retain(|_, connection| {
-        if connection.session.as_ref() != Some(name) {
+        if connection.session.as_deref() != Some(key) {
             return true;
         }
 
@@ -629,7 +660,7 @@ async fn subscribe(Json(request): Json<Subscription>) -> StatusCode {
         return StatusCode::GONE;
     }
 
-    bus::cross(|| Frame::subscription(reduction(&request.connection), proved));
+    bus::cross(|| Frame::subscription(reduction("connection", &request.connection), proved));
 
     StatusCode::NO_CONTENT
 }
@@ -658,7 +689,7 @@ async fn stream() -> Response {
         }
     };
 
-    let (id, receiver) = open(session, audiences);
+    let (id, receiver) = open(session.as_ref(), audiences);
 
     let events = BroadcastStream::new(receiver)
         // A lagged tab skips ahead rather than stalling the publisher; the
@@ -1197,7 +1228,7 @@ mod tests {
         let topic = Topic::new("presence", &(22_u32,));
         let watching = vec![topic.as_str().to_owned()];
 
-        crate::deliver(Frame::subscription(reduction(&id), watching));
+        crate::deliver(Frame::subscription(reduction("connection", &id), watching));
 
         publish(|| crate::Fragment::new(topic.clone(), Markup::default()));
 
@@ -1206,7 +1237,10 @@ mod tests {
 
         // Replaced wholesale rather than added to, which is the rule the
         // endpoint follows and therefore the rule a forward has to keep.
-        crate::deliver(Frame::subscription(reduction(&id), Vec::new()));
+        crate::deliver(Frame::subscription(
+            reduction("connection", &id),
+            Vec::new(),
+        ));
 
         publish(|| crate::Fragment::new(topic, Markup::default()));
         assert_eq!(received(&mut tab), 0);
@@ -1218,7 +1252,7 @@ mod tests {
     async fn a_rotation_ends_the_streams_that_opened_under_the_old_name() {
         let name = Id::random();
         let (_id, _receiver) = open(
-            Some(name.clone()),
+            Some(&name),
             identity::Audiences::of(&Viewer(11)).into_keys(),
         );
 
@@ -1235,11 +1269,11 @@ mod tests {
         let theirs = Id::random();
 
         let (_id, _mine) = open(
-            Some(mine.clone()),
+            Some(&mine),
             identity::Audiences::of(&Viewer(12)).into_keys(),
         );
         let (_id, _theirs) = open(
-            Some(theirs),
+            Some(&theirs),
             identity::Audiences::of(&Viewer(13)).into_keys(),
         );
 
@@ -1247,6 +1281,29 @@ mod tests {
 
         assert!(!connected(&Viewer(12)));
         assert!(connected(&Viewer(13)));
+    }
+
+    /// The other half of a rotation, on a node that served none of it. The
+    /// browser is named by what it reduces to, so the walk is the one
+    /// [`disconnect`] does and the streams that end are the same ones.
+    #[tokio::test]
+    async fn a_rotation_on_another_node_ends_the_streams_here() {
+        let name = Id::random();
+        let theirs = Id::random();
+
+        let (_id, _receiver) = open(
+            Some(&name),
+            identity::Audiences::of(&Viewer(15)).into_keys(),
+        );
+        let (_id, _elsewhere) = open(
+            Some(&theirs),
+            identity::Audiences::of(&Viewer(16)).into_keys(),
+        );
+
+        crate::deliver(Frame::revocation(reduction("session", &name)));
+
+        assert!(!connected(&Viewer(15)));
+        assert!(connected(&Viewer(16)), "and only that browser's");
     }
 
     /// The rule a plausible implementation gets wrong.

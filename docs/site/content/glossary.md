@@ -241,7 +241,7 @@ exos ships no broker adapter. What it ships is the two ends; see
 | `deliver(frame)` | The inbound half, called from your own subscriber loop |
 | `Frame::to_bytes`, `Frame::from_bytes` | The codec, which is exos's rather than yours |
 | `Frame::kind`, `key`, `trace` | What one is addressed at, and the trace it belongs to |
-| `Kind` | `Topic`, `Audience`, `Connection` |
+| `Kind` | `Topic`, `Audience`, `Connection`, `Session` |
 
 A frame carries no session name, no connection id, no fragment arguments, no
 application state and no token. With no bus registered, none of it is built.

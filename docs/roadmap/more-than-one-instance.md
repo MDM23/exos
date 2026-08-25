@@ -2,18 +2,17 @@
 
 What a second process breaks, and the one piece of state that cannot be moved.
 
-Status: stages 1, 2 and 3 are built. A
+Status: stages 1 to 4 are built. A
 [`Frame`](../../crates/exos/src/live/bus.rs) crosses, `exos::bus` says how,
 `exos::deliver` is what an application's subscriber hands one back to, a
-publish and a send fan out through it local-first, and a subscription that
-landed on the wrong node is forwarded rather than refused, so a browser
-round-robined between nodes settles and no request in exos needs a sticky
-session.
+publish and a send fan out through it local-first, a subscription that landed
+on the wrong node is forwarded rather than refused, and a rotation ends the
+browser's streams on every node rather than on the one that took the request.
+So a browser round-robined between nodes settles, no request in exos needs a
+sticky session, and signing out means the same thing everywhere.
 
-What is **not** built is stage 4, and it is the one with teeth: a rotation
-reaches the local registry only, so a browser signing out on one node keeps
-streaming as its old identity from its tabs on every other. Stage 5, where the
-broker does the filtering, waits for a volume nothing has reached.
+Stage 5, where the broker does the filtering, waits for a volume nothing has
+reached.
 
 The README calls this the one gap that cannot be added quietly later, and this
 document is why: it is not a feature beside the others but a set of guarantees
@@ -331,21 +330,50 @@ topology is what a broker adds.
 
 ## Stage 4: a rotation crosses too
 
-Not optional once stage 3 lands, which is the reason it is a stage.
+**Done**, in [stream.rs](../../crates/exos/src/live/stream.rs). Not optional
+once stage 3 landed, which is the reason it was a stage.
 
 `rotate` and `end` in [session.rs](../../crates/exos/src/session.rs) call
-`disconnect`, which walks the local registry and ends every stream that opened
-under the old name. That is what stops a renamed browser from carrying its old
-identity, and it reaches one process.
+`disconnect`, which walks the registry and ends every stream that opened under
+the old name. That is what stops a renamed browser from carrying its old
+identity, and it reached one process.
 
 So: a browser with tabs on two nodes signs out on node A. The tab on node B
-keeps streaming as the identity that just signed out, and once stage 3 exists,
-any node's `send` reaches it. It stays that way until the stream drops on its
-own, which for a tab left open is never.
+kept streaming as the identity that just signed out, and with stage 3 in place
+any node's `send` reached it. It stayed that way until the stream dropped on
+its own, which for a tab left open is never.
 
-A third `Kind`, keyed by the reduction of the session name, and `disconnect`
-becomes local delivery of a frame every node produces the same way. The bus is
+A fourth `Kind`, keyed by the reduction of the session name, and `disconnect`
+is now local delivery of a frame every node produces the same way. The bus is
 as much about revocation as about delivery, and this is the entry that says so.
+
+**A revocation carries nothing, and that is the shape rather than an economy.**
+Every frame before this one carried something to apply: steps to push, or the
+topics a connection watches. This one carries a decision that each node reaches
+the same conclusion from, so the payload is the key and the empty
+`Carries::Session` beside it. What crosses is the *decision*, not its
+consequences, which is also why nothing waits for an acknowledgement:
+`disconnect` answers with the count it ended here, because the other nodes were
+never asked.
+
+**The connection remembers the reduction, not the name.** It held the session
+`Id` so a rotation could match on it, and a rotation arriving from another node
+is keyed. Keeping both would have been two ways of asking one question, and the
+second would drift. Reducing at `open` also took the last bearer name out of
+the registry: it now holds what a browser is *called on a bus* and nothing that
+could log anybody in.
+
+**One reduction function, two callers.** A connection id and a session name are
+both bearer names crossing as `Topic::new(kind, value)`, and they were one line
+apart from being spelled two different ways. A sender and a receiver agreeing
+about a key is the whole of what makes a frame arrive, so there is one function
+and the kind is its argument.
+
+**The forward-compatibility test named the kind it was about to become.** It
+fed the codec `{"kind":"session"}` as an example of a frame from a later build
+and asserted it was dropped, so adding this stage made it pass for the wrong
+reason and fail as a test. It says `node` now, which is what that test always
+meant: whatever a newer node sends that this build has no arm for.
 
 ## Stage 5: the broker does the filtering
 
@@ -475,9 +503,10 @@ Registering a bus is the moment exos can know this rather than warn about it, so
   dropping what it has already passed. Not a boolean argument.
 - **Whether a subscription should have to come from the browser that opened the
   connection.** Answered "not yet", and the reasoning is worth keeping. The node
-  holding a connection knows the session it opened under, so a forwarded
-  subscription could carry the reduction of the session that sent it and be
-  refused where the two disagree. That would make a forged claim need the
+  holding a connection knows the session it opened under, and since stage 4 it
+  knows it as the reduction a frame would carry, so a forwarded subscription
+  could carry the reduction of the session that sent it and be refused where
+  the two disagree. That would make a forged claim need the
   unguessable id *and* the right cookie. What stops it being free is that the
   local path does not check it either, and a bus path stricter than the local
   one is two rules for one request. Tightening both is its own change, and it

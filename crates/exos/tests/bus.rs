@@ -256,11 +256,15 @@ async fn subscribing(name: &Id, connection: &str, topic: &Topic) -> StatusCode {
 
 /// The connection id of a real stream on this node, and the body that keeps it
 /// open for as long as the test holds it.
-async fn opened() -> (String, Body) {
+///
+/// Opened with the cookie, because that is what a stream carries and what
+/// tells a rotation which streams are this browser's.
+async fn opened(name: &Id) -> (String, Body) {
     let response = exos::app()
         .oneshot(
             Request::builder()
                 .uri("/_exos/live")
+                .header(header::COOKIE, format!("exos={name}"))
                 .body(Body::empty())
                 .expect("a valid request"),
         )
@@ -329,8 +333,8 @@ async fn a_subscription_for_another_node_is_forwarded_rather_than_refused() {
 async fn a_connection_this_node_minted_and_lost_is_still_gone() {
     let mut sent = bus().await;
 
-    let (id, _open) = opened().await;
     let name = Id::random();
+    let (id, _open) = opened(&name).await;
     let topic = Topic::new("presence", &(7_u32,));
 
     // The same node, a name it never handed out.
@@ -345,5 +349,95 @@ async fn a_connection_this_node_minted_and_lost_is_still_gone() {
     assert_eq!(
         crossed(&mut sent).await.key(),
         Topic::new("presence", &(8_u32,)).as_str()
+    );
+}
+
+// ---- a rotation, which is the one frame that ends something -----------------
+
+/// exos's half of signing out. What the application kept under the name is its
+/// own to delete; what the streams still holding that name do is exos's.
+#[exos::post("/sign-out")]
+async fn sign_out() -> Effect {
+    exos::session().end();
+
+    Effect::none()
+}
+
+/// The hole this stage closes. A browser is one cookie and many tabs, and the
+/// tabs it did not sign out in may be streaming from anywhere, so the decision
+/// has to reach every node rather than the one that took the request.
+#[tokio::test]
+async fn signing_out_crosses_as_the_browser_it_ended() {
+    let mut sent = bus().await;
+
+    let name = Id::random();
+
+    from(
+        &name,
+        Request::builder().method("POST").uri("/sign-out"),
+        Body::empty(),
+    )
+    .await;
+
+    let frame = crossed(&mut sent).await;
+
+    assert_eq!(frame.kind(), Kind::Session);
+    // The reduction, spelled out rather than taken from the code that produced
+    // it: this is the one string the two nodes have to agree on.
+    assert_eq!(frame.key(), Topic::new("session", &name).as_str());
+
+    let text = String::from_utf8(frame.to_bytes()).expect("a frame is text");
+
+    assert!(
+        !text.contains(&name.to_string()),
+        "a cookie is the last thing to travel to say it is worthless: {text}"
+    );
+}
+
+/// The other end, and the whole point of it: a stream this node holds ends
+/// because a browser signed out somewhere else. The body has to be *over*,
+/// because that is what makes `EventSource` come back carrying whatever cookie
+/// the browser has by then.
+#[tokio::test]
+async fn a_revocation_off_the_wire_ends_this_node_s_streams() {
+    let name = Id::random();
+    let (_id, body) = opened(&name).await;
+    let (_id, elsewhere) = opened(&Id::random()).await;
+
+    let bytes = serde_json::json!({
+        "kind": "session",
+        "key": Topic::new("session", &name).as_str(),
+        "trace": "",
+    })
+    .to_string()
+    .into_bytes();
+
+    let frame = Frame::from_bytes(&bytes).expect("a frame this build understands");
+
+    assert_eq!(frame.kind(), Kind::Session);
+
+    exos::deliver(frame);
+
+    let mut ended = body.into_data_stream();
+    let parting = ended.next().await.expect("the stream says goodbye");
+
+    assert!(
+        String::from_utf8(parting.expect("the body does not fail").to_vec())
+            .expect("an event is text")
+            .contains("retry:"),
+        "and says how long to wait before coming back"
+    );
+    assert!(ended.next().await.is_none(), "and then the body is over");
+
+    // The rule a plausible implementation gets wrong, one node further out: a
+    // revocation names one browser, not every browser this node is holding.
+    assert!(
+        timeout(
+            Duration::from_millis(50),
+            elsewhere.into_data_stream().next()
+        )
+        .await
+        .is_err(),
+        "another browser's stream is still open and still quiet"
     );
 }

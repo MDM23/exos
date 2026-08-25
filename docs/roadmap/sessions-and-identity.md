@@ -250,10 +250,11 @@ about which of two concurrent things reaches the browser first, and a mechanism
 that does not carry the cookie cannot order itself against it.
 
 **The answer is server-side and involves no client at all.** A connection now
-records the session name it opened under, and a rotation ends every connection
-carrying the name it replaced. The session layer is where it happens, because
-it already compares the arriving name against the current one to decide the
-`Set-Cookie` and is therefore already the thing that knows.
+records the session it opened under, as what that name reduces to, and a
+rotation ends every connection carrying the name it replaced. The session layer
+is where it happens, because it already compares the arriving name against the
+current one to decide the `Set-Cookie` and is therefore already the thing that
+knows.
 
 **Ending them, rather than re-identifying them.** The first design was to
 re-resolve those connections and swap their audiences in place, which is

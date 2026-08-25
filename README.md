@@ -159,13 +159,6 @@ build with the oldest supported compiler.
 Early. The shape is settled and the pieces work together, but this has not
 carried a real application yet. Known gaps, roughly in priority order:
 
-- **A sign-out reaches one instance.** Publishes, directed effects and
-  subscriptions all cross between nodes now: `exos::bus` says how a frame gets
-  there, `exos::deliver` is what a subscriber hands one back to, and exos ships
-  no broker. A rotation is the piece that does not cross yet, so a browser
-  signing out on one node keeps streaming as its old identity from its tabs on
-  every other. It is the same frame with a third address and is the next thing
-  to build.
 - **Expressions are compiled with `new Function`**, which a strict CSP without
   `unsafe-eval` blocks. A precompiled mode is the answer.
 - **No CSRF token.** `SameSite=Lax` on the session cookie, the `X-Exos` header
@@ -189,8 +182,8 @@ wire while a field is typed,
 [localization](docs/roadmap/localization.md) is built as far as a message
 whose count the browser holds,
 [more than one instance](docs/roadmap/more-than-one-instance.md) is built as
-far as a cluster that needs no sticky sessions and says what a rotation still
-has to do to cross one, and [loose
+far as a cluster that needs no sticky sessions and where a sign-out means the
+same thing on every node, and [loose
 ends](docs/roadmap/loose-ends.md) collects the smaller work that waits for
 nothing.
 

@@ -105,7 +105,9 @@ handling of their own: `EventSource` reconnects by itself with the cookie the
 browser now holds, and the runtime re-fetches the page on a greeting that is
 not the first, so each one comes back correctly identified and showing the
 right markup. Signing out is the same and matters more, since a tab you did not
-sign out of would otherwise hold a signed-in stream until you closed it.
+sign out of would otherwise hold a signed-in stream until you closed it. With a
+[bus](live-fragments#more-than-one-instance) registered it reaches those tabs
+wherever they are streaming from, not only the node that took the request.
 
 That takes about a sixth of a second, not the three a browser waits after a
 stream it thinks broke. A server-sent stream can name its own reconnection

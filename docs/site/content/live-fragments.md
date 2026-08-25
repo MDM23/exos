@@ -284,15 +284,16 @@ cookie, and forwarded to the node that does; the browser is told `204` and
 never learns that nodes exist. What still answers `410` is a connection this
 node minted and no longer has, which is a stream that really has gone.
 
-Three things to know before running two of anything:
+**Signing out crosses too.** `Session::rotate` and `end` end that browser's
+streams on every node, not on the one that took the request, so the tabs it did
+not sign out in reconnect as whoever it is now wherever they are streaming
+from. What crosses is what the session name reduces to and never the name.
+
+Two things to know before running two of anything:
 
 - **A signing key is no longer optional.** `exos::bus` refuses to register
   without `exos::keys`, because a random key per process is a token that
   verifies on the node that minted it and nowhere else.
-- **A rotation does not cross yet.** `Session::rotate` and `end` reach the
-  local registry, so a browser signing out on one node keeps streaming as its
-  old identity from its tabs on every other, until those streams drop on their
-  own. Do not run a cluster where that matters.
 - **Ordering narrows.** Within one node the last patch a tab receives for a
   topic is still the newest. Across nodes there is nothing serializing two
   publishes, and a publish followed by a send holds its order for a local
