@@ -42,3 +42,4 @@ is what makes it reachable.
 
 - [Languages](languages)
 - [Reading the examples](examples)
+- [Glossary](glossary)
