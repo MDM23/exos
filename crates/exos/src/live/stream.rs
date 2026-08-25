@@ -17,6 +17,14 @@
 //! or, since a connection now carries identity, receiving another viewer's. An
 //! unguessable id makes that a matter of arithmetic rather than of trust.
 //!
+//! The id names the node that minted it as well, in front of those unguessable
+//! bits. A tab holds its stream to one node and sends every other request
+//! wherever the load balancer points, so the node answering a subscription is
+//! often not the node holding the connection, and the prefix is what tells a
+//! connection that has *gone* from one that was never this node's. Only the
+//! first is a browser that should reconnect; the second is a forward over the
+//! [bus](crate::bus).
+//!
 //! # Two sets, and only one of them is the client's
 //!
 //! A connection holds what it watches and who it is, and they never meet. The
@@ -127,6 +135,12 @@ struct Connection {
     /// Never written again, and never from a client request. The module docs
     /// say why this is its own field rather than part of `topics`.
     audiences: HashSet<String>,
+    /// What this connection is called on a bus.
+    ///
+    /// The reduction of its id, held beside it so that a frame naming one
+    /// connection is matched the way every other frame is: against a set of
+    /// keys rather than against a bearer name.
+    key: String,
     sender: broadcast::Sender<Event>,
     /// The session name this stream opened under, so that a rotation can find
     /// it again.
@@ -268,7 +282,7 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
     let key = identity::key(audience);
 
     dispatch(Kind::Audience, &key, &steps);
-    bus::cross(|| Frame::new(Kind::Audience, key, steps));
+    bus::cross(|| Frame::delivery(Kind::Audience, key, steps));
 }
 
 /// Renders a fragment and sends it to every connection watching it.
@@ -335,7 +349,25 @@ pub fn publish(render: impl FnOnce() -> crate::Fragment) {
     // request to render one: a topic is a hash of a name and its arguments, so
     // no node can invoke the function from it. Rendering once for the whole
     // cluster is the only shape available and is also the cheaper one.
-    bus::cross(|| Frame::new(Kind::Topic, topic, steps));
+    bus::cross(|| Frame::delivery(Kind::Topic, topic, steps));
+}
+
+/// Replaces what the connection `key` names is watching.
+///
+/// The other half of a forwarded subscription, on the node that holds the
+/// socket. The names arrive proved, since the node that had the cookie checked
+/// them, and a frame naming a connection this node does not hold reaches
+/// nothing, which is every node but one.
+pub(crate) fn resubscribe(key: &str, topics: &[String]) {
+    let mut registry = connections()
+        .lock()
+        .expect("the registry lock is never held across a panic");
+
+    for connection in registry.values_mut() {
+        if connection.key == key {
+            connection.topics = topics.iter().cloned().collect();
+        }
+    }
 }
 
 /// Pushes one delivery at every connection watching `key`.
@@ -359,6 +391,10 @@ pub(crate) fn dispatch(kind: Kind, key: &str, steps: &[(String, String)]) {
         let watching = match kind {
             Kind::Topic => connection.topics.contains(key),
             Kind::Audience => connection.audiences.contains(key),
+            // Not a delivery. A frame naming one connection says what it is
+            // watching, and [`deliver`](crate::deliver) hands that to
+            // [`resubscribe`] instead of here.
+            Kind::Connection => false,
         };
 
         if watching {
@@ -381,11 +417,36 @@ fn order() -> &'static Mutex<()> {
     ORDER.get_or_init(Mutex::default)
 }
 
+/// What this process calls itself, for the length of the process.
+///
+/// Random rather than configured, because nothing addresses a node by it: it
+/// answers one local question, "did I mint this id?", and a forward is fanned
+/// out over the bus like everything else. So there is no directory, nothing to
+/// configure, and no name that says which machine this is.
+///
+/// It is in the connection id in the clear, which tells a client only that
+/// nodes exist and how many it has been served by. That was an open question
+/// between a plain name and a hashed one, and a random name is already the
+/// hashed one: it identifies nothing outside this process.
+fn node() -> &'static str {
+    static NODE: OnceLock<String> = OnceLock::new();
+
+    NODE.get_or_init(|| {
+        let mut bytes = [0_u8; 8];
+
+        getrandom::fill(&mut bytes).expect("the operating system provides entropy for a node name");
+
+        hex::encode(&bytes)
+    })
+}
+
 /// A name no other connection has and no client can guess.
 ///
-/// 128 bits from the operating system, as hex. Guessability is the whole
-/// property: the id is a bearer name for a connection, so anybody holding one
-/// can replace what that connection watches.
+/// 128 bits from the operating system, as hex, behind the name of the node
+/// that minted it. Guessability is the whole property of the second half: the
+/// id is a bearer name for a connection, so anybody holding one can replace
+/// what that connection watches. The first half is what lets a node tell a
+/// connection that has gone from one that was never its own.
 ///
 /// # Panics
 ///
@@ -397,7 +458,26 @@ fn mint() -> String {
 
     getrandom::fill(&mut bytes).expect("the operating system provides entropy for a connection id");
 
-    hex::encode(&bytes)
+    format!("{}-{}", node(), hex::encode(&bytes))
+}
+
+/// Whether this node is the one that minted `id`.
+///
+/// The whole of what the prefix is for. Mine and unknown is a connection that
+/// has gone, which the browser is told so that it opens a fresh stream; not
+/// mine is a request that landed on the wrong node, which is a forward.
+fn minted_here(id: &str) -> bool {
+    id.split_once('-')
+        .is_some_and(|(prefix, _)| prefix == node())
+}
+
+/// What a frame naming one connection is keyed by.
+///
+/// The same reduction an audience gets, for the same reason: a connection id
+/// is a bearer name, so what crosses a bus is what it reduces to and never the
+/// id itself.
+fn reduction(id: &str) -> String {
+    Topic::new("connection", &id).as_str().to_owned()
 }
 
 /// Registers a connection under a fresh id, with the receiver its response
@@ -416,6 +496,7 @@ fn open(session: Option<Id>, audiences: HashSet<String>) -> (String, broadcast::
             id.clone(),
             Connection {
                 audiences,
+                key: reduction(&id),
                 sender,
                 session,
                 topics: HashSet::new(),
@@ -499,26 +580,58 @@ struct Subscription {
     topics: Vec<(String, String)>,
 }
 
+/// Says what a browser is displaying, wherever the request landed.
+///
+/// A tab holds its stream to one node and sends this wherever the load
+/// balancer points, so the node answering is often not the node holding the
+/// connection. The tokens are checked here regardless, because a token is an
+/// HMAC under the shared key bound to the session in the cookie this request
+/// carried, and this is the node that has the cookie. What crosses afterwards
+/// is the proved names, so nothing is verified twice and no token reaches a
+/// broker.
+///
+/// The three answers, and the middle one is the whole of why a connection id
+/// carries the node that minted it:
+///
+/// * held here, so applied here, which is every request in a single process
+/// * minted here and gone, so `410`, and the browser opens a fresh stream
+/// * minted elsewhere, so forwarded, and `204` because it is on its way
+///
+/// Without a bus there is nowhere to forward to and the last case is the
+/// second: a single node that has never heard of an id is a browser that
+/// should reconnect.
 async fn subscribe(Json(request): Json<Subscription>) -> StatusCode {
-    let Ok(mut registry) = connections().lock() else {
-        return StatusCode::INTERNAL_SERVER_ERROR;
-    };
-
-    let Some(connection) = registry.get_mut(&request.connection) else {
-        // The stream died, or the id was invented. Either way the client
-        // should reconnect rather than have a connection conjured for it.
-        return StatusCode::GONE;
-    };
-
     // An unverifiable topic is dropped rather than failing the whole request:
     // one stale fragment left over from a previous page should not cost a tab
     // its other subscriptions.
-    connection.topics = request
+    let proved: Vec<String> = request
         .topics
         .into_iter()
         .filter(|(topic, token)| Topic::from_raw(topic).verify(token))
         .map(|(topic, _)| topic)
         .collect();
+
+    let Ok(mut registry) = connections().lock() else {
+        return StatusCode::INTERNAL_SERVER_ERROR;
+    };
+
+    if let Some(connection) = registry.get_mut(&request.connection) {
+        connection.topics = proved.into_iter().collect();
+
+        return StatusCode::NO_CONTENT;
+    }
+
+    // Nothing here reads the registry again, and a forward is a spawn, so the
+    // lock is let go before either.
+    drop(registry);
+
+    if minted_here(&request.connection) || !bus::registered() {
+        // The stream died, or the id was invented. Either way the client
+        // should reconnect rather than have a connection conjured for it.
+        return StatusCode::GONE;
+    }
+
+    bus::cross(|| Frame::subscription(reduction(&request.connection), proved));
 
     StatusCode::NO_CONTENT
 }
@@ -724,9 +837,29 @@ mod tests {
     #[tokio::test]
     async fn the_stream_names_the_connection_before_anything_else() {
         let (id, _body) = greeted().await;
+        let (prefix, random) = id.split_once('-').expect("the node, then the name");
 
-        assert_eq!(id.len(), 32, "128 bits as hex");
-        assert!(id.chars().all(|character| character.is_ascii_hexdigit()));
+        assert_eq!(prefix, node(), "the node that minted it");
+        assert_eq!(random.len(), 32, "128 bits as hex");
+        assert!(
+            random
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
+        );
+    }
+
+    /// The whole of what the prefix is for: a node can tell a connection that
+    /// has gone from one it never had, and only the first is a browser that
+    /// should reconnect.
+    #[test]
+    fn a_node_knows_which_connections_it_minted() {
+        assert!(minted_here(&mint()));
+
+        assert!(!minted_here("0123456789abcdef-c0ffee"), "another node's");
+        assert!(
+            !minted_here("invented"),
+            "and one that names no node at all"
+        );
     }
 
     /// The point of the whole handshake: the only id that works is one the
@@ -1019,7 +1152,7 @@ mod tests {
             StatusCode::NO_CONTENT
         );
 
-        crate::deliver(Frame::new(Kind::Topic, topic.as_str(), crossed()));
+        crate::deliver(Frame::delivery(Kind::Topic, topic.as_str(), crossed()));
 
         assert_eq!(received(&mut watching), 1);
         assert_eq!(received(&mut elsewhere), 0, "and nothing else at all");
@@ -1043,15 +1176,42 @@ mod tests {
             StatusCode::NO_CONTENT
         );
 
-        crate::deliver(Frame::new(Kind::Audience, key.clone(), crossed()));
+        crate::deliver(Frame::delivery(Kind::Audience, key.clone(), crossed()));
 
         assert_eq!(received(&mut person), 1);
         assert_eq!(received(&mut tab), 0, "watching it is not being it");
 
-        crate::deliver(Frame::new(Kind::Topic, key, crossed()));
+        crate::deliver(Frame::delivery(Kind::Topic, key, crossed()));
 
         assert_eq!(received(&mut tab), 1);
         assert_eq!(received(&mut person), 0, "and being it is not watching it");
+    }
+
+    /// A subscription that landed on the wrong node is applied by the node
+    /// holding the connection, and what proves it is that a publish then
+    /// reaches that tab. Nothing is verified here: the node that had the
+    /// cookie proved the names before they crossed.
+    #[tokio::test]
+    async fn a_forwarded_subscription_is_what_the_connection_watches() {
+        let (id, mut tab) = open(None, HashSet::new());
+        let (_id, mut elsewhere) = open(None, HashSet::new());
+
+        let topic = Topic::new("presence", &(22_u32,));
+        let watching = vec![topic.as_str().to_owned()];
+
+        crate::deliver(Frame::subscription(reduction(&id), watching));
+
+        publish(|| crate::Fragment::new(topic.clone(), Markup::default()));
+
+        assert_eq!(received(&mut tab), 1);
+        assert_eq!(received(&mut elsewhere), 0, "and only the one it names");
+
+        // Replaced wholesale rather than added to, which is the rule the
+        // endpoint follows and therefore the rule a forward has to keep.
+        crate::deliver(Frame::subscription(reduction(&id), Vec::new()));
+
+        publish(|| crate::Fragment::new(topic, Markup::default()));
+        assert_eq!(received(&mut tab), 0);
     }
 
     // ---- what a rotation does to a stream -----------------------------------

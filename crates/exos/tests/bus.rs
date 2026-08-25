@@ -14,12 +14,19 @@
 use core::time::Duration;
 use std::sync::{Arc, Once, OnceLock};
 
-use exos::{Audience, Effect, Fragment, Frame, Kind, Markup, Topic, publish, send};
+use axum::{
+    body::{Body, to_bytes},
+    extract::Path,
+    http::{Request, Response, StatusCode, header},
+};
+use exos::{Audience, Effect, Fragment, Frame, Id, Kind, Markup, Topic, publish, send};
 use tokio::{
     sync::Mutex,
     sync::mpsc::{UnboundedReceiver, unbounded_channel},
     time::timeout,
 };
+use tokio_stream::StreamExt as _;
+use tower::ServiceExt as _;
 
 #[derive(Hash)]
 struct Viewer(u32);
@@ -175,4 +182,168 @@ async fn a_frame_off_the_wire_is_one_deliver_takes() {
     assert_eq!(frame.key(), key);
 
     exos::deliver(frame);
+}
+
+// ---- a subscription that landed on the wrong node ---------------------------
+
+/// Serves the wrapper for one topic, which is the only way a browser comes by
+/// a token: it is minted in a request and bound to the session that request
+/// carried. A test gets its tokens the way a page does rather than around the
+/// side.
+#[exos::get("/served/{topic}")]
+async fn serve(Path(topic): Path<String>) -> Effect {
+    Effect::patch(Fragment::new(Topic::from_raw(&topic), Markup::default()).to_markup())
+}
+
+/// A request from one browser, which means one carrying its cookie.
+async fn from(name: &Id, request: axum::http::request::Builder, body: Body) -> Response<Body> {
+    exos::app()
+        .oneshot(
+            request
+                .header(header::COOKIE, format!("exos={name}"))
+                .body(body)
+                .expect("a valid request"),
+        )
+        .await
+        .expect("the router answers")
+}
+
+/// The token this browser was served for a topic, read out of the markup
+/// exactly as the runtime reads it off the element.
+async fn served(name: &Id, topic: &Topic) -> String {
+    let response = from(
+        name,
+        Request::builder().uri(format!("/served/{}", topic.as_str())),
+        Body::empty(),
+    )
+    .await;
+
+    let markup = String::from_utf8(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("the body is whole")
+            .to_vec(),
+    )
+    .expect("the markup is text");
+
+    markup
+        .split_once("data-token=\"")
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map(|(token, _)| token.to_owned())
+        .unwrap_or_else(|| panic!("a served fragment carries a token, got {markup:?}"))
+}
+
+/// Says what a browser is displaying, naming whichever connection it is told
+/// to, which is how a test stands in for a request that landed elsewhere.
+async fn subscribing(name: &Id, connection: &str, topic: &Topic) -> StatusCode {
+    let body = serde_json::json!({
+        "connection": connection,
+        "topics": [[topic.as_str(), served(name, topic).await]],
+    })
+    .to_string();
+
+    from(
+        name,
+        Request::builder()
+            .method("POST")
+            .uri("/_exos/subscribe")
+            .header(header::CONTENT_TYPE, "application/json"),
+        Body::from(body),
+    )
+    .await
+    .status()
+}
+
+/// The connection id of a real stream on this node, and the body that keeps it
+/// open for as long as the test holds it.
+async fn opened() -> (String, Body) {
+    let response = exos::app()
+        .oneshot(
+            Request::builder()
+                .uri("/_exos/live")
+                .body(Body::empty())
+                .expect("a valid request"),
+        )
+        .await
+        .expect("the router answers");
+
+    let mut events = response.into_body().into_data_stream();
+
+    let greeting = String::from_utf8(
+        events
+            .next()
+            .await
+            .expect("the stream says something")
+            .expect("the body does not fail")
+            .to_vec(),
+    )
+    .expect("the greeting is text");
+
+    let id = greeting
+        .lines()
+        .find_map(|line| line.strip_prefix("data: "))
+        .unwrap_or_else(|| panic!("the greeting names the connection, got {greeting:?}"))
+        .to_owned();
+
+    (id, Body::new(events))
+}
+
+/// The loop this stage exists to close. A tab holds its stream to one node and
+/// subscribes wherever the load balancer points, so the answer to an id this
+/// node never minted is a forward and a `204`, not the `410` that would tear a
+/// working stream down.
+#[tokio::test]
+async fn a_subscription_for_another_node_is_forwarded_rather_than_refused() {
+    let mut sent = bus().await;
+
+    let name = Id::random();
+    let topic = Topic::new("presence", &(6_u32,));
+    let elsewhere = "0123456789abcdef-00112233445566778899aabbccddeeff";
+
+    assert_eq!(
+        subscribing(&name, elsewhere, &topic).await,
+        StatusCode::NO_CONTENT
+    );
+
+    let frame = crossed(&mut sent).await;
+
+    assert_eq!(frame.kind(), Kind::Connection);
+    assert_eq!(frame.key(), Topic::new("connection", &elsewhere).as_str());
+
+    // The names, proved here and crossing without their tokens: the node with
+    // the cookie is the node that can check one, and it did.
+    let text = String::from_utf8(frame.to_bytes()).expect("a frame is text");
+
+    assert!(text.contains(topic.as_str()), "{text}");
+    assert!(!text.contains("data-token"), "{text}");
+    assert!(
+        !text.contains(&name.to_string()),
+        "and no session name: {text}"
+    );
+}
+
+/// And the case the forward must not swallow: an id this node minted and has
+/// no connection for is a stream that has gone, which the browser is told so
+/// that it opens a fresh one.
+#[tokio::test]
+async fn a_connection_this_node_minted_and_lost_is_still_gone() {
+    let mut sent = bus().await;
+
+    let (id, _open) = opened().await;
+    let name = Id::random();
+    let topic = Topic::new("presence", &(7_u32,));
+
+    // The same node, a name it never handed out.
+    let stale = format!("{}-{}", id.split_once('-').expect("a prefix").0, "c0ffee");
+
+    assert_eq!(subscribing(&name, &stale, &topic).await, StatusCode::GONE);
+
+    // Nothing crossed for it, which the next frame is what proves: had the
+    // refusal forwarded, it would be first.
+    publish(|| fragment(8));
+
+    assert_eq!(
+        crossed(&mut sent).await.key(),
+        Topic::new("presence", &(8_u32,)).as_str()
+    );
 }

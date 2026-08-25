@@ -5,14 +5,14 @@ carried a real application yet.
 
 Known gaps, roughly in priority order.
 
+**A sign-out reaches one instance.** Publishes, directed effects and
+subscriptions [cross between nodes](live-fragments#more-than-one-instance)
+through a bus you register, and a cluster needs no sticky sessions. What does
+not cross is a rotation, so a browser signing out on one node keeps streaming
+as its old identity from its tabs on every other.
+
 **Expressions are compiled with `new Function`**, which a strict CSP without
 `unsafe-eval` blocks. A precompiled mode is the answer.
-
-**Running more than one instance needs sticky sessions.** A publish and a send
-[cross to the other nodes](live-fragments#more-than-one-instance) through a bus
-you register. What is not built is the other direction: a tab subscribes
-wherever the load balancer points, and a node holding no such connection
-answers `410`, which a browser correctly reads as "reconnect".
 
 **No CSRF token.** `SameSite=Lax` on the session cookie, the `X-Exos` header
 and JSON-only bodies are three defences rather than one, which is a policy and
@@ -38,8 +38,9 @@ is built as far as pushing an effect to a person.
 is built as far as a message whose count the browser holds, and says what a
 live fragment in eight languages costs.
 [More than one instance](https://github.com/MDM23/exos/blob/main/docs/roadmap/more-than-one-instance.md)
-is built as far as the bus itself, and says what a subscription and a rotation
-still have to do to cross one, and which of the ordering guarantees survive.
+is built as far as a cluster that needs no sticky sessions, and says what a
+rotation still has to do to cross one and which of the ordering guarantees
+survive.
 [Loose ends](https://github.com/MDM23/exos/blob/main/docs/roadmap/loose-ends.md)
 collects the smaller work that waits for nothing.
 

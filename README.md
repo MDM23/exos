@@ -159,15 +159,15 @@ build with the oldest supported compiler.
 Early. The shape is settled and the pieces work together, but this has not
 carried a real application yet. Known gaps, roughly in priority order:
 
+- **A sign-out reaches one instance.** Publishes, directed effects and
+  subscriptions all cross between nodes now: `exos::bus` says how a frame gets
+  there, `exos::deliver` is what a subscriber hands one back to, and exos ships
+  no broker. A rotation is the piece that does not cross yet, so a browser
+  signing out on one node keeps streaming as its old identity from its tabs on
+  every other. It is the same frame with a third address and is the next thing
+  to build.
 - **Expressions are compiled with `new Function`**, which a strict CSP without
   `unsafe-eval` blocks. A precompiled mode is the answer.
-- **Running more than one instance needs sticky sessions.** A publish and a
-  send now cross to the other nodes: `exos::bus` says how a frame gets there,
-  `exos::deliver` is what a subscriber hands one back to, and exos ships no
-  broker. What is not built is the other direction. A tab holds its stream to
-  one node and subscribes wherever the load balancer points, and a node holding
-  no such connection answers `410`, which a browser correctly reads as
-  "reconnect": round-robin two nodes and that is a loop.
 - **No CSRF token.** `SameSite=Lax` on the session cookie, the `X-Exos` header
   and JSON-only bodies are three defences rather than one, which is a policy and
   is written down in the guide. It leaks for a handler that accepts a
@@ -189,8 +189,8 @@ wire while a field is typed,
 [localization](docs/roadmap/localization.md) is built as far as a message
 whose count the browser holds,
 [more than one instance](docs/roadmap/more-than-one-instance.md) is built as
-far as the bus itself and says what a subscription and a rotation still have to
-do to cross one, and [loose
+far as a cluster that needs no sticky sessions and says what a rotation still
+has to do to cross one, and [loose
 ends](docs/roadmap/loose-ends.md) collects the smaller work that waits for
 nothing.
 

@@ -67,36 +67,62 @@ pub type Sent = Result<(), Box<dyn core::error::Error + Send + Sync>>;
 
 /// Which set of a connection a frame's key is matched against.
 ///
-/// Two, and they stay two for the reason the registry holds two sets: merged,
+/// The first two stay two for the reason the registry holds two sets: merged,
 /// whether a key was proved by being served or derived from who somebody is
 /// would depend on a check nobody can see, and the first frame that forgot it
-/// would let a tab be addressed as somebody.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "lowercase")]
+/// would let a tab be addressed as somebody. The third is one connection, and
+/// is how a request that landed on the wrong node reaches the right one.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Kind {
     /// A fragment, watched by whoever was served it.
     Topic,
     /// A person, as [`Audience`](crate::Audience) reduces them.
     Audience,
+    /// One open stream, as the node holding it knows itself to.
+    Connection,
 }
 
-/// One delivery, on its way to the nodes this one is not.
+/// What a frame carries, which is decided by what it is addressed at.
 ///
-/// Built by [`publish`](crate::publish) and [`send`](crate::send) when a bus is
-/// registered, and handed back to [`deliver`] by the application's subscriber.
-/// The steps cross already framed, as the event name and payload pairs the wire
-/// carries, so a receiving node needs to know nothing about what a step is: it
-/// pushes what it was handed into a channel and the browser reads the bytes it
-/// would have read from the node that sent it. A new step is a new string
-/// rather than a new frame version, so adding one does not divide a cluster
-/// mid-deploy.
+/// The two are a delivery and a subscription, and they are not the same shape:
+/// one is pushed at a browser and the other rewrites what a connection is
+/// watching. Tagged by `kind` on the wire, so the tag a reader sees and the
+/// payload it goes with cannot come apart.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+enum Carries {
+    /// The framed steps of an effect or a patch.
+    ///
+    /// They cross already framed, as the event name and payload pairs the wire
+    /// carries, so a receiving node needs to know nothing about what a step
+    /// is: it pushes what it was handed into a channel and the browser reads
+    /// the bytes it would have read from the node that sent it. A new step is
+    /// a new string rather than a new frame version, so adding one does not
+    /// divide a cluster mid-deploy.
+    Topic { steps: Vec<(String, String)> },
+    /// The same, addressed at a person rather than at a fragment.
+    Audience { steps: Vec<(String, String)> },
+    /// What a browser says it is displaying, already proved by the node that
+    /// took the request.
+    ///
+    /// The names alone. A token proves that this browser was served this
+    /// fragment, and the node that has the cookie is the node that can check
+    /// it, so nothing is verified twice and no token crosses.
+    Connection { topics: Vec<String> },
+}
+
+/// One message, on its way to the nodes this one is not.
+///
+/// Built by [`publish`](crate::publish), [`send`](crate::send) and the
+/// subscription endpoint when a bus is registered, and handed back to
+/// [`deliver`] by the application's subscriber.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Frame {
-    kind: Kind,
+    #[serde(flatten)]
+    carries: Carries,
     key: String,
-    steps: Vec<(String, String)>,
-    /// The trace this delivery belongs to, or empty where nothing is sampling.
+    /// The trace this belongs to, or empty where nothing is sampling.
     ///
     /// Here from the first version on purpose. The codec is exos's rather than
     /// the caller's, so adding a field to it later is a change two nodes can
@@ -109,11 +135,28 @@ pub struct Frame {
 
 impl Frame {
     /// One delivery of `steps` to whatever is watching `key`.
-    pub(crate) fn new(kind: Kind, key: impl Into<String>, steps: Vec<(String, String)>) -> Self {
+    pub(crate) fn delivery(
+        kind: Kind,
+        key: impl Into<String>,
+        steps: Vec<(String, String)>,
+    ) -> Self {
+        let carries = match kind {
+            Kind::Audience => Carries::Audience { steps },
+            _ => Carries::Topic { steps },
+        };
+
         Self {
-            kind,
+            carries,
             key: key.into(),
-            steps,
+            trace: String::new(),
+        }
+    }
+
+    /// What one connection is watching, for the node that holds it.
+    pub(crate) fn subscription(key: impl Into<String>, topics: Vec<String>) -> Self {
+        Self {
+            carries: Carries::Connection { topics },
+            key: key.into(),
             trace: String::new(),
         }
     }
@@ -121,7 +164,11 @@ impl Frame {
     /// Which set the key is matched against.
     #[must_use]
     pub const fn kind(&self) -> Kind {
-        self.kind
+        match self.carries {
+            Carries::Topic { .. } => Kind::Topic,
+            Carries::Audience { .. } => Kind::Audience,
+            Carries::Connection { .. } => Kind::Connection,
+        }
     }
 
     /// What a connection has to be watching to receive this.
@@ -136,9 +183,21 @@ impl Frame {
         &self.trace
     }
 
-    /// The steps, as the wire frames them.
+    /// The steps, as the wire frames them, where this is a delivery.
     pub(crate) fn steps(&self) -> &[(String, String)] {
-        &self.steps
+        match &self.carries {
+            Carries::Topic { steps } | Carries::Audience { steps } => steps,
+            Carries::Connection { .. } => &[],
+        }
+    }
+
+    /// What the connection this names is watching, where this is a
+    /// subscription.
+    pub(crate) fn topics(&self) -> &[String] {
+        match &self.carries {
+            Carries::Connection { topics } => topics,
+            _ => &[],
+        }
     }
 
     /// The bytes to publish.
@@ -218,6 +277,16 @@ where
     drop(BUS.set((boxed, handle)));
 }
 
+/// Whether this node has anywhere to send a frame.
+///
+/// Asked by the subscription endpoint, which answers differently on a node
+/// that is alone: an id it has never heard of is a browser that should
+/// reconnect, and forwarding it into nothing would leave a tab believing it
+/// was subscribed.
+pub(crate) fn registered() -> bool {
+    BUS.get().is_some()
+}
+
 /// Hands `frame` to the bus, where there is one.
 ///
 /// The frame is built here rather than by the caller, so that an application
@@ -263,7 +332,12 @@ pub(crate) fn cross(frame: impl FnOnce() -> Frame) {
     reason = "a delivery is a handover, and a frame an adapter kept would be one it delivered twice"
 )]
 pub fn deliver(frame: Frame) {
-    crate::live::stream::dispatch(frame.kind(), frame.key(), frame.steps());
+    match frame.kind() {
+        // Not a delivery: a subscription says what one connection is watching,
+        // and the node that holds it is the only one this reaches.
+        Kind::Connection => crate::live::stream::resubscribe(frame.key(), frame.topics()),
+        kind => crate::live::stream::dispatch(kind, frame.key(), frame.steps()),
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -279,7 +353,7 @@ mod tests {
     use super::*;
 
     fn frame() -> Frame {
-        Frame::new(
+        Frame::delivery(
             Kind::Topic,
             "presence-1a2b3c4d",
             vec![(String::from("patch"), String::from("<li id=\"a\">hi</li>"))],
@@ -289,11 +363,23 @@ mod tests {
     /// A golden value rather than a round trip, because a round trip passes
     /// against a codec that drifts and the whole point of this one being ours
     /// is that two binaries spell it the same way.
+    ///
+    /// The kind and what it carries sit together, which is the tagging: a
+    /// reader never has to hold one in mind while looking for the other.
     #[test]
     fn a_frame_is_the_same_bytes_in_every_build() {
         assert_eq!(
             String::from_utf8(frame().to_bytes()).expect("UTF-8"),
-            r#"{"kind":"topic","key":"presence-1a2b3c4d","steps":[["patch","<li id=\"a\">hi</li>"]],"trace":""}"#
+            r#"{"kind":"topic","steps":[["patch","<li id=\"a\">hi</li>"]],"key":"presence-1a2b3c4d","trace":""}"#
+        );
+
+        assert_eq!(
+            String::from_utf8(
+                Frame::subscription("connection-4f2e", vec![String::from("presence-1a2b3c4d")])
+                    .to_bytes()
+            )
+            .expect("UTF-8"),
+            r#"{"kind":"connection","topics":["presence-1a2b3c4d"],"key":"connection-4f2e","trace":""}"#
         );
     }
 

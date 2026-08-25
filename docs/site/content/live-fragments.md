@@ -277,20 +277,28 @@ liveness rather than its liveness. What crosses is the rendered patch and never
 a request to render one, because a topic is a hash of a name and its arguments
 and no receiving node could invoke the function from it.
 
+**No sticky sessions.** A tab holds its stream to one node and sends every
+other request wherever the load balancer points. A subscription that lands on a
+node holding no such connection is verified there, since that node has the
+cookie, and forwarded to the node that does; the browser is told `204` and
+never learns that nodes exist. What still answers `410` is a connection this
+node minted and no longer has, which is a stream that really has gone.
+
 Three things to know before running two of anything:
 
 - **A signing key is no longer optional.** `exos::bus` refuses to register
   without `exos::keys`, because a random key per process is a token that
   verifies on the node that minted it and nowhere else.
-- **The subscription is not forwarded yet.** A tab holds its stream to one node
-  and sends `/_exos/subscribe` wherever the load balancer points, and a node
-  holding no such connection answers `410`, which the client correctly reads as
-  "reconnect". Round-robin two nodes and that is a loop. Until that lands, a
-  cluster wants sticky sessions.
+- **A rotation does not cross yet.** `Session::rotate` and `end` reach the
+  local registry, so a browser signing out on one node keeps streaming as its
+  old identity from its tabs on every other, until those streams drop on their
+  own. Do not run a cluster where that matters.
 - **Ordering narrows.** Within one node the last patch a tab receives for a
   topic is still the newest. Across nodes there is nothing serializing two
   publishes, and a publish followed by a send holds its order for a local
-  connection and not for a remote one.
+  connection and not for a remote one. A forwarded subscription is not ordered
+  against a publish either: a tab can miss one patch of a fragment it has just
+  claimed, and the next publish repairs it.
 
 A frame carries no session name, no connection id, no fragment arguments and no
 token. A key is already a hash, so a broker's operator, its logs and its backups

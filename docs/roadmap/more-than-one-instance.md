@@ -2,14 +2,18 @@
 
 What a second process breaks, and the one piece of state that cannot be moved.
 
-Status: stages 1 and 3 are built. A [`Frame`](../../crates/exos/src/live/bus.rs)
-crosses, `exos::bus` says how, `exos::deliver` is what an application's
-subscriber hands one back to, and a publish and a send fan out through it
-local-first. What is **not** built is stage 2, which is what breaks first: a
-subscription that lands on a node holding no such connection still answers
-`410`, so a browser round-robined between two nodes still cannot settle. Two
-instances are therefore not yet a deployment, and the section below says why
-that is the ranking rather than the publish.
+Status: stages 1, 2 and 3 are built. A
+[`Frame`](../../crates/exos/src/live/bus.rs) crosses, `exos::bus` says how,
+`exos::deliver` is what an application's subscriber hands one back to, a
+publish and a send fan out through it local-first, and a subscription that
+landed on the wrong node is forwarded rather than refused, so a browser
+round-robined between nodes settles and no request in exos needs a sticky
+session.
+
+What is **not** built is stage 4, and it is the one with teeth: a rotation
+reaches the local registry only, so a browser signing out on one node keeps
+streaming as its old identity from its tabs on every other. Stage 5, where the
+broker does the filtering, waits for a volume nothing has reached.
 
 The README calls this the one gap that cannot be added quietly later, and this
 document is why: it is not a feature beside the others but a set of guarantees
@@ -45,6 +49,9 @@ is the message.** Every node keeps its own map of its own connections, and the
 only new question is how a message reaches a map it is not in.
 
 ## What breaks first, and it is not the publish
+
+**Fixed by [stage 2](#stage-2-a-subscription-reaches-the-connection-it-names),
+and kept here because the ranking is the point.**
 
 A tab holds one long-lived stream to one node, and every other request it makes
 goes wherever the load balancer sends it. `/_exos/subscribe` names a connection
@@ -151,9 +158,10 @@ becoming a thing every application pays for.
 
 ## Stage 2: a subscription reaches the connection it names
 
-The loop above, closed. The node that receives the request has the cookie, so
-`Topic::verify` works there exactly as it does now: verify locally, then forward
-the proved topic names. No token crosses and nothing is verified twice.
+**Done.** The loop above, closed. The node that receives the request has the
+cookie, so `Topic::verify` works there exactly as it does now: verify locally,
+then forward the proved topic names. No token crosses and nothing is verified
+twice.
 
 What the receiving node needs is the difference between *gone* and *not mine*,
 and it cannot currently tell them apart. So the connection id gains a prefix
@@ -164,6 +172,54 @@ that says `GONE` tears down a stream that was fine.
 
 The frame is keyed by the reduction of the connection id rather than by the id,
 so this is a `Kind` and not an exception to the rule above.
+
+### What building it found
+
+**The `204` is not a redirect, and that is the whole shape.** A browser can
+reach the load balancer and nothing else, so nothing is ever handed back to it
+to retry elsewhere. It is told "noted", which is true: the node that took the
+request has verified the tokens and put the proved names on the bus, and the
+node holding the socket applies them. The client never learns that nodes exist,
+and [runtime.js](../../crates/exos/js/runtime.js) did not change by a line.
+
+**The prefix answers a local question and addresses nothing.** A node asks "did
+I mint this?" and never "who did?", because the forward is fanned out like
+every other frame and only the node holding a connection whose key matches
+applies it. So there is no directory, no node-to-node address and nothing to
+configure: the node name is eight random bytes minted at startup. That also
+settled the open question of plain versus hashed, by dissolving it. A random
+per-process name is already the hashed one, and what it tells a client is that
+nodes exist and how many it has been served by.
+
+**A frame is no longer always a delivery.** Every frame until this one carried
+framed steps to be pushed at a browser; a subscription rewrites what a
+connection watches and pushes nothing. So the payload is tagged by the kind
+rather than sitting beside it: one enum, `steps` for the two deliveries and
+`topics` for the subscription, and a reader can no longer hold a kind in mind
+while looking for a payload that does not match it. Doing that after something
+shipped would have been the codec change this document exists to prevent, which
+is the same argument the trace field won on.
+
+**Answering `204` without waiting is deliberate**, and it costs one thing worth
+writing down. There is no acknowledgement, because waiting for one would need
+request-response over the broker, a timeout on every DOM mutation, and an
+answer for what to do when it expires. A subscription is idempotent state
+replacement and the client re-sends its whole visible set on the next mutation,
+so a lost frame costs a fragment its updates until then. A page that mutates
+once and sits still would sit still.
+
+**And it is a race the single-node path did not have.** Locally the set is
+replaced under the registry lock before the `204` goes out. Forwarded, a
+publish of a topic the tab has just claimed can reach the holding node before
+the claim does, and that tab misses that one patch. The same argument that
+covers a lost frame covers this one: it is a patch, the next publish repairs
+it, and the alternative is a round trip in front of every mutation.
+
+**A node alone still answers `410`.** With no bus registered there is nowhere
+to forward to, so an id this process has never heard of is a browser that
+should reconnect, exactly as before. Forwarding into nothing would leave a tab
+believing it was subscribed, which is the failure this stage exists to remove
+wearing different clothes.
 
 Worth naming what this buys beyond the bug: **no sticky sessions**. An action
 POST already works on any node, because a handler reads a cookie and publishes
@@ -417,9 +473,16 @@ Registering a bus is the moment exos can know this rather than warn about it, so
   than a preference. An associated constant on a bus trait, a second
   registration function, or the frame carrying its own sequence and the receiver
   dropping what it has already passed. Not a boolean argument.
-- **Whether the node prefix on a connection id is plain or hashed.** Plain tells
-  a client roughly how many nodes there are, which most deployments already
-  announce in a header; hashed costs a lookup on every forward.
+- **Whether a subscription should have to come from the browser that opened the
+  connection.** Answered "not yet", and the reasoning is worth keeping. The node
+  holding a connection knows the session it opened under, so a forwarded
+  subscription could carry the reduction of the session that sent it and be
+  refused where the two disagree. That would make a forged claim need the
+  unguessable id *and* the right cookie. What stops it being free is that the
+  local path does not check it either, and a bus path stricter than the local
+  one is two rules for one request. Tightening both is its own change, and it
+  has an edge: a stream opened before a browser had a cookie would be refused
+  once and reconnect.
 - **Whether `deliver` is the application's call at all**, or whether exos should
   take a stream of frames at registration and drain it. The closure is smaller
   and the stream is harder to misuse.
