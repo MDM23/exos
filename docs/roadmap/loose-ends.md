@@ -361,22 +361,45 @@ The morph's invariants are now written down as tests instead, ten of them, each
 checked by mutating the implementation to confirm it fails. The licence was
 never the obstacle: idiomorph is Zero-Clause BSD.
 
-## The client's live path is barely tested
+## The client's live path was barely tested
 
-jsdom implements neither `EventSource` nor `fetch`, so until the harness grew
-both, the whole of `openStream` and `syncSubscriptions` ran in no test at all.
-The handshake, the 410 path, the step vocabulary and all three rules of the
-reconnect repair have coverage now. What still does not:
+**Done.** jsdom implements neither `EventSource` nor `fetch`, so until the
+harness grew both, the whole of `openStream` and `syncSubscriptions` ran in no
+test at all. The handshake, the 410 path, the step vocabulary and all three
+rules of the reconnect repair were covered first. The two that were left are the
+subject of this entry, and both are now checked in
+[runtime.test.js](../../crates/exos/js/tests/runtime.test.js).
 
-- a patch arriving for a fragment on screen, and none arriving for one that is
-  not, which is the entire point of the topic model and is checked nowhere
-- the coalescing that makes a drag silent, which
-  [runtime.js](../../crates/exos/js/runtime.js) explains at length and nothing
-  checks
+**The topic model, from the end the client owns.** The crate's own tests assert
+that a frame reaches the connections watching its key and no others. What the
+client contributes is the set those keys come from, and that it tracks the page
+was asserted nowhere: a fragment removed drops out of what the tab watches, one
+a patch brought with it joins, and a patch lands on the fragment it names while
+its neighbour keeps the very node it had. That last one is the half a
+subscription cannot enforce, and it is where a caret gets taken.
+
+**The canonicalising that makes a drag silent.** Sorting the pairs and holding
+them in a map rather than a list is what stops a pointer move from posting an
+identical subscription, and both halves are pinned: reordering fragments says
+nothing however often the page changes, and one fragment shown twice is watched
+once. The microtask that coalesces a turn is a third test, because sorting
+cannot do its half: a turn that changes the page twenty times subscribes once
+and names what the turn ended with.
+
+Each of the six was then checked against a mutated runtime, the way the morph's
+invariants were. Reading the pairs in document order, holding them in a list,
+syncing per announcement rather than per turn, and letting a patch morph every
+fragment rather than the one it names each kill at least one. A seventh was
+written and deleted: it asserted the opening state of the two after it and no
+mutation could fail it alone, which is the difference between a test of this and
+a test that passes beside it.
 
 The README says the reason `npm test` exists is that every bug that got past
-review lived in the client. This is the corner of the client that reasoning
-reaches least well.
+review lived in the client. What is thin there now is not the live path but the
+browser under it. jsdom lays nothing out, so
+[sortable.test.js](../../crates/exos/js/tests/sortable.test.js) hands its rows a
+geometry to read and every test that would depend on real boxes has to do the
+same or not exist.
 
 ## Expressions are compiled with `new Function`
 

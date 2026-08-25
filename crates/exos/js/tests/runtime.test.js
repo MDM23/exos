@@ -1091,6 +1091,141 @@ test("a connection the server has forgotten is dropped and reopened", async () =
     assert.equal(claimed(window).at(-1), "fresh");
 });
 
+/** What the tab last told the server it is watching. */
+const watching = (window) =>
+    window.transport.requests.filter((request) => request.url === "/_exos/subscribe").at(-1)
+        ?.body.topics;
+
+// The topic model from the end the client owns, and the reason a publish is
+// cheap: a tab is sent a fragment's patch because it asked for that fragment by
+// name, so what it asks for is the whole of what decides which patches reach
+// it. The server's half of this is checked in the crate's own tests; that the
+// set tracks the page was checked nowhere.
+test("a fragment that leaves the page is one the tab stops watching", async () => {
+    const window = boot(`${live("presence-1")}${live("presence-2")}`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    assert.deepEqual(watching(window), [
+        ["presence-1", "token-for-presence-1"],
+        ["presence-2", "token-for-presence-2"],
+    ]);
+
+    window.document.getElementById("presence-2").remove();
+    await settled();
+
+    assert.deepEqual(watching(window), [["presence-1", "token-for-presence-1"]]);
+});
+
+test("a fragment a patch brought with it is one the tab starts watching", async () => {
+    const window = boot(live("presence-1"));
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    stream.emit("patch", live("presence-2"));
+    await settled();
+
+    assert.deepEqual(watching(window), [
+        ["presence-1", "token-for-presence-1"],
+        ["presence-2", "token-for-presence-2"],
+    ]);
+});
+
+// The other end of the same rule. Two fragments are two topics, so the one that
+// was published lands and the one that was not is untouched, down to the node:
+// a patch that rebuilt its neighbour would take the caret and the bindings of
+// whatever the viewer was doing there.
+test("a patch lands on the fragment it names and leaves its neighbour alone", async () => {
+    const window = boot(
+        `<exos-live id="presence-1" data-token="token-for-presence-1"><span>one</span></exos-live>` +
+            `<exos-live id="presence-2" data-token="token-for-presence-2"><span>two</span></exos-live>`,
+    );
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    const untouched = window.document.querySelector("#presence-2 span");
+
+    stream.emit("patch", `<exos-live id="presence-1"><span>changed</span></exos-live>`);
+    await settled();
+
+    assert.equal(window.document.querySelector("#presence-1 span").textContent, "changed");
+    assert.equal(untouched.textContent, "two");
+    assert.ok(
+        untouched.isConnected,
+        "and it is the same node, not markup that happened to match",
+    );
+});
+
+// A set, not a list, because it is a set on the server. One fragment on the
+// page twice is the same fragment, so it is one thing to watch and the tab must
+// not name it twice.
+test("a fragment the page shows twice is watched once", async () => {
+    const window = boot(`${live()}${live()}`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    assert.deepEqual(watching(window), [["presence-1", "token-for-presence-1"]]);
+});
+
+// What makes a drag silent, and the reason the pairs are sorted rather than
+// read in document order. Reordering a row is a real DOM move, so every pointer
+// move hands `syncSubscriptions` the same fragments in a new order; a tab that
+// compared them as they sit would post an identical subscription on each one,
+// for the length of the drag.
+test("reordering the fragments on a page says nothing to the server", async () => {
+    const window = boot(`<div id="list">${live("presence-1")}${live("presence-2")}</div>`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    const list = window.document.getElementById("list");
+    const [first, second] = [...list.children];
+
+    for (let move = 0; move < 5; move++) {
+        list.insertBefore(second, first);
+        await settled();
+        list.insertBefore(first, second);
+        await settled();
+    }
+
+    assert.equal(
+        window.transport.requests.length,
+        1,
+        "the set never changed, however often the page did",
+    );
+});
+
+// And the coalescing proper, which is the half sorting cannot do. A page that
+// changes several times in one turn is one page by the end of it, so the sync
+// waits out the turn and reads the DOM once rather than replaying what each
+// change would have sent.
+test("a turn that changes the page repeatedly subscribes once", async () => {
+    const window = boot(live("presence-0"));
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    for (let n = 1; n <= 20; n++) {
+        window.document.body.insertAdjacentHTML("beforeend", live(`presence-${n}`));
+        window.document.dispatchEvent(new window.CustomEvent("exos:mutated"));
+    }
+
+    await settled();
+
+    assert.equal(window.transport.requests.length, 2, "one for the page, one for the turn");
+    assert.equal(watching(window).length, 21, "and it names what the turn ended with");
+});
+
 test("the stream carries every step, not only the ones a patch uses", async () => {
     const window = boot(`${live()}<input id="field">`);
     const [stream] = window.transport.streams;
