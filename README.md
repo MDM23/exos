@@ -26,7 +26,7 @@ struct Selection {
 async fn remove(Model(selection): Model<Selection>) -> Effect {
     data::<Room>().update(|tracks| store::remove(tracks, &selection.picked));
 
-    publish(room);
+    publish(room());
     Effect::set(&Selection::signals().picked, Vec::new()).scroll("#queue")
 }
 

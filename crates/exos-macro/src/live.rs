@@ -47,22 +47,33 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     let body = &function.block;
     let label = function.sig.ident.to_string();
 
+    // The render is the closure below rather than a boxed one, so that naming a
+    // fragment costs nothing: a page builds one per live element and throws them
+    // away again. Edition 2024 captures the argument lifetimes in the opaque
+    // type, which is what lets a fragment take a reference.
     let mut signature = function.sig.clone();
-    signature.output = syn::parse_quote!(-> ::exos::Fragment);
+    signature.output = syn::parse_quote!(-> ::exos::Fragment<impl Fn() -> ::exos::Markup>);
 
     quote! {
         #(#attributes)*
         #visibility #signature {
-            // Borrowed, so the arguments stay usable in the body below.
+            // Borrowed, so the arguments stay usable in the render below.
             let __topic = ::exos::Topic::new(#label, &(#(&#arguments,)*));
 
-            // Detached, so the body cannot read the request scope. A fragment
-            // renders again from whatever publishes it, where there is no
-            // request, and content that differed between the two would break
-            // the topic invariant.
-            let __markup: ::exos::Markup = ::exos::detached(move || #body);
+            ::exos::Fragment::new(__topic, move || {
+                // Cloned per render rather than moved, so the body reads the
+                // arguments it was written against and the fragment stays
+                // renderable again, which is what a publish asks of it.
+                #(let #arguments = ::core::clone::Clone::clone(&#arguments);)*
 
-            ::exos::Fragment::new(__topic, __markup)
+                // Detached, so the body cannot read the request scope. A
+                // fragment renders again from whatever publishes it, where
+                // there is no request, and content that differed between the
+                // two would break the topic invariant.
+                let __markup: ::exos::Markup = ::exos::detached(move || #body);
+
+                __markup
+            })
         }
     }
 }

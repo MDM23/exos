@@ -174,6 +174,13 @@ pub fn model(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// The topic is derived from the function name and the argument values, so the
 /// server owns it end to end and there is no name to invent, keep in step, or
 /// collide with. Every argument must be `Hash`.
+///
+/// Calling the function names the fragment; the body runs when something asks
+/// for its markup, which is once per template it appears in and once per
+/// publish. So an argument is held until then and handed to the body by clone
+/// on each render, which is why every argument must be `Clone` as well as
+/// `Hash`. Borrowing one is fine, since the fragment does not outlive the call
+/// that named it.
 #[proc_macro_attribute]
 pub fn live(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     live::expand(item.into()).into()

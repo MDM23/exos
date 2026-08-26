@@ -102,7 +102,7 @@ pub(crate) fn board(filter: Filter) -> Markup {
 /// three: a tab receives the one it is subscribed to and nothing else.
 pub(crate) fn publish_board() {
     for filter in Filter::ALL {
-        publish(|| board(filter));
+        publish(board(filter));
     }
 }
 

@@ -42,7 +42,7 @@ use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
     pin::Pin,
-    sync::{Mutex, OnceLock, PoisonError},
+    sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError},
     task::{Context, Poll},
 };
 
@@ -294,28 +294,29 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
 /// what lets a handler publish unconditionally rather than asking first.
 ///
 /// ```ignore
-/// publish(|| presence(user.id));
+/// publish(presence(user.id));
 /// ```
 ///
-/// # Why it renders rather than taking a rendered one
+/// # Why it takes a fragment that has not rendered
 ///
 /// Because a patch is state replacement, so what has to be true is that the
 /// last patch a tab receives is the newest one, and that is a fact about the
 /// order of two things rather than about either of them.
 ///
-/// This used to take a `&Fragment`, which meant the caller rendered and then
-/// asked to send. Two of those racing is enough to leave a tab wrong forever: a
-/// publisher that read the state first can reach the lock second, so the older
-/// markup lands last and stays until something publishes that topic again,
-/// which for the last write of the day is never. It is invisible in a test, it
-/// needs no unusual load, and the symptom is a price or a status that is simply
-/// out of date on one screen.
+/// This used to take rendered markup, which meant the caller read the state and
+/// then asked to send. Two of those racing is enough to leave a tab wrong
+/// forever: a publisher that read the state first can reach the lock second, so
+/// the older markup lands last and stays until something publishes that topic
+/// again, which for the last write of the day is never. It is invisible in a
+/// test, it needs no unusual load, and the symptom is a price or a status that
+/// is simply out of date on one screen.
 ///
-/// Taking the render closes it, because the read and the send then happen under
-/// one lock. A publisher may still find that another has already sent what it
-/// was about to, and that is harmless: both read current state, so whichever
-/// goes last is current. The type is what enforces it, since a `Fragment`
-/// rendered beforehand can no longer be handed to this.
+/// A [`Fragment`](crate::Fragment) carrying its render closes it, because the
+/// read and the send then happen under one lock. A publisher may still find
+/// that another has already sent what it was about to, and that is harmless:
+/// both read current state, so whichever goes last is current. Naming the
+/// fragment costs nothing, which is what leaves the lock covering every read
+/// the patch is made of.
 ///
 /// That is a fact about serializing two operations in one process. With a
 /// [`bus`](crate::bus) registered it holds for the tabs on this node, and two
@@ -324,27 +325,31 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
 ///
 /// # What it costs
 ///
-/// Publishes are serialized against each other, so an expensive fragment holds
-/// up an unrelated one. That is the same shape as the registry walk this
-/// already does and is fine at the volumes it is fine at; a lock per topic is
-/// the refinement, and belongs with the index that would make the walk a
-/// lookup.
+/// A publish waits for whoever is publishing the same topic and for nobody
+/// else, so an expensive fragment holds up only the fragment it is. What is
+/// still the wrong shape at volume is the registry walk underneath it, which
+/// wants an index from key to connection and does not have one.
 ///
 /// # Panics
 ///
-/// If the registry lock was poisoned; see [`connection_count`]. A panic in
-/// `render` propagates, and does not poison anything: the ordering lock guards
-/// no data, so a fragment that panics costs its own publish and nothing else.
-pub fn publish(render: impl FnOnce() -> crate::Fragment) {
-    // Held across the render as well as the send, which is the whole point.
-    // Recovered rather than propagated on poisoning, because `()` has no
-    // invariant a panicking render could have broken, and because that panic
-    // is the caller's rather than this module's.
-    let _order = order().lock().unwrap_or_else(PoisonError::into_inner);
-
-    let fragment = render();
-    let steps = vec![Step::Patch(fragment.to_markup()).framed()];
+/// If the registry lock was poisoned; see [`connection_count`]. A panic in the
+/// render propagates and costs its own publish and nothing else: the topic's
+/// lock guards no data, so the next publisher of that topic recovers it rather
+/// than inheriting a poisoning.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "publishing is where a fragment ends, and taking it by reference \
+              would put an & in front of every call site's temporary"
+)]
+pub fn publish(fragment: crate::Fragment<impl Fn() -> crate::Markup>) {
     let topic = fragment.topic().as_str();
+
+    // Declared before the guard so that it is dropped after it: the topic is
+    // let go of first, and forgotten only once nobody is holding it.
+    let order = Order::of(topic);
+    let _held = order.wait();
+
+    let steps = vec![Step::Patch(fragment.to_markup()).framed()];
 
     dispatch(Kind::Topic, topic, &steps);
 
@@ -411,14 +416,73 @@ pub(crate) fn dispatch(kind: Kind, key: &str, steps: &[(String, String)]) {
     }
 }
 
-/// Orders a publish against every other publish, render included.
+/// A publish's place in the queue for one topic.
 ///
 /// Its own lock rather than the registry's, so that arbitrary rendering never
 /// runs while the registry is held and the claim every `expect` in this file
 /// makes about that lock stays true.
-fn order() -> &'static Mutex<()> {
-    static ORDER: OnceLock<Mutex<()>> = OnceLock::new();
-    ORDER.get_or_init(Mutex::default)
+///
+/// One per topic rather than one for everything, because the guarantee is per
+/// topic and always was: the last patch a tab receives being the newest one is
+/// a statement about a topic and never about two of them. A single lock says
+/// the same thing and charges every publish in the process for it, so an
+/// expensive fragment holds up an unrelated one.
+struct Order {
+    lock: Arc<Mutex<()>>,
+    topic: String,
+}
+
+impl Order {
+    /// The lock for `topic`, created here if nobody else is holding one.
+    fn of(topic: &str) -> Self {
+        let lock = Arc::clone(
+            orders()
+                .lock()
+                .expect("the order table is never held across a render")
+                .entry(topic.to_owned())
+                .or_default(),
+        );
+
+        Self {
+            lock,
+            topic: topic.to_owned(),
+        }
+    }
+
+    /// Waits for whoever is publishing this topic, and keeps the place.
+    ///
+    /// Recovered rather than propagated on poisoning, because `()` has no
+    /// invariant a panicking render could have broken, and because that panic
+    /// is the caller's rather than this module's.
+    fn wait(&self) -> MutexGuard<'_, ()> {
+        self.lock.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl Drop for Order {
+    /// Forgets the topic once the last publisher of it has left, so the table
+    /// holds what is being published rather than everything ever published.
+    ///
+    /// The table's reference and this one, and nothing else: a publisher
+    /// waiting for this topic took a third when it looked the lock up, and
+    /// forgetting a lock somebody is waiting on would hand the next publisher a
+    /// second lock for one topic, which is two publishes of it at once.
+    fn drop(&mut self) {
+        let mut orders = orders()
+            .lock()
+            .expect("the order table is never held across a render");
+
+        if Arc::strong_count(&self.lock) == 2 {
+            orders.remove(&self.topic);
+        }
+    }
+}
+
+type Orders = Mutex<HashMap<String, Arc<Mutex<()>>>>;
+
+fn orders() -> &'static Orders {
+    static ORDERS: OnceLock<Orders> = OnceLock::new();
+    ORDERS.get_or_init(Orders::default)
 }
 
 /// What this process calls itself, for the length of the process.
@@ -756,6 +820,8 @@ pub(crate) fn routes() -> Router {
     reason = "a failing assertion is the point of a test"
 )]
 mod tests {
+    use core::cell::Cell;
+
     use axum::{
         body::Body,
         http::{Request, header},
@@ -1107,30 +1173,66 @@ mod tests {
         assert_eq!(received(&mut tab), 0);
     }
 
-    /// What makes the last patch a tab receives the newest one.
+    /// Whether a publish of `topic` could go ahead this instant.
+    ///
+    /// `try_lock` answers `Err` to the thread already holding the lock rather
+    /// than deadlocking on it, which is what lets a render ask about itself.
+    fn free(topic: &Topic) -> bool {
+        Order::of(topic.as_str()).lock.try_lock().is_ok()
+    }
+
+    /// What makes the last patch a tab receives the newest one, and the reason
+    /// it costs a publisher of another topic nothing.
     ///
     /// The behaviour is asserted over real streams in
     /// [`tests/directed.rs`](../../tests/directed.rs); this pins the mechanism,
     /// because the mechanism is the only reason the behaviour holds and it is
     /// invisible from outside. A render that runs before the lock is a render
     /// whose result can be overtaken.
+    ///
+    /// The second assertion is here so that a global lock cannot come back as
+    /// a fix for something else: two topics wait for nothing of each other,
+    /// and the guarantee never asked them to.
     #[tokio::test]
-    async fn a_fragment_is_rendered_while_the_order_is_held() {
-        let mut rendered = false;
+    async fn a_fragment_is_rendered_while_its_own_topic_is_held() {
+        let mine = Topic::new("order", &(1_u32,));
+        let another = Topic::new("order", &(2_u32,));
+        let rendered = Cell::new(false);
 
-        publish(|| {
+        publish(crate::Fragment::new(mine.clone(), || {
             assert!(
-                order().try_lock().is_err(),
+                !free(&mine),
                 "the render has to happen inside the lock, or a publisher that \
                  read the state first can still send second"
             );
+            assert!(free(&another), "and it holds up its own topic alone");
 
-            rendered = true;
-            crate::Fragment::new(Topic::new("order", &(1_u32,)), Markup::default())
-        });
+            rendered.set(true);
+            Markup::default()
+        }));
 
-        assert!(rendered, "and the closure is what produced the fragment");
-        assert!(order().try_lock().is_ok(), "and the lock is let go after");
+        assert!(
+            rendered.get(),
+            "and the fragment's own render is what produced the markup"
+        );
+        assert!(free(&mine), "and the topic is let go of after");
+    }
+
+    /// A topic is remembered for as long as somebody is publishing it and no
+    /// longer, so an application publishing a fragment per record does not
+    /// leave a lock per record behind.
+    #[tokio::test]
+    async fn a_topic_is_forgotten_once_nobody_is_publishing_it() {
+        let topic = Topic::new("order", &(3_u32,));
+
+        publish(crate::Fragment::new(topic.clone(), Markup::default));
+
+        assert!(
+            !orders()
+                .lock()
+                .expect("the order table is never held across a render")
+                .contains_key(topic.as_str())
+        );
     }
 
     /// The other direction of the rule that keeps the two sets apart. Watching
@@ -1155,7 +1257,7 @@ mod tests {
 
         // And the control, so the silence above is the rule rather than a tab
         // that was never going to receive anything.
-        publish(|| crate::Fragment::new(topic, Markup::default()));
+        publish(crate::Fragment::new(topic, Markup::default));
         assert_eq!(received(&mut receiver), 1);
     }
 
@@ -1230,7 +1332,7 @@ mod tests {
 
         crate::deliver(Frame::subscription(reduction("connection", &id), watching));
 
-        publish(|| crate::Fragment::new(topic.clone(), Markup::default()));
+        publish(crate::Fragment::new(topic.clone(), Markup::default));
 
         assert_eq!(received(&mut tab), 1);
         assert_eq!(received(&mut elsewhere), 0, "and only the one it names");
@@ -1242,7 +1344,7 @@ mod tests {
             Vec::new(),
         ));
 
-        publish(|| crate::Fragment::new(topic, Markup::default()));
+        publish(crate::Fragment::new(topic, Markup::default));
         assert_eq!(received(&mut tab), 0);
     }
 

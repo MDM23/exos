@@ -18,8 +18,8 @@
 //!     view! { <span class="dot" data-online={ online(user) }></span> }
 //! }
 //!
-//! { presence(user.id) }        // in a template, renders it
-//! exos::publish(presence(id)); // anywhere, re-renders and pushes it
+//! { presence(user.id) }           // in a template, renders it
+//! exos::publish(presence(id));    // anywhere, re-renders and pushes it
 //! ```
 //!
 //! # The invariant
@@ -39,7 +39,10 @@
 //! inside one whether or not a request is being served: a fragment's arguments
 //! are its whole input.
 
-use core::hash::{Hash, Hasher as _};
+use core::{
+    fmt,
+    hash::{Hash, Hasher as _},
+};
 
 use crate::{Id, Markup, Render, escape_into, fnv::Fnv1a, keys};
 
@@ -178,20 +181,57 @@ const LIVE_TOKEN: &str = "live-token";
 //                                  FRAGMENTS
 // -----------------------------------------------------------------------------
 
-/// A rendered live fragment: its markup, plus the topic that keeps it fresh.
+/// A live fragment: the topic that keeps it fresh, and the render behind it.
 ///
 /// The same value is used two ways, which is the point. Put it in a template
 /// to render it, or hand it to [`publish`] to broadcast it.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Fragment {
+///
+/// # It carries the render rather than the markup
+///
+/// So that a fragment can be named before it exists. A publish is ordered
+/// against every other publish **of its own topic** and has to hold that order
+/// across the render, which it can only do if it can ask what the topic is
+/// first. A value that arrived already rendered leaves nothing to ask, and the
+/// order then has to be one lock for everything, where an expensive fragment
+/// holds up an unrelated one.
+///
+/// The render runs whenever the markup is asked for, once per template the
+/// fragment appears in and once per publish. Naming one costs a hash and
+/// nothing else, which is what leaves the lock covering the whole read:
+///
+/// ```
+/// use exos::Markup;
+///
+/// #[exos::live]
+/// fn tag(name: &str) -> Markup {
+///     Markup::default()
+/// }
+///
+/// // Nothing has rendered here, and the argument was borrowed rather than
+/// // kept, because naming the fragment is all this call does.
+/// let label = String::from("shipped");
+/// assert!(tag(&label).topic().as_str().starts_with("live-tag-"));
+/// ```
+///
+/// # Why the render is a type parameter
+///
+/// Because a fragment is built on the way through a page and dropped again,
+/// and a boxed closure would put an allocation and an indirect call in front of
+/// every one of them, to buy an erasure that only somebody keeping fragments in
+/// a collection needs. `#[live]` writes the type, so it is not spelled out
+/// anywhere an application looks, and whoever does want them in a collection
+/// writes `Fragment<Box<dyn Fn() -> Markup>>`, since a boxed closure is itself
+/// a render.
+#[derive(Clone)]
+pub struct Fragment<R> {
     topic: Topic,
-    markup: Markup,
+    render: R,
 }
 
-impl Fragment {
-    /// Pairs markup with the topic that identifies it.
-    pub fn new(topic: Topic, markup: Markup) -> Self {
-        Self { topic, markup }
+impl<R: Fn() -> Markup> Fragment<R> {
+    /// Pairs a topic with the render that produces its markup.
+    pub fn new(topic: Topic, render: R) -> Self {
+        Self { topic, render }
     }
 
     /// The topic this fragment answers to.
@@ -199,14 +239,14 @@ impl Fragment {
         &self.topic
     }
 
-    /// The markup the topic determines, without the wrapper around it.
+    /// Renders the markup the topic determines, without the wrapper around it.
     ///
     /// The two halves are worth telling apart: this is the same for everybody
     /// watching, which is the invariant a live fragment is held to, while the
     /// wrapper carries a grant to one browser and is the only part of a
     /// fragment that may differ between two viewers.
-    pub fn markup(&self) -> &Markup {
-        &self.markup
+    pub fn markup(&self) -> Markup {
+        (self.render)()
     }
 
     /// The wrapper that carries the subscription, as HTML.
@@ -231,14 +271,25 @@ impl Fragment {
         }
 
         out.push('>');
-        out.push_str(self.markup.as_str());
+        out.push_str(self.markup().as_str());
         out.push_str("</exos-live>");
 
         Markup(out)
     }
 }
 
-impl Render for Fragment {
+/// The topic and nothing else, since a render has nothing to print and running
+/// it to find out would make formatting a fragment a side effect.
+impl<R> fmt::Debug for Fragment<R> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Fragment")
+            .field("topic", &self.topic)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<R: Fn() -> Markup> Render for Fragment<R> {
     fn render_to(&self, out: &mut String) {
         out.push_str(self.to_markup().as_str());
     }
@@ -250,6 +301,8 @@ impl Render for Fragment {
 
 #[cfg(test)]
 mod tests {
+    use core::cell::Cell;
+
     use super::*;
 
     #[test]
@@ -293,6 +346,11 @@ mod tests {
             Topic::new("presence", &(7_u32,)).as_str(),
             "live-presence-8eb61815f6eafc86"
         );
+    }
+
+    /// One render, since a fragment holds one rather than markup.
+    fn online() -> Markup {
+        Markup(String::from("<span>online</span>"))
     }
 
     /// The token for a topic, as one browser was served it.
@@ -361,15 +419,34 @@ mod tests {
         });
     }
 
+    /// A fragment is a name and a way to produce the markup, and until
+    /// something asks for the markup it has not been produced. That is what
+    /// lets [`publish`] take the topic's lock before the render rather than
+    /// after it, and what a fan-out would need to skip the combinations
+    /// nobody is watching.
+    #[test]
+    fn a_fragment_renders_when_it_is_asked_to_and_not_before() {
+        let renders = Cell::new(0_usize);
+
+        let fragment = Fragment::new(Topic::new("presence", &(1_u32,)), || {
+            renders.set(renders.get() + 1);
+            online()
+        });
+
+        assert_eq!(renders.get(), 0, "naming it is not free");
+        assert_eq!(fragment.markup(), online());
+        assert_eq!(renders.get(), 1);
+
+        drop(fragment.to_markup());
+        assert_eq!(renders.get(), 2, "and again per publish");
+    }
+
     #[test]
     fn the_wrapper_is_invisible_to_layout_and_carries_the_subscription() {
         let html = crate::with_scope(|| {
-            Fragment::new(
-                Topic::new("presence", &(1_u32,)),
-                Markup(String::from("<span>online</span>")),
-            )
-            .to_markup()
-            .into_string()
+            Fragment::new(Topic::new("presence", &(1_u32,)), online)
+                .to_markup()
+                .into_string()
         });
 
         assert!(html.contains("style=\"display:contents\""));
@@ -383,12 +460,9 @@ mod tests {
     /// nobody there to grant one to. The client keeps the grant it was served.
     #[test]
     fn a_publish_carries_the_name_and_not_the_grant() {
-        let html = Fragment::new(
-            Topic::new("presence", &(1_u32,)),
-            Markup(String::from("<span>online</span>")),
-        )
-        .to_markup()
-        .into_string();
+        let html = Fragment::new(Topic::new("presence", &(1_u32,)), online)
+            .to_markup()
+            .into_string();
 
         assert!(html.contains("id=\"live-presence-"), "{html}");
         assert!(!html.contains("data-token"), "{html}");
@@ -404,7 +478,7 @@ mod tests {
     fn a_fragment_inside_a_fragment_carries_no_grant_either() {
         crate::with_scope(|| {
             let inner = crate::detached(|| {
-                Fragment::new(Topic::new("presence", &(1_u32,)), Markup::default())
+                Fragment::new(Topic::new("presence", &(1_u32,)), Markup::default)
                     .to_markup()
                     .into_string()
             });

@@ -56,22 +56,28 @@ Worth doing whether or not the rest follows. The invariant it restores, that a
 frame belongs to a render, is currently true only by accident of rendering
 being synchronous.
 
-## Stage 2: a lock per topic
+## Stage 2: the lock becomes asynchronous
 
-[publish](../../crates/exos/src/live/stream.rs) takes a global
-`std::sync::Mutex` and holds it across the render, which is what makes the
-newest patch win. Two things force it to change alongside the render:
+**Half done.** [publish](../../crates/exos/src/live/stream.rs) held one global
+`std::sync::Mutex` across the render, which is what makes the newest patch win.
+Two things forced it to change alongside the render:
 
+- A global mutex held across a database call is a queue. Every publish in the
+  process would wait behind the slowest render in it.
 - Holding a `std` lock across an await is forbidden, and the workspace's own
   `await_holding_lock` lint says so.
-- A global *async* mutex held across a database call is a queue. Every publish
-  in the process would wait behind the slowest render in it.
 
-So the lock becomes per topic and asynchronous. [Dimensions](dimensions.md)
-already names this as the next thing to build for the fan-out; async turns it
-from a refinement into a precondition. Nothing is lost by narrowing it, because
-the guarantee was always per topic: the last patch a tab receives being the
-newest is a statement about one topic and never was about two.
+The first is closed and was closed on its own, because it was never about async:
+the lock is now per topic, which cost a `Fragment` carrying its render rather
+than its markup, since a publish that cannot name its topic before rendering has
+nothing to key a lock on. Nothing was lost by narrowing it, because the
+guarantee was always per topic: the last patch a tab receives being the newest
+is a statement about one topic and never was about two.
+
+What is left is the second, and it is a `tokio::sync::Mutex` in place of the
+`std` one in the same table. The table itself stays a `std` lock, because it is
+held for a lookup and never across a render, and the poisoning recovery around
+the topic lock goes away with it, since a tokio mutex has none.
 
 ## Stage 3: an async fragment
 
@@ -94,12 +100,13 @@ Synchronous fragments keep working and stay the cheaper default. The macro
 generates one shape or the other from what it was handed, and a fragment that
 does not await should not be written as though it might.
 
-## Stage 4: publish takes an async render
+## Stage 4: publish awaits the fragment
 
-`publish` becomes async and takes `impl AsyncFn() -> Fragment`, which is what
-the fan-out needs anyway, since it calls the render once per watched
-combination. A synchronous fragment becomes `publish(async || lot(7)).await`,
-one keyword at the call site.
+`publish` becomes async, and what it awaits is the fragment's own render rather
+than a closure the caller wrapped: a `Fragment` already carries the render, so
+what changes is what it carries, from `Fn() -> Markup` to something a fan-out
+can call once per watched combination and await each time. The call site keeps
+its shape and gains a keyword, `publish(lot(7)).await`.
 
 The consequence to state plainly: **`publish` stops being callable from a
 synchronous context.** Today it can be called from anywhere, including a plain
@@ -195,8 +202,10 @@ write is the second one.
 - **Two publishes racing on one topic still leave the newest patch last**, with
   an awaiting render and a per-topic lock, which is the same property the
   synchronous version already claims and the same test shape.
-- **Two topics are ordered against each other in no way at all**, asserted so
-  that a future global lock cannot be reintroduced as a fix for something else.
+- **Two topics are ordered against each other in no way at all**, which
+  [stream.rs](../../crates/exos/src/live/stream.rs) asserts today and the async
+  version has to keep asserting, so that a global lock cannot be reintroduced as
+  a fix for something else.
 
 ## Open questions
 

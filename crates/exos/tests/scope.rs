@@ -63,8 +63,12 @@ fn reads_the_scope() -> exos::Markup {
 /// The rule the macro enforces, checked through the macro rather than through
 /// the mask it expands to: a fragment renders again from whatever publishes it,
 /// where there is no request to read.
+///
+/// Asking for the markup is what runs the body, since a fragment carries its
+/// render rather than the result of one, so the mask bites where the reading
+/// would happen rather than where the fragment was named.
 #[test]
 #[should_panic(expected = "a live fragment cannot read the request scope")]
 fn a_live_fragment_cannot_read_the_request_scope() {
-    exos::with_scope(reads_the_scope);
+    exos::with_scope(|| drop(reads_the_scope().markup()));
 }

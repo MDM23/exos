@@ -86,11 +86,10 @@ async fn crossed(sent: &mut UnboundedReceiver<Frame>) -> Frame {
         .expect("the channel is open")
 }
 
-fn fragment(id: u32) -> Fragment {
-    Fragment::new(
-        Topic::new("presence", &(id,)),
-        Markup(format!("<span id=\"presence-{id}\">here</span>")),
-    )
+fn fragment(id: u32) -> Fragment<impl Fn() -> Markup> {
+    Fragment::new(Topic::new("presence", &(id,)), move || {
+        Markup(format!("<span id=\"presence-{id}\">here</span>"))
+    })
 }
 
 /// The wire carries the result rather than the request: a topic is a hash of a
@@ -100,7 +99,7 @@ fn fragment(id: u32) -> Fragment {
 async fn a_publish_crosses_as_the_patch_it_rendered() {
     let mut sent = bus().await;
 
-    publish(|| fragment(1));
+    publish(fragment(1));
 
     let frame = crossed(&mut sent).await;
 
@@ -149,7 +148,7 @@ async fn an_effect_with_no_steps_crosses_nothing() {
     let mut sent = bus().await;
 
     send(&Viewer(3), &Effect::none());
-    publish(|| fragment(4));
+    publish(fragment(4));
 
     // The publish is what proves the silence above: had the empty send
     // crossed, it would be first.
@@ -192,7 +191,7 @@ async fn a_frame_off_the_wire_is_one_deliver_takes() {
 /// side.
 #[exos::get("/served/{topic}")]
 async fn serve(Path(topic): Path<String>) -> Effect {
-    Effect::patch(Fragment::new(Topic::from_raw(&topic), Markup::default()).to_markup())
+    Effect::patch(Fragment::new(Topic::from_raw(&topic), Markup::default).to_markup())
 }
 
 /// A request from one browser, which means one carrying its cookie.
@@ -344,7 +343,7 @@ async fn a_connection_this_node_minted_and_lost_is_still_gone() {
 
     // Nothing crossed for it, which the next frame is what proves: had the
     // refusal forwarded, it would be first.
-    publish(|| fragment(8));
+    publish(fragment(8));
 
     assert_eq!(
         crossed(&mut sent).await.key(),

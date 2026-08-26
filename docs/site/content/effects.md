@@ -8,7 +8,7 @@ no signature:
 async fn archive(Model(selection): Model<Selection>) -> Effect {
     data::<Files>().update(|entries| store::archive(entries, &selection.picked));
 
-    publish(file_list);
+    publish(file_list());
     Effect::set(&Selection::signals().picked, Vec::new()).scroll("#file-list")
 }
 ```

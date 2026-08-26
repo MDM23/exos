@@ -145,7 +145,7 @@ each declared dimension, computes the topic for every combination, and renders
 only the combinations somebody is actually watching.
 
 ```rust
-publish(|| lot(7));   // renders once per locale being watched, and no more
+publish(lot(7));   // renders once per locale being watched, and no more
 ```
 
 Two properties worth stating, because they are what make this cheap:
@@ -159,35 +159,36 @@ Two properties worth stating, because they are what make this cheap:
 
 ### Sequential, and still synchronous
 
-The renders happen one after another under the ordering lock, and each patch
-goes out as its render finishes rather than being batched until the last one is
-done. So the first language's viewers are not waiting on the eighth language's
-render, and nothing becomes concurrent.
+The renders happen one after another, each under the lock for the combination
+it is rendering, and each patch goes out as its render finishes rather than
+being batched until the last one is done. So the first language's viewers are
+not waiting on the eighth language's render, and nothing becomes concurrent.
 
-The correctness requirement is per topic rather than global. Each combination is
-its own topic, so "the newest patch wins" only has to hold within a combination,
-which is what makes sending as you go safe.
+The correctness requirement is per topic rather than global, which is what the
+lock is keyed by since [loose ends](loose-ends.md) closed that entry. Each
+combination is its own topic, so "the newest patch wins" only has to hold within
+a combination, which is what makes sending as you go safe, and a fan-out holds
+one combination's lock at a time rather than one lock for all of them.
 
 `publish` is a sync `fn` today because a fragment cannot await at all, so it
 renders from state readable without awaiting: a process-global store in the
 examples, a projection the write path keeps fresh in an application with a
 database. That is scheduled to change in [asynchronous
 fragments](async-fragments.md), and the two designs meet at the same place. A
-fan-out multiplies the render, an awaiting render lengthens it, and both make
-the same lock the problem, which is why a lock per topic is the precondition
-for either.
+fan-out multiplies the render and an awaiting render lengthens it, so both would
+have made a single lock the problem, and both were waiting on the same
+precondition.
 
 What must not change either way is where the read happens. Hoisting it out of
-the closure to save the repetition is the one thing a caller must not do,
-because reading before the lock is the stale-patch race that taking a render
-closure was built to remove.
+the fragment to save the repetition is the one thing a caller must not do,
+because reading before the lock is the stale-patch race that a fragment carrying
+its render was built to remove.
 
-What does grow is the lock hold time, from one render to as many as there are
-watched combinations. That makes the index [loose ends](loose-ends.md) wants for
-the registry walk more valuable than it was, and it turns a lock per topic from
-a speculative refinement into the next thing to build. If a fragment ever is
-allowed to await, that per-topic lock is also the precondition, since an async
-critical section held globally is a queue.
+What does grow is the hold time, from one render to as many as there are watched
+combinations, and it is now the combination's own publishers that wait for it.
+That leaves the index [loose ends](loose-ends.md) wants for the registry walk as
+the thing this makes more valuable, since a fan-out walks the registry once per
+combination.
 
 ## What this does not fix
 
@@ -218,9 +219,9 @@ critical section held globally is a queue.
   reopening it.
 - **A publish becomes a loop.** The single render under the lock was easy to
   reason about, and a loop over combinations is less so.
-- **The lock is held longer**, in a design whose ordering guarantee rests on
-  holding it. That is the cost that makes a lock per topic the next thing to
-  build rather than a refinement to consider.
+- **A publish holds more locks**, one per combination it renders, in a design
+  whose ordering guarantee rests on holding them. Taken and let go one at a
+  time, since a combination is ordered against itself and against nothing else.
 
 ## Testing
 

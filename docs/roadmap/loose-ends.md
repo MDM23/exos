@@ -178,12 +178,13 @@ could reach the registry lock second, so the older markup landed last and stayed
 until that topic was published again, which for the last write of the day is
 never.
 
-It takes the render now, `publish(|| lot(id, role))`, and holds a lock across
-both. Three things came out of writing it.
+It takes a fragment that has not rendered, `publish(lot(id, role))`, and holds a
+lock across the read and the send. Three things came out of writing it.
 
-- **The type is the fix.** A `Fragment` rendered beforehand can no longer be
-  handed to `publish` at all, so the order that was wrong is the order that no
-  longer compiles. Documenting it would have been a rule to remember.
+- **The type is the fix.** A `Fragment` carries the render rather than markup,
+  so there is no rendered one to hand over and the order that was wrong is the
+  order that no longer compiles. Documenting it would have been a rule to
+  remember.
 - **It is a lock of its own, not the registry's.** Arbitrary rendering must
   never run while the registry is held, or a fragment that panics would poison
   it and every publish afterwards would panic too. The ordering lock guards
@@ -282,14 +283,18 @@ topics and audiences are deliberately separate sets and merging them at the
 index would give back exactly the distinction that keeps a client from claiming
 an audience.
 
-There is now a second thing to fix here, and it wants fixing at the same time.
-The entry above serializes every publish against every other, render included,
-so an expensive fragment holds up an unrelated one. A lock per topic is the
-right shape and it is the same bookkeeping as the index: whatever maps a topic
-to the connections watching it is also what a per-topic lock hangs off.
+The second thing that was here, a publish serializing against every other
+publish rather than against its own topic, is **done** and turned out not to be
+the same job after all. It hung off the fragment rather than off the registry: a
+publish could not name its topic before rendering it, so there was no key to
+lock on, and no bookkeeping about who is watching would have supplied one.
+[`Fragment`](../../crates/exos/src/live.rs) now carries its render rather than
+its markup, which puts the name in front of the work, and
+[stream.rs](../../crates/exos/src/live/stream.rs) keeps one lock per topic for
+as long as somebody is publishing that topic.
 
-Still not worth doing before something feels it, and nothing has. Worth knowing
-where it is when something does.
+So the walk is still a walk, and it is still not worth an index before something
+feels it. Worth knowing where it is when something does.
 
 ## A topic was named differently by every build
 

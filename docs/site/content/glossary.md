@@ -209,9 +209,10 @@ construction. See [live fragments](live-fragments).
 
 | item | what it does |
 | --- | --- |
-| `Fragment` | What a `#[live]` function answers with: render it in a template, or publish it |
-| `Fragment::topic`, `markup`, `to_markup` | Its parts |
-| `publish(…)` | Takes a closure rendering a fragment, and pushes it to everyone watching |
+| `Fragment` | What a `#[live]` function answers with: a topic and the render behind it. Render it in a template, or publish it |
+| `Fragment::topic` | The name, which it knows before it has rendered anything |
+| `Fragment::markup`, `to_markup` | Runs the render, without and with the wrapper that carries the subscription |
+| `publish(…)` | Takes a fragment that has not rendered, renders it, and pushes it to everyone watching |
 | `connection_count()` | How many streams this node holds |
 
 ## Identity
