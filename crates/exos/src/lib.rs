@@ -56,7 +56,7 @@ pub use crate::{
     },
     base::{base, base_path, url},
     context::{data, provide, try_data},
-    discover::{AssetSetEntry, RouteEntry, app},
+    discover::{AssetSetEntry, GuardEntry, RouteEntry, app},
     effect::{Effect, EffectStream, Step},
     identity::{Audience, Audiences, Resolution, identify},
     js::{
@@ -90,7 +90,7 @@ pub use crate::{
 
 #[doc(inline)]
 pub use exos_macro::{
-    Enumerable, asset, delete, get, live, locales, messages, model, patch, post, put, view,
+    Enumerable, asset, delete, get, guard, live, locales, messages, model, patch, post, put, view,
 };
 
 // What keeps `LocaleSet` implementable by `locales!` alone, which has to be

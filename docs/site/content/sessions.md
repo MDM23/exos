@@ -47,6 +47,55 @@ against `users`, a device column, a last-seen column, your own expiry job, and
 your own answer to two requests writing at once. None of that fits through a
 trait exos invented.
 
+## Requiring one
+
+Written in a handler, that resolve is written in every handler, and the page
+somebody adds next week is behind a session only if they remember to put it
+there. Write it once instead:
+
+```rust
+#[exos::guard]
+async fn guard(request: Request, next: Next) -> Response {
+    let viewer = match exos::session().id() {
+        Some(id) => data::<Sessions>().viewer(&id).await?,
+        None => None,
+    };
+
+    match (viewer, request.uri().path() == "/login") {
+        (Some(_), true) => Redirect::to("/").into_response(),
+        (None, false) => Redirect::to("/login").into_response(),
+        (Some(viewer), false) => {
+            exos::scope().set(viewer);
+            next.run(request).await
+        }
+        (None, true) => next.run(request).await,
+    }
+}
+```
+
+It is ordinary axum middleware. The attribute decides only where it is mounted,
+and that is the part worth having: **inside the layers `exos::app` puts up**, so
+`session()`, `locale()` and `scope()` all answer here the way they do in a
+handler. Mounted yourself, with `exos::app().layer(..)`, it would sit *above*
+the layer that reads the cookie, and would have to parse one of its own from the
+headers and name the cookie itself.
+
+It also wraps **your routes and nothing else**. exos's own endpoints stay
+outside it: a stream and a [`checked_by` round trip](models#rules-on-a-model)
+answer the client runtime rather than a browser that could follow a redirect,
+and a live subscription is already bound to the session it was served to. So
+does a request matching no route, which stays a 404 rather than becoming a
+redirect to the sign-in form.
+
+What the guard puts in the scope is readable from a `view!` fragment, which is a
+plain function and can extract nothing. That is the second half of why it runs
+where it does.
+
+One per application. Middleware order carries meaning and link order is not an
+order, so a second guard is a panic at startup rather than a coin toss. Anything
+that needs neither the session nor the scope is a `.layer` on the router
+`exos::app` hands back, where it was always fine.
+
 ## Signing in and out
 
 ```rust

@@ -17,6 +17,7 @@ rename is an error rather than a page that quietly stops working.
 | --- | --- |
 | `view!` | Compiles [real HTML](templates) into string pushes; a braced block is Rust |
 | `#[get]`, `#[post]`, `#[put]`, `#[patch]`, `#[delete]` | Registers a handler at its path and generates the [typed caller](calling-the-server) beside it |
+| `#[guard]` | Mounts one middleware [inside exos's layers](sessions#requiring-one), around your routes alone |
 | `#[model]` | Makes a struct both [client state and a request body](models) |
 | `#[live]` | Makes a function a [fragment that keeps itself up to date](live-fragments) |
 | `asset!` | Builds and embeds a [file](assets) while the crate compiles |
@@ -255,6 +256,7 @@ carries it. See [sessions](sessions).
 | item | what it does |
 | --- | --- |
 | `session()` | The session of the request being served |
+| `#[guard]` | The middleware every page is served through, where the session is readable |
 | `Session::id()` | The name the browser presented, if any. Asking does not start one |
 | `Session::start()` | Mints one where there is none. Idempotent |
 | `Session::rotate()` | A new name, which is what a sign-in does |

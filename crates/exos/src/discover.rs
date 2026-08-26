@@ -72,6 +72,44 @@ impl AssetSetEntry {
 
 inventory::collect!(AssetSetEntry);
 
+/// The application's guard, submitted by [`guard`](macro@crate::guard).
+///
+/// It carries the wrapping rather than the middleware, because
+/// [`from_fn`](axum::middleware::from_fn) returns a type naming the function it
+/// was given. A function pointer taking the router and handing it back erases
+/// that without boxing, which is the trick [`RouteEntry`] plays with a method
+/// router.
+#[derive(Clone, Copy, Debug)]
+pub struct GuardEntry(fn(Router) -> Router);
+
+impl GuardEntry {
+    /// Registers a guard for [`app`] to mount.
+    pub const fn new(wrap: fn(Router) -> Router) -> Self {
+        Self(wrap)
+    }
+}
+
+inventory::collect!(GuardEntry);
+
+/// The guard the binary declared, if it declared one.
+///
+/// # Panics
+///
+/// If it declared two. One would have to wrap the other, and inventory has no
+/// order to decide which with.
+fn guard() -> Option<fn(Router) -> Router> {
+    let mut declared = inventory::iter::<GuardEntry>.into_iter();
+    let first = declared.next()?;
+
+    assert!(
+        declared.next().is_none(),
+        "two guards; one would have to wrap the other and link order does not \
+         decide which, so write the second one's work into the first"
+    );
+
+    Some(first.0)
+}
+
 /// Every asset the binary embedded, the client runtime included.
 ///
 /// The runtime is not a special case: [`runtime`](crate::runtime) expands the
@@ -98,10 +136,18 @@ pub(crate) fn asset_sets() -> Vec<AssetSet> {
 /// declares none, which is what [`tests/welcome.rs`](../../tests/welcome.rs)
 /// relies on.
 ///
+/// # The guard goes inside
+///
+/// A [`guard`](macro@crate::guard) is mounted around the discovered routes and
+/// inside exos's own layers, so it reads the session and the request scope the
+/// way a handler does. Anything layered onto the router this returns sits
+/// outside all of that, which is the right place for what needs neither.
+///
 /// # Panics
 ///
-/// If two handlers claim the same method on the same path. Finding that out at
-/// startup beats finding out from whichever one happened to win.
+/// If two handlers claim the same method on the same path, or if two guards
+/// were declared. Finding either out at startup beats finding out from
+/// whichever one happened to win.
 pub fn app() -> Router {
     let mut by_path: HashMap<&'static str, MethodRouter> = HashMap::new();
 
@@ -130,6 +176,16 @@ pub fn app() -> Router {
         router.fallback(crate::welcome::page)
     } else {
         router
+    };
+
+    // Inside every layer below and around the application's own routes alone.
+    // A guard reads the session and writes the scope, which is what mounting it
+    // outside `app()` cannot do, and exos's own endpoints are not pages to
+    // redirect: a stream and a field check answer a runtime rather than a
+    // browser that could follow one.
+    let router = match guard() {
+        Some(wrap) => wrap(router),
+        None => router,
     };
 
     router

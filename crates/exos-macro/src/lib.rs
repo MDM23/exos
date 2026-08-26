@@ -8,6 +8,7 @@ use proc_macro::TokenStream;
 mod asset;
 mod enumerable;
 mod escape;
+mod guard;
 mod live;
 mod locales;
 mod messages;
@@ -127,6 +128,42 @@ method_attribute!(get, "GET");
 method_attribute!(patch, "PATCH");
 method_attribute!(post, "POST");
 method_attribute!(put, "PUT");
+
+/// Registers the middleware every page is served through.
+///
+/// ```ignore
+/// #[exos::guard]
+/// async fn guard(request: Request, next: Next) -> Response {
+///     let Some(user) = whoever(exos::session().id()).await else {
+///         return Redirect::to(&login::url()).into_response();
+///     };
+///
+///     exos::scope().set(user);
+///
+///     next.run(request).await
+/// }
+/// ```
+///
+/// It is ordinary axum middleware, and the attribute decides only where it is
+/// mounted: inside the layers `exos::app` puts up, so `exos::session`,
+/// `exos::locale` and `exos::scope` all answer here, and around the routes the
+/// application declared and nothing else. Whatever it writes into the scope is
+/// readable from a view, which is a plain function and can extract nothing.
+///
+/// exos's own endpoints are outside it. A stream and a field check answer the
+/// client runtime rather than a browser that could follow a redirect, and a
+/// subscription is already bound to the session that was served the fragment.
+/// So is a request matching no route, which stays a 404 instead of becoming a
+/// redirect to the sign-in form.
+///
+/// One per application. Middleware order is meaning and link order is not an
+/// order, so a second one is a panic at startup rather than a coin toss;
+/// anything that does not need the session or the scope is a `.layer` on the
+/// router `exos::app` returns.
+#[proc_macro_attribute]
+pub fn guard(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+    guard::expand(item.into()).into()
+}
 
 /// Marks a type that is both client state and a request body.
 ///
