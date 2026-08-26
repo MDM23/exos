@@ -71,6 +71,12 @@ impl Topic {
     /// The name stays in the id so the DOM is readable in a debugger, and the
     /// hash disambiguates the arguments.
     ///
+    /// `#[live]` hashes the module a fragment was declared in alongside them,
+    /// so two modules may each hold a `status` without becoming one topic. The
+    /// module stays out of the readable half, which is for reading rather than
+    /// for deciding anything, and out of this signature, which is for the
+    /// fragments written by hand.
+    ///
     /// # It is the same name in every build
     ///
     /// The hash is FNV-1a, written down in this crate, rather than
@@ -90,7 +96,10 @@ impl Topic {
     /// What still renames a topic is a change to the arguments' own [`Hash`]
     /// implementations. Adding a field to a type used as a fragment argument
     /// renames every topic it appears in, which is a deploy that has to drop
-    /// its documents.
+    /// its documents. Moving a fragment to another module is the same thing
+    /// and reads as less of one, since it is a refactor rather than a change to
+    /// the fragment: the tabs holding the old name stop updating until they are
+    /// reloaded, and during a rolling deploy the two versions disagree.
     pub fn new(name: &str, arguments: &impl Hash) -> Self {
         let mut hasher = Fnv1a::new();
         name.hash(&mut hasher);

@@ -171,9 +171,12 @@ pub fn model(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 /// `Markup` to `exos::Fragment`. That one value does both jobs: put it in a
 /// template to render it, or hand it to `exos::publish` to broadcast it.
 ///
-/// The topic is derived from the function name and the argument values, so the
-/// server owns it end to end and there is no name to invent, keep in step, or
-/// collide with. Every argument must be `Hash`.
+/// The topic is derived from the module, the function name and the argument
+/// values, so the server owns it end to end and there is no name to invent,
+/// keep in step, or collide with. Every argument must be `Hash`. The module is
+/// in the hash rather than in the readable half of the id, and it is what lets
+/// two modules each hold a `status`; the cost is that moving a fragment renames
+/// its topic, which is a deploy that drops the documents holding the old name.
 ///
 /// Calling the function names the fragment; the body runs when something asks
 /// for its markup, which is once per template it appears in and once per

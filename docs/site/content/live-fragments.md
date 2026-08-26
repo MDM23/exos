@@ -33,11 +33,14 @@ That is also why the lock is per topic: a fragment says what it is called before
 it does any work, so a publisher only ever waits for another publisher of the
 same fragment.
 
-The topic derives from the function name and the argument values, so
-`presence(2)` always names the same fragment. One event stream per tab carries
-everything, and the client re-derives its visible set from the DOM after every
-mutation, so a fragment that scrolls in subscribes and one a patch removed
-unsubscribes.
+The topic derives from the module, the function name and the argument values,
+so `presence(2)` always names the same fragment, and `orders::status()` and
+`users::status()` are two fragments rather than one. Only the name is in the
+readable half of the id; the module is in the hash, which is what makes moving
+a fragment to another module a rename its open tabs do not survive. One event
+stream per tab carries everything, and the client re-derives its visible set
+from the DOM after every mutation, so a fragment that scrolls in subscribes and
+one a patch removed unsubscribes.
 
 The tab does not name its own connection. The server mints an unguessable id
 when the stream opens and sends it as the first event, and the tab reports its

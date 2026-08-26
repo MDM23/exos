@@ -57,8 +57,14 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     quote! {
         #(#attributes)*
         #visibility #signature {
-            // Borrowed, so the arguments stay usable in the render below.
-            let __topic = ::exos::Topic::new(#label, &(#(&#arguments,)*));
+            // The module is part of what identifies a fragment, so two of them
+            // may be called `status` without becoming one topic, and the name
+            // alone stays the readable half of the id. Borrowed, so the
+            // arguments stay usable in the render below.
+            let __topic = ::exos::Topic::new(
+                #label,
+                &(::core::module_path!(), #(&#arguments,)*),
+            );
 
             ::exos::Fragment::new(__topic, move || {
                 // Cloned per render rather than moved, so the body reads the
@@ -96,6 +102,15 @@ mod tests {
 
         assert!(expanded.contains(":: exos :: Fragment"));
         assert!(expanded.contains("Topic :: new"));
+    }
+
+    /// Two modules may each hold a `status`, and the behaviour is asserted in
+    /// [`tests/topics.rs`](../../exos/tests/topics.rs), where there are two
+    /// modules to have it in. This pins where the answer comes from.
+    #[test]
+    fn the_module_is_part_of_what_names_a_topic() {
+        let expanded = expand_ok("fn status() -> Markup { todo!() }");
+        assert!(expanded.contains("module_path !"));
     }
 
     /// The topic invariant depends on a fragment rendering the same way inline
