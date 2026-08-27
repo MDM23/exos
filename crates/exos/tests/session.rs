@@ -7,7 +7,7 @@
 
 use std::{
     collections::HashMap,
-    sync::{Mutex, MutexGuard, Once},
+    sync::{Mutex, MutexGuard},
 };
 
 use axum::{
@@ -94,11 +94,6 @@ async fn add_to_cart() -> String {
 
 /// One request, with the cookie a browser holding `session` would send.
 async fn request(method: &str, uri: &str, session: Option<&str>) -> Response {
-    static SEED: Once = Once::new();
-    SEED.call_once(|| {
-        exos::provide(Sessions::default());
-    });
-
     let mut builder = Request::builder().method(method).uri(uri);
 
     if let Some(session) = session {
@@ -106,6 +101,7 @@ async fn request(method: &str, uri: &str, session: Option<&str>) -> Response {
     }
 
     exos::app()
+        .provide(Sessions::default())
         .oneshot(builder.body(Body::empty()).expect("a valid request"))
         .await
         .expect("the router answers")

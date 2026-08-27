@@ -10,8 +10,6 @@
 //! test. The prefix is process-global and settles once, so this is a test
 //! binary of its own.
 
-use std::sync::Once;
-
 use axum::{
     Router,
     body::Body,
@@ -46,19 +44,14 @@ async fn page() -> Page {
     })
 }
 
-/// Every test starts here, including the ones that only read a URL, because a
-/// request would otherwise settle the prefix at the root first and this call
-/// would then be the second one.
-fn setup() {
-    static SET: Once = Once::new();
-    SET.call_once(|| exos::base(BASE));
-}
-
 /// No nesting anywhere: the proxy already took the prefix off, so the router
 /// answers exactly the paths it is declared with.
+///
+/// Every test starts here, including the ones that only read a URL, because a
+/// request would otherwise settle the prefix at the root first and the base
+/// here would then be a second, different answer to that question.
 fn behind_a_proxy() -> Router {
-    setup();
-    exos::app()
+    exos::app().base(BASE).into()
 }
 
 async fn served(uri: &str) -> axum::response::Response {
@@ -94,7 +87,7 @@ async fn attribute(name: &str) -> String {
 
 #[tokio::test]
 async fn what_the_browser_is_given_carries_the_prefix() {
-    setup();
+    drop(behind_a_proxy());
 
     assert!(
         attribute("src")
@@ -115,7 +108,7 @@ async fn what_the_browser_is_given_carries_the_prefix() {
 /// forwards.
 #[tokio::test]
 async fn the_router_answers_the_paths_it_is_declared_with() {
-    setup();
+    drop(behind_a_proxy());
 
     assert_eq!(status("/page").await, StatusCode::OK);
     assert_eq!(status("/_exos/live").await, StatusCode::OK);
@@ -130,7 +123,7 @@ async fn the_router_answers_the_paths_it_is_declared_with() {
 /// request afterwards must not change the answer.
 #[tokio::test]
 async fn a_request_does_not_overwrite_what_was_said() {
-    setup();
+    drop(behind_a_proxy());
 
     assert_eq!(status("/page").await, StatusCode::OK);
     assert_eq!(exos::base_path(), BASE);
@@ -142,6 +135,6 @@ async fn a_request_does_not_overwrite_what_was_said() {
 #[tokio::test]
 #[should_panic(expected = "a base is already in place")]
 async fn a_second_base_is_refused() {
-    setup();
-    exos::base("/elsewhere");
+    drop(behind_a_proxy());
+    drop(exos::app().base("/elsewhere"));
 }

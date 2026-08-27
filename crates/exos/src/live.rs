@@ -50,11 +50,14 @@ mod bus;
 mod stream;
 
 pub use crate::live::{
-    bus::{Frame, Kind, Sent, bus, deliver},
+    bus::{Frame, Kind, Sent, deliver},
     stream::{connected, connection_count, publish, send},
 };
 
-pub(crate) use crate::live::stream::{disconnect, routes};
+pub(crate) use crate::live::{
+    bus::set as set_bus,
+    stream::{disconnect, routes},
+};
 
 // -----------------------------------------------------------------------------
 //                                    TOPICS
@@ -130,7 +133,7 @@ impl Topic {
     /// it can only be obtained by being served the fragment, and only the
     /// browser it was served to can present it.
     ///
-    /// HMAC-SHA256 under the key [`keys`](crate::keys) configures, over the
+    /// HMAC-SHA256 under the key [`keys`](crate::App::keys) configures, over the
     /// topic and the session together, truncated to 128 bits. Binding it to
     /// the session is what makes an id and a token escaping a page, by a
     /// screenshot or a shared profile, worth nothing to whoever finds them.

@@ -16,7 +16,8 @@ use axum::{
 
 use crate::{AttributeValue, Render};
 
-/// Where assets sit under whatever [`base`](crate::base) the application has.
+/// Where assets sit under whatever [`base`](crate::App::base) the application
+/// has.
 ///
 /// Hashed names make the segment itself arbitrary. What is not arbitrary is
 /// that the runtime finds the base by looking for this in its own script URL,
@@ -38,7 +39,7 @@ pub(crate) const PREFIX: &str = "/_exos";
 /// `?dev`, which is how the runtime finds out it is one. It cannot read a
 /// `cfg!`, and it is the same file in both builds, so the answer has to arrive
 /// from the server. The URL of its own script is the channel already there: the
-/// runtime reads it to work out the [base](crate::base), and it cannot be
+/// runtime reads it to work out the [base](crate::App::base), and it cannot be
 /// looking at anybody else's. Nothing routes on a query, so where the file is
 /// served from does not change.
 ///
@@ -211,7 +212,7 @@ impl AssetSet {
 ///
 /// Mounted at the root of whatever router this ends up in, because nesting is
 /// what puts an application under a prefix and doing it here too would put it
-/// under one twice. What the [base](crate::base) changes is the URL an
+/// under one twice. What the [base](crate::App::base) changes is the URL an
 /// [`Asset`] renders as, not where this answers.
 ///
 /// Takes the sets by value: discovery assembles them at startup and each one

@@ -11,10 +11,11 @@
 
 use std::{
     collections::HashMap,
-    sync::{Mutex, MutexGuard, Once},
+    sync::{Mutex, MutexGuard},
 };
 
 use axum::{
+    Router,
     body::Body,
     http::{Request, StatusCode, header},
     response::Response,
@@ -87,14 +88,14 @@ async fn sign_in() -> StatusCode {
     StatusCode::NO_CONTENT
 }
 
-/// Wires the application up once, which is all `identify` allows.
-fn seeded() {
-    static SEED: Once = Once::new();
-
-    SEED.call_once(|| {
-        exos::provide(Sessions::default());
-
-        exos::identify(async |name: Option<Id>| {
+/// The application: the sessions it holds, and who a name stands for.
+///
+/// Built per call, which the builder allows: the same line saying the same
+/// things is one application, so the store keeps what a test bound into it.
+fn app() -> Router {
+    exos::app()
+        .provide(Sessions::default())
+        .identify(async |name: Option<Id>| {
             // What anonymous means is the application's to say. A visit with no
             // name has nothing to be addressed by; a name with nobody behind it
             // has itself.
@@ -110,13 +111,13 @@ fn seeded() {
                 Some(who) => Audiences::of(&Viewer(who.id)).and(&Team(who.team)),
                 None => Audiences::of(&Visitor(name)),
             })
-        });
-    });
+        })
+        .into()
 }
 
 /// A name the application has already bound to `who`.
 fn known(who: Who) -> Id {
-    seeded();
+    drop(app());
 
     let id = Id::random();
     data::<Sessions>().bind(&id, who);
@@ -129,15 +130,13 @@ fn known(who: Who) -> Id {
 /// The response is handed back rather than dropped, because dropping it closes
 /// the connection and there would be nothing left to ask about.
 async fn opened(session: Option<&str>) -> Response {
-    seeded();
-
     let mut builder = Request::builder().method("GET").uri("/_exos/live");
 
     if let Some(session) = session {
         builder = builder.header(header::COOKIE, format!("theme=dark; exos={session}"));
     }
 
-    exos::app()
+    app()
         .oneshot(builder.body(Body::empty()).expect("a valid request"))
         .await
         .expect("the router answers")
@@ -206,8 +205,6 @@ async fn a_stream_with_no_name_behind_it_still_opens() {
 /// a name, and whether it is worth addressing is the resolver's answer.
 #[tokio::test]
 async fn a_name_with_nobody_behind_it_is_addressable_as_itself() {
-    seeded();
-
     let id = Id::random();
     let stream = opened(Some(id.as_str())).await;
 
@@ -233,7 +230,7 @@ async fn rotating_a_name_ends_the_streams_that_carried_it() {
     let stream = opened(Some(id.as_str())).await;
     assert!(connected(&Viewer(7)));
 
-    let response = exos::app()
+    let response = app()
         .oneshot(
             Request::builder()
                 .method("POST")

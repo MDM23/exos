@@ -24,9 +24,10 @@
 //! The type is the key. Two `String`s cannot both be stored, so wrap distinct
 //! things in distinct newtypes, which is the sort of thing worth doing anyway.
 
+use core::panic::Location;
 use std::{
     any::{Any, TypeId, type_name},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, OnceLock, RwLock},
 };
 
@@ -54,6 +55,28 @@ pub fn provide<T: Send + Sync + 'static>(value: T) -> Option<Arc<T>> {
         .insert(TypeId::of::<T>(), Arc::new(value));
 
     previous.and_then(|any| any.downcast::<T>().ok())
+}
+
+/// The same, for [`App::provide`](crate::App::provide), which says where.
+///
+/// A line that has declared a type has declared it for the process, whatever
+/// becomes of the value afterwards. That is what lets an application be built
+/// more than once: the first one seeds the store, and the next leaves alone
+/// whatever has changed it since, which is the difference between what an
+/// application starts with and what it is doing now.
+pub(crate) fn declare<T: Send + Sync + 'static>(value: T, at: &'static Location<'static>) {
+    static DECLARED: OnceLock<RwLock<HashSet<(TypeId, &'static Location<'static>)>>> =
+        OnceLock::new();
+
+    let first = DECLARED
+        .get_or_init(RwLock::default)
+        .write()
+        .expect("the declaration lock is never held across a panic")
+        .insert((TypeId::of::<T>(), at));
+
+    if first {
+        drop(provide(value));
+    }
 }
 
 /// The value of type `T`, if one was provided.
@@ -85,7 +108,7 @@ pub fn try_data<T: Send + Sync + 'static>() -> Option<Arc<T>> {
 pub fn data<T: Send + Sync + 'static>() -> Arc<T> {
     try_data::<T>().unwrap_or_else(|| {
         panic!(
-            "no application data of type `{}`; call exos::provide before serving",
+            "no application data of type `{}`; provide it before serving",
             type_name::<T>()
         )
     })

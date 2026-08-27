@@ -5,7 +5,7 @@ use axum::{
     http::{Request, StatusCode},
 };
 use exos::{Markup, view};
-use tower::ServiceExt as _;
+use tower::{Service as _, ServiceExt as _};
 
 #[exos::get("/files")]
 async fn files() -> Markup {
@@ -139,4 +139,28 @@ async fn only_a_dev_build_marks_the_runtime_as_one() {
         "{}",
         exos::runtime()
     );
+}
+
+/// An application puts exos's layers and endpoints up the first time it answers
+/// anything, and the request after that is served by that same router.
+///
+/// Sealing it a second time would be waste; sealing it out of routes that had
+/// been consumed would be a second request answered by an empty application.
+#[tokio::test]
+async fn one_application_answers_more_than_one_request() {
+    let mut app = exos::app();
+
+    for uri in ["/files", "/files/7", &exos::runtime()] {
+        let response = app
+            .call(
+                Request::builder()
+                    .uri(uri)
+                    .body(Body::empty())
+                    .expect("a valid request"),
+            )
+            .await
+            .expect("the router answers");
+
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+    }
 }

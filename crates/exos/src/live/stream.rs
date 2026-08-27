@@ -23,7 +23,7 @@
 //! often not the node holding the connection, and the prefix is what tells a
 //! connection that has *gone* from one that was never this node's. Only the
 //! first is a browser that should reconnect; the second is a forward over the
-//! [bus](crate::bus).
+//! [bus](crate::App::bus).
 //!
 //! # Two sets, and only one of them is the client's
 //!
@@ -266,9 +266,9 @@ pub fn connected<A: Audience>(audience: &A) -> bool {
 /// followed by a send arrives in that order at every tab that gets both. Two
 /// connections are ordered against each other in no way at all.
 ///
-/// With a [`bus`](crate::bus) registered that holds for a tab on this node and
-/// not for one on another: a publish and a send are two keys and therefore two
-/// frames, and nothing orders them against each other on the way across.
+/// With a [`bus`](crate::App::bus) registered that holds for a tab on this node
+/// and not for one on another: a publish and a send are two keys and therefore
+/// two frames, and nothing orders them against each other on the way across.
 ///
 /// # Panics
 ///
@@ -319,8 +319,8 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
 /// the patch is made of.
 ///
 /// That is a fact about serializing two operations in one process. With a
-/// [`bus`](crate::bus) registered it holds for the tabs on this node, and two
-/// nodes publishing the same topic arrive at a third in whatever order the
+/// [`bus`](crate::App::bus) registered it holds for the tabs on this node, and
+/// two nodes publishing the same topic arrive at a third in whatever order the
 /// broker gives.
 ///
 /// # What it costs

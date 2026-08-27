@@ -22,6 +22,7 @@
 // crate here too.
 extern crate self as exos;
 
+mod app;
 mod asset;
 mod attributes;
 mod base;
@@ -48,25 +49,25 @@ mod valid;
 mod welcome;
 
 pub use crate::{
+    app::{App, app},
     asset::{Asset, AssetSet, Embedded, routes as asset_routes, runtime},
     attributes::{
         Attr, Attributes, Bind, BindKind, Class, Event, EventType, IntoAttributes, Target, attr,
         bind, class, on, on_change, on_click, on_dblclick, on_focusout, on_input, on_keydown,
         on_submit, preserve, prop, show, text,
     },
-    base::{base, base_path, url},
+    base::{base_path, url},
     context::{data, provide, try_data},
-    discover::{AssetSetEntry, GuardEntry, RouteEntry, app},
+    discover::{AssetSetEntry, RouteEntry},
     effect::{Effect, EffectStream, Step},
-    identity::{Audience, Audiences, Resolution, identify},
+    identity::{Audience, Audiences, Resolution},
     js::{
         IntoJs, IntoPayload, Js, append, attr_now, call, debounce, emit, focus_now, quote_js,
         record, when,
     },
-    keys::{Keys, keys},
+    keys::Keys,
     live::{
-        Fragment, Frame, Kind, Sent, Topic, bus, connected, connection_count, deliver, publish,
-        send,
+        Fragment, Frame, Kind, Sent, Topic, connected, connection_count, deliver, publish, send,
     },
     locale::{Direction, Lang, LocaleSet, PluralCategory, lang, locale},
     message::{Count, Counted, Enumerable},
@@ -78,7 +79,7 @@ pub use crate::{
     scope::{Scope, detached, scope, with_scope},
     session::{Id, Session, session},
     signal::{Bound, Field, Placement, Signal, signal},
-    valid::{CheckEntry, Errors, Length, Presence, Refusal, Validate, Violation, complaints},
+    valid::{CheckEntry, Errors, Length, Presence, Refusal, Validate, Violation},
 };
 
 // Named by the `#[model]` expansion, which has to reach them from anywhere.
@@ -90,7 +91,7 @@ pub use crate::{
 
 #[doc(inline)]
 pub use exos_macro::{
-    Enumerable, asset, delete, get, guard, live, locales, messages, model, patch, post, put, view,
+    Enumerable, asset, delete, get, live, locales, messages, model, patch, post, put, view,
 };
 
 // What keeps `LocaleSet` implementable by `locales!` alone, which has to be

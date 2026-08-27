@@ -54,7 +54,6 @@ somebody adds next week is behind a session only if they remember to put it
 there. Write it once instead:
 
 ```rust
-#[exos::guard]
 async fn guard(request: Request, next: Next) -> Response {
     let viewer = match exos::session().id() {
         Some(id) => data::<Sessions>().viewer(&id).await?,
@@ -73,28 +72,38 @@ async fn guard(request: Request, next: Next) -> Response {
 }
 ```
 
-It is ordinary axum middleware. The attribute decides only where it is mounted,
-and that is the part worth having: **inside the layers `exos::app` puts up**, so
-`session()`, `locale()` and `scope()` all answer here the way they do in a
-handler. Mounted yourself, with `exos::app().layer(..)`, it would sit *above*
-the layer that reads the cookie, and would have to parse one of its own from the
-headers and name the cookie itself.
+It is ordinary axum middleware, and it goes on the application:
 
-It also wraps **your routes and nothing else**. exos's own endpoints stay
-outside it: a stream and a [`checked_by` round trip](models#rules-on-a-model)
-answer the client runtime rather than a browser that could follow a redirect,
-and a live subscription is already bound to the session it was served to. So
-does a request matching no route, which stays a 404 rather than becoming a
-redirect to the sign-in form.
+```rust
+axum::serve(listener, exos::app().route_layer(from_fn(guard))).await
+```
+
+Which is not the same as putting it on a router. `exos::app()` hands back the
+application *before* exos has put anything up around it, and those layers go on
+when it is served, so everything added here ends up **inside** them:
+`session()`, `locale()` and `scope()` answer in this middleware the way they do
+in a handler. Mounted the other way round, above the layer that reads the
+cookie, it would have to parse one of its own from the headers and name the
+cookie itself.
+
+It also wraps **your routes and nothing else**, since exos's own endpoints are
+merged around it later: a [`checked_by` round trip](models#rules-on-a-model) and
+a stream answer the client runtime rather than a browser that could follow a
+redirect, and a live subscription is already bound to the session it was served
+to.
+
+`route_layer` rather than `layer` for the same reason axum draws that line: a
+guard answers by itself, and one mounted with `layer` would report every
+mistyped URL as somewhere to sign in instead of leaving it a 404.
 
 What the guard puts in the scope is readable from a `view!` fragment, which is a
 plain function and can extract nothing. That is the second half of why it runs
 where it does.
 
-One per application. Middleware order carries meaning and link order is not an
-order, so a second guard is a panic at startup rather than a coin toss. Anything
-that needs neither the session nor the scope is a `.layer` on the router
-`exos::app` hands back, where it was always fine.
+Order is yours: middleware order carries meaning, and two calls here are two
+layers in the order they are written. Anything that needs neither the session
+nor the scope can go outside them instead, on the `Router` the application
+converts into.
 
 ## Signing in and out
 

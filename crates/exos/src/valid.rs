@@ -62,8 +62,9 @@
 //!
 //! A [`Violation`] is a value, not a sentence, because an application's
 //! languages are its own and [`messages!`](crate::messages) is where its text
-//! lives. [`complaints`] is the one function that turns one into the other, and
-//! the default is English so that `cargo run` says something sensible.
+//! lives. [`App::complaints`](crate::App::complaints) is the one function that
+//! turns one into the other, and the default is English so that `cargo run`
+//! says something sensible.
 //!
 //! A message from `checked_by` is the application's outright, the way
 //! [`Refusal::add`]'s is: a rule exos does not know cannot have a [`Violation`]
@@ -472,24 +473,11 @@ type Complaints = Box<dyn Fn(&str, Violation) -> String + Send + Sync>;
 
 static COMPLAINTS: OnceLock<Complaints> = OnceLock::new();
 
-/// Says how this application words a refusal.
+/// Says how this application words a refusal, for
+/// [`App::complaints`](crate::App::complaints).
 ///
-/// The field arrives under the name it is declared with, which never leaves the
-/// server, so an application can answer per field where the general sentence is
-/// not good enough:
-///
-/// ```
-/// # use exos::{Violation, complaints};
-/// complaints(|field, violation| match (field, violation) {
-///     ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
-///     (_, Violation::Required) => String::from("This is needed."),
-///     _ => String::from("That does not look right."),
-/// });
-/// ```
-///
-/// Called once, at startup, like [`keys`](crate::keys). A second call is
-/// ignored rather than racing the first.
-pub fn complaints(say: impl Fn(&str, Violation) -> String + Send + Sync + 'static) {
+/// A second call is ignored rather than racing the first.
+pub(crate) fn set_complaints(say: impl Fn(&str, Violation) -> String + Send + Sync + 'static) {
     drop(COMPLAINTS.set(Box::new(say)));
 }
 

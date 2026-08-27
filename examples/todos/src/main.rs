@@ -11,6 +11,8 @@
 //!
 //! Run it with `cargo run -p todos` and open <http://localhost:3000> twice.
 
+use axum::Router;
+
 use crate::store::Todos;
 
 mod board;
@@ -25,17 +27,19 @@ const ADDRESS: &str = "127.0.0.1:3000";
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    boot();
-
     let listener = tokio::net::TcpListener::bind(ADDRESS).await?;
     println!("listening on http://{ADDRESS}");
 
-    axum::serve(listener, exos::app()).await
+    axum::serve(listener, app()).await
 }
 
-/// Seeds the list. Separate from `main` so tests can call it.
-fn boot() {
-    exos::provide(Todos::seed());
+/// The application: every route, and the list it holds.
+///
+/// The seed is what it starts with rather than what every call to this puts
+/// back, so the tests build one per request and the list they change persists
+/// between them.
+fn app() -> Router {
+    exos::app().provide(Todos::seed()).into()
 }
 
 /// What the modules' own tests are written against.
@@ -51,23 +55,16 @@ fn boot() {
 )]
 pub(crate) mod tests {
     use axum::{
-        Router,
         body::Body,
         http::{Request, StatusCode},
     };
-    use std::sync::Once;
     use tower::ServiceExt as _;
 
-    /// Seeds the list once, however many tests ask.
-    pub(crate) fn seed() {
-        static BOOT: Once = Once::new();
-        BOOT.call_once(super::boot);
-    }
+    pub(crate) use super::app;
 
-    /// The router, with every discovered route on it.
-    pub(crate) fn app() -> Router {
-        seed();
-        exos::app()
+    /// The application, for a test that reads the list rather than serving it.
+    pub(crate) fn seed() {
+        drop(app());
     }
 
     /// The body of a response that answered `200`.

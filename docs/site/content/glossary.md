@@ -17,7 +17,6 @@ rename is an error rather than a page that quietly stops working.
 | --- | --- |
 | `view!` | Compiles [real HTML](templates) into string pushes; a braced block is Rust |
 | `#[get]`, `#[post]`, `#[put]`, `#[patch]`, `#[delete]` | Registers a handler at its path and generates the [typed caller](calling-the-server) beside it |
-| `#[guard]` | Mounts one middleware [inside exos's layers](sessions#requiring-one), around your routes alone |
 | `#[model]` | Makes a struct both [client state and a request body](models) |
 | `#[live]` | Makes a function a [fragment that keeps itself up to date](live-fragments) |
 | `asset!` | Builds and embeds a [file](assets) while the crate compiles |
@@ -28,13 +27,18 @@ rename is an error rather than a page that quietly stops working.
 
 ## The application
 
-One call builds the router. There is no second list of routes, and no
-configuration for where the application is mounted.
+One call builds the application. There is no second list of routes, and no
+configuration for where it is mounted. Build it wherever you want one: saying
+the same thing again says nothing new, so a test that serves one request per
+test writes `exos::app()` in the helper that serves it.
 
 | item | what it does |
 | --- | --- |
-| `app()` | Every discovered route, the assets, the stream and the endpoints, as an `axum::Router` |
-| `base(path)` | Says the mount prefix explicitly, for a proxy that strips one the server never sees |
+| `app()` | Every discovered route, as an `App`: served by `axum::serve`, converts into an `axum::Router` |
+| `App::route_layer(l)`, `App::layer(l)` | Middleware [inside exos's layers](sessions#requiring-one), around your routes alone |
+| `App::with(f)` | Anything else an `axum::Router` can do, in that same place |
+| `App::base(p)`, `App::bus(f)`, `App::complaints(f)`, `App::identify(f)`, `App::keys(k)` | What an application says once, said where it is built |
+| `App::provide(v)` | What it starts with, which a rebuild does not put back over what has changed since |
 | `base_path()` | The prefix, discovered or told |
 | `url(path)` | That prefix in front of a path |
 | `name::url(..)` | The URL of one route, from its own path and parameter types |
@@ -174,7 +178,7 @@ again before the handler body runs.
 | `email` | Shaped like an address |
 | `checked_by = function` | The one rule with no browser half, asked over a round trip and again at submit |
 | `Violation` | `Required`, `TooShort { least }`, `TooLong { most }`, `Malformed` |
-| `complaints(say)` | How this application words a violation; the default is English |
+| `App::complaints(say)` | How this application words a violation; the default is English |
 | `Refusal<M>` | A handler's own refusal, in the shape a declared rule produces |
 | `Refusal::add(field, message)` | Says what is wrong with one field |
 | `Refusal::say(message)` | Says what is wrong with the submission |
@@ -228,7 +232,7 @@ and is written by the server; see
 | `Audiences::of(&audience)` | One of them |
 | `Audiences::and(&audience)` | And another, so a connection can be a viewer and a team at once |
 | `Audiences::none()` | Nobody, which is what an unrecognised name resolves to |
-| `identify(resolver)` | Says what a session name stands for. Once per process, before serving |
+| `App::identify(resolver)` | Says what a session name stands for. Once, where the application is built |
 | `send(&audience, &effect)` | Pushes an effect to a person wherever they are |
 | `connected(&audience)` | Whether anybody by that name is streaming. A hint, never a guarantee |
 
@@ -239,7 +243,7 @@ exos ships no broker adapter. What it ships is the two ends; see
 
 | item | what it does |
 | --- | --- |
-| `bus(cross)` | Registers the outbound half, a closure answering with a future |
+| `App::bus(cross)` | Registers the outbound half, a closure answering with a future |
 | `deliver(frame)` | The inbound half, called from your own subscriber loop |
 | `Frame::to_bytes`, `Frame::from_bytes` | The codec, which is exos's rather than yours |
 | `Frame::kind`, `key`, `trace` | What one is addressed at, and the trace it belongs to |
@@ -256,7 +260,7 @@ carries it. See [sessions](sessions).
 | item | what it does |
 | --- | --- |
 | `session()` | The session of the request being served |
-| `#[guard]` | The middleware every page is served through, where the session is readable |
+| `App::route_layer(l)` | Where the middleware every page is served through goes, and where the session is readable |
 | `Session::id()` | The name the browser presented, if any. Asking does not start one |
 | `Session::start()` | Mints one where there is none. Idempotent |
 | `Session::rotate()` | A new name, which is what a sign-in does |
@@ -264,7 +268,7 @@ carries it. See [sessions](sessions).
 | `Id` | The name itself: `random`, `parse`, `as_str`, and a `Debug` that does not print it |
 | `Keys::from_secret(secret)` | The one key everything signed derives from |
 | `Keys::random()` | A key for a process that has no secret to be given |
-| `keys(keys)` | Installs it, once at startup. Unconfigured means a random key and a warning |
+| `App::keys(keys)` | Installs it, once. Unconfigured means a random key and a warning |
 
 ## Application state
 

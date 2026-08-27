@@ -33,6 +33,8 @@
 
 use core::time::Duration;
 
+use axum::Router;
+
 mod page;
 mod room;
 mod selection;
@@ -56,18 +58,21 @@ const TICK: Duration = Duration::from_secs(1);
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    boot();
     play();
 
     let listener = tokio::net::TcpListener::bind(ADDRESS).await?;
     println!("listening on http://{ADDRESS}");
 
-    axum::serve(listener, exos::app()).await
+    axum::serve(listener, app()).await
 }
 
-/// Seeds the room. Separate from `main` so tests can call it.
-fn boot() {
-    exos::provide(Room::seed());
+/// The application: every route, and the room it holds.
+///
+/// The seed is what it starts with rather than what every call to this puts
+/// back, so the tests build one per request and the room they change persists
+/// between them.
+fn app() -> Router {
+    exos::app().provide(Room::seed()).into()
 }
 
 /// Moves the mark on, and keeps the listener count honest.
@@ -108,10 +113,8 @@ fn play() {
     reason = "a failing assertion is the point of a test"
 )]
 mod tests {
-    use std::sync::Once;
 
     use axum::{
-        Router,
         body::Body,
         http::{Request, StatusCode},
     };
@@ -124,13 +127,7 @@ mod tests {
     /// a slice and is tested in [`store`] against a local `Vec`, which keeps
     /// those tests independent of each other and of their order.
     pub(crate) fn seeded() {
-        static BOOT: Once = Once::new();
-        BOOT.call_once(boot);
-    }
-
-    fn app() -> Router {
-        seeded();
-        exos::app()
+        drop(app());
     }
 
     async fn body(response: axum::response::Response) -> String {

@@ -315,11 +315,11 @@ to every locale. A violation is a value, and one function turns one into a
 sentence:
 
 ```rust
-exos::complaints(|field, violation| match (field, violation) {
+exos::app().complaints(|field, violation| match (field, violation) {
     ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
     (_, Violation::Required) => String::from("This is needed."),
     _ => String::from("That does not look right."),
-});
+})
 ```
 
 The field arrives under the name it is declared with, which never leaves the

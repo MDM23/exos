@@ -12,10 +12,11 @@
 use core::time::Duration;
 use std::{
     collections::HashMap,
-    sync::{Mutex, MutexGuard, Once},
+    sync::{Mutex, MutexGuard},
 };
 
 use axum::{
+    Router,
     body::{Body, BodyDataStream, to_bytes},
     extract::Path,
     http::{Request, Response, StatusCode, header},
@@ -50,13 +51,10 @@ impl Audience for Viewer {
     const NAME: &'static str = "viewer";
 }
 
-fn seeded() {
-    static SEED: Once = Once::new();
-
-    SEED.call_once(|| {
-        exos::provide(Sessions::default());
-
-        exos::identify(async |name: Option<Id>| {
+fn app() -> Router {
+    exos::app()
+        .provide(Sessions::default())
+        .identify(async |name: Option<Id>| {
             let Some(name) = name else {
                 return Ok(Audiences::none());
             };
@@ -65,8 +63,8 @@ fn seeded() {
                 Some(user) => Audiences::of(&Viewer(user)),
                 None => Audiences::none(),
             })
-        });
-    });
+        })
+        .into()
 }
 
 /// Serves the wrapper for one topic, which is the only way a browser comes by
@@ -90,12 +88,14 @@ struct Tab {
 impl Tab {
     /// Opens a stream as whoever `user` is, and reads the greeting.
     async fn open(user: u32) -> Self {
-        seeded();
+        // Built first: the sessions it binds into are the ones the application
+        // provided.
+        let app = app();
 
         let name = Id::random();
         data::<Sessions>().bind(&name, user);
 
-        let response = exos::app()
+        let response = app
             .oneshot(
                 Request::builder()
                     .uri("/_exos/live")
@@ -191,10 +191,7 @@ impl Tab {
                 .expect("a name is a header value"),
         );
 
-        exos::app()
-            .oneshot(request)
-            .await
-            .expect("the router answers")
+        app().oneshot(request).await.expect("the router answers")
     }
 }
 

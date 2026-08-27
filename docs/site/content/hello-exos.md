@@ -24,5 +24,7 @@ async fn main() -> Result<(), std::io::Error> {
 }
 ```
 
-`exos::app()` finds every route in the binary and returns an `axum::Router`, so
-exos composes into an axum application rather than replacing one.
+`exos::app()` finds every route in the binary and hands back the application.
+`axum::serve` takes it as it is, and `Router::from` turns it into an
+`axum::Router`, so exos composes into an axum application rather than replacing
+one.

@@ -19,10 +19,11 @@ routes into a library.
 
 ## Serving under a prefix
 
-Nest it, and nothing else:
+Nest it, and nothing else. `nest` takes a router, which is what the application
+converts into:
 
 ```rust
-Router::new().nest("/admin", exos::app())
+Router::new().nest("/admin", exos::app().into())
 ```
 
 `nest` does the routing. What it cannot do is fix the URLs written *into* a
@@ -103,12 +104,13 @@ serving you at `/admin` while forwarding `/` is the ordinary case: the server
 never receives that prefix, so no amount of looking will find it.
 
 ```rust
-exos::base("/admin");
+exos::app().base("/admin")
 ```
 
-Said explicitly it wins and discovery never runs. It goes before anything is
-served, and a second one panics, whether the first was another call or a request
-that had already answered the question.
+Said explicitly it wins and discovery never runs. It goes on the application,
+once: saying the same place again says nothing new, and a *different* one
+panics, whether the first was another application saying it or a request that
+had already answered the question.
 
 ## Redirecting
 

@@ -36,8 +36,8 @@
 //! proxy stripping `/admin` is the ordinary case: the server genuinely never
 //! sees that prefix, and no amount of looking will find it.
 //!
-//! ```rust
-//! exos::base("/admin");
+//! ```no_run
+//! let app = exos::app().base("/admin");
 //! ```
 //!
 //! Said explicitly it wins, and discovery never runs.
@@ -56,39 +56,32 @@ use axum::extract::{OriginalUri, Request};
 
 static BASE: OnceLock<String> = OnceLock::new();
 
-/// Says where this application is mounted, rather than letting exos find out.
-///
-/// Only needed where the path is rewritten by something that is not an axum
-/// `Router`, since that is the one case exos cannot work out for itself: it is
-/// the outermost `Router` that records the arriving URI. A reverse proxy
-/// serving this application at `/admin` while forwarding `/` to it is the
-/// ordinary example.
-///
-/// ```rust
-/// exos::base("/admin");
-/// ```
-///
-/// Nesting needs no call: `Router::nest("/admin", exos::app())` is found on its
-/// own.
+/// Says where this application is mounted, for [`App::base`](crate::App::base).
 ///
 /// A trailing slash is dropped, so `/admin` and `/admin/` mean the same thing.
-/// `/` means the root and is the same as saying nothing.
+/// `/` means the root and is the same as saying nothing. Saying the same place
+/// again is saying nothing new, which is what lets an application be built more
+/// than once.
 ///
 /// # Panics
 ///
 /// If `path` is not empty and does not start with `/`, because a relative base
 /// would resolve against whichever page happened to be open.
 ///
-/// If a base is already in place. That means either two parts of the program
-/// disagree about where the application lives, or this arrived after the first
-/// request had already answered the question, and both are worth being loud
-/// about rather than resolving by whichever ran first.
-pub fn base(path: impl Into<String>) {
+/// If a different base is already in place. That means either two parts of the
+/// program disagree about where the application lives, or this arrived after
+/// the first request had already answered the question, and both are worth
+/// being loud about rather than resolving by whichever ran first.
+pub(crate) fn set(path: impl Into<String>) {
+    let said = normalize(&path.into());
+    let base = BASE.get_or_init(|| said.clone());
+
     assert!(
-        BASE.set(normalize(&path.into())).is_ok(),
-        "a base is already in place; exos::base goes once, before anything is \
-         served, and is only needed where the path is rewritten by something \
-         that is not an axum Router"
+        *base == said,
+        "a base is already in place ({base}), said elsewhere or learned from a \
+         request; App::base goes once, before anything is served, and is only \
+         needed where the path is rewritten by something that is not an axum \
+         Router"
     );
 }
 

@@ -245,44 +245,27 @@ type Cross = Box<dyn Fn(Frame) -> Pin<Box<dyn Future<Output = Sent> + Send>> + S
 
 static BUS: OnceLock<(Cross, Handle)> = OnceLock::new();
 
-/// Says how a frame reaches the rest of the cluster.
+/// Says how a frame reaches the rest of the cluster, for
+/// [`App::bus`](crate::App::bus).
 ///
-/// Called once, at startup, after [`keys`](crate::keys). A second call is
-/// ignored rather than racing the first. Until it is called, exos is a single
-/// node and builds no frames at all.
-///
-/// ```ignore
-/// exos::bus(move |frame| {
-///     let redis = redis.clone();
-///
-///     async move {
-///         redis.publish("exos", frame.to_bytes()).await?;
-///         Ok(())
-///     }
-/// });
-/// ```
+/// A second call is ignored rather than racing the first. Until it is called,
+/// exos is a single node and builds no frames at all.
 ///
 /// # Panics
 ///
-/// If no signing key is configured. A random key per process is right for
-/// `cargo run` and is a broken cluster: a token minted by one node verifies
-/// nowhere else, and the symptom is fragments that stop updating after a
-/// reconnect, which reads as a network glitch. Registering a bus is the moment
-/// exos can know that rather than warn about it, so
-/// [`keys`](crate::keys) goes first.
+/// If no signing key is configured, since a token minted under a random key
+/// verifies on the node that minted it and nowhere else.
 ///
-/// And if called from outside a tokio runtime. A publish is synchronous and an
-/// adapter is not, so the handle to spawn on is taken here, where an
-/// application registering the bus from the wrong place finds out at startup
-/// rather than from a delivery that silently never left.
-pub fn bus<F, U>(cross: F)
+/// And if called from outside a tokio runtime, since the handle a publish
+/// spawns on is taken here.
+pub(crate) fn set<F, U>(cross: F)
 where
     F: Fn(Frame) -> U + Send + Sync + 'static,
     U: Future<Output = Sent> + Send + 'static,
 {
     assert!(
         crate::keys::configured_by_hand(),
-        "a cluster signs with one key, so exos::keys goes before exos::bus; \
+        "a cluster signs with one key, so App::keys goes before App::bus; \
          a random key per process is a token that verifies on one node"
     );
 

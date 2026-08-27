@@ -10,8 +10,8 @@ serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-`axum` is there because [`exos::app()`](hello-exos) hands back an
-`axum::Router` rather than a server of its own, `serde` because a
+`axum` is there because [`exos::app()`](hello-exos) hands back an application
+axum serves rather than a server of its own, `serde` because a
 [model](models) is an ordinary `Deserialize` type, and `tokio` because that is
 what serves it. exos adds nothing else you have to install: there is no CLI, no
 project template, no bundler and no build script.

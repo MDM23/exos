@@ -28,6 +28,7 @@
 //!
 //! Run it with `cargo run -p signup`.
 
+use axum::Router;
 use exos::Violation;
 
 use crate::store::{Programme, Registrations};
@@ -43,36 +44,35 @@ const ADDRESS: &str = "127.0.0.1:3000";
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    boot();
-
     let listener = tokio::net::TcpListener::bind(ADDRESS).await?;
     println!("listening on http://{ADDRESS}");
 
-    axum::serve(listener, exos::app()).await
+    axum::serve(listener, app()).await
 }
 
-/// Seeds the programme and says how this form words a refusal.
+/// The application: the programme it holds, and how it words a refusal.
 ///
-/// Separate from `main` so tests can call it.
-fn boot() {
-    exos::provide(Programme::seed());
-    exos::provide(Registrations::default());
-
-    // exos ships no text, because an application's languages are its own. A
-    // violation is a value and this is the one function that turns one into a
-    // sentence; in an application with more than one language every arm here
-    // would be a `messages!` call instead of a literal.
-    exos::complaints(|field, violation| match (field, violation) {
-        ("attendees", Violation::Required) => String::from("Add at least one attendee."),
-        ("company", Violation::Required) => String::from("An invoice needs a company."),
-        ("email", Violation::Malformed) => String::from("That is not an email address."),
-        ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
-        ("workshops", Violation::Required) => String::from("Pick at least one workshop."),
-        (_, Violation::Required) => String::from("This is needed."),
-        (_, Violation::TooShort { least }) => format!("At least {least} characters."),
-        (_, Violation::TooLong { most }) => format!("At most {most} characters."),
-        (_, _) => String::from("That does not look right."),
-    });
+/// One for the process, and the tests serve this same one.
+fn app() -> Router {
+    exos::app()
+        .provide(Programme::seed())
+        .provide(Registrations::default())
+        // exos ships no text, because an application's languages are its own.
+        // A violation is a value and this is the one function that turns one
+        // into a sentence; in an application with more than one language every
+        // arm here would be a `messages!` call instead of a literal.
+        .complaints(|field, violation| match (field, violation) {
+            ("attendees", Violation::Required) => String::from("Add at least one attendee."),
+            ("company", Violation::Required) => String::from("An invoice needs a company."),
+            ("email", Violation::Malformed) => String::from("That is not an email address."),
+            ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
+            ("workshops", Violation::Required) => String::from("Pick at least one workshop."),
+            (_, Violation::Required) => String::from("This is needed."),
+            (_, Violation::TooShort { least }) => format!("At least {least} characters."),
+            (_, Violation::TooLong { most }) => format!("At most {most} characters."),
+            (_, _) => String::from("That does not look right."),
+        })
+        .into()
 }
 
 /// What the modules' own tests are written against.
@@ -83,23 +83,17 @@ fn boot() {
 )]
 pub(crate) mod tests {
     use axum::{
-        Router,
         body::Body,
         http::{Request, StatusCode},
     };
-    use std::sync::Once;
     use tower::ServiceExt as _;
 
-    /// Seeds the programme once, however many tests ask.
-    pub(crate) fn seed() {
-        static BOOT: Once = Once::new();
-        BOOT.call_once(super::boot);
-    }
+    pub(crate) use super::app;
 
-    /// The router, with every discovered route on it.
-    pub(crate) fn app() -> Router {
-        seed();
-        exos::app()
+    /// The application, for a test that reads the programme rather than
+    /// serving it.
+    pub(crate) fn seed() {
+        drop(app());
     }
 
     /// The body of a response, whatever it answered.

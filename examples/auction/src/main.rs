@@ -40,6 +40,8 @@ mod room;
 mod store;
 mod toast;
 
+use axum::Router;
+
 use crate::store::{Accounts, Guests, Lots};
 
 /// The address the example listens on.
@@ -47,22 +49,24 @@ const ADDRESS: &str = "127.0.0.1:3000";
 
 #[tokio::main]
 async fn main() -> Result<(), std::io::Error> {
-    boot();
-
     let listener = tokio::net::TcpListener::bind(ADDRESS).await?;
     println!("listening on http://{ADDRESS}");
 
-    axum::serve(listener, exos::app()).await
+    axum::serve(listener, app()).await
 }
 
-/// Seeds the room and teaches exos who anybody is. Separate from `main` so
-/// tests can call it.
-fn boot() {
-    exos::provide(Lots::seed());
-    exos::provide(Accounts::seed());
-    exos::provide(Guests::default());
-
-    bidder::identify();
+/// The application: the room it holds, and who anybody in it is.
+///
+/// The seeds are what it starts with rather than what every call to this puts
+/// back, so the tests build one per request and the room they change persists
+/// between them.
+fn app() -> Router {
+    exos::app()
+        .provide(Lots::seed())
+        .provide(Accounts::seed())
+        .provide(Guests::default())
+        .identify(bidder::audiences)
+        .into()
 }
 
 // -----------------------------------------------------------------------------
@@ -75,8 +79,6 @@ fn boot() {
     reason = "a failing assertion is the point of a test"
 )]
 mod tests {
-    use std::sync::Once;
-
     use axum::{
         body::Body,
         http::{Request, header},
@@ -87,26 +89,25 @@ mod tests {
 
     use super::*;
 
-    /// The application data is global, so these tests only ever read the lots
-    /// through the router. Every operation that changes one is a free function
-    /// over a slice and is tested in [`store`] against a local `Vec`, which
-    /// keeps those tests independent of each other and of their order.
+    /// The application, for a test that reads the room rather than serving it.
+    ///
+    /// The data is global, so these tests only ever read the lots through the
+    /// router. Every operation that changes one is a free function over a slice
+    /// and is tested in [`store`] against a local `Vec`, which keeps those
+    /// tests independent of each other and of their order.
     pub(crate) fn seeded() {
-        static BOOT: Once = Once::new();
-        BOOT.call_once(boot);
+        drop(app());
     }
 
     /// One request, with the cookie a browser holding `session` would send.
     pub(crate) async fn request(method: &str, uri: &str, session: Option<&str>) -> Response {
-        seeded();
-
         let mut builder = Request::builder().method(method).uri(uri);
 
         if let Some(session) = session {
             builder = builder.header(header::COOKIE, format!("exos={session}"));
         }
 
-        exos::app()
+        app()
             .oneshot(builder.body(Body::empty()).expect("a valid request"))
             .await
             .expect("the router answers")

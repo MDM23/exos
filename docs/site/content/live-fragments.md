@@ -78,7 +78,7 @@ and none to forget, and a subscription with a forged token receives nothing.
 The token is HMAC-SHA256 truncated to 128 bits, under one configured key:
 
 ```rust
-exos::keys(exos::Keys::from_secret(std::env::var("EXOS_SECRET")?));
+exos::app().keys(exos::Keys::from_secret(std::env::var("EXOS_SECRET")?))
 ```
 
 Everything signed derives its own subkey from that secret by label, so the live
@@ -133,7 +133,7 @@ session cookie, and that is the one place identity can be established without
 inventing a second channel:
 
 ```rust
-exos::identify(async |name| {
+exos::app().identify(async |name| {
     let Some(name) = name else {
         return Ok(Audiences::none());
     };
@@ -142,11 +142,11 @@ exos::identify(async |name| {
         Some(who) => Audiences::of(&Viewer(who.id)).and(&Team(who.team)),
         None => Audiences::none(),
     })
-});
+})
 ```
 
-`identify` goes once, before serving, and an application that never calls it
-has no audiences and pays for none. Answering with a set rather than one value
+`identify` goes on the application, once, and one that never says it has no
+audiences and pays for none. Answering with a set rather than one value
 costs nothing and is the whole difference between addressing a user and
 addressing every admin, everyone on a team, or every tab in a workspace.
 
@@ -254,16 +254,16 @@ What crosses instead is the message: exos ships the two ends of a bus and no
 broker, the same way it ships no session store.
 
 ```rust
-exos::keys(Keys::from_secret(std::env::var("EXOS_SECRET")?));
+let app = exos::app()
+    .keys(Keys::from_secret(std::env::var("EXOS_SECRET")?))
+    .bus(move |frame| {
+        let redis = redis.clone();
 
-exos::bus(move |frame| {
-    let redis = redis.clone();
-
-    async move {
-        redis.publish("exos", frame.to_bytes()).await?;
-        Ok(())
-    }
-});
+        async move {
+            redis.publish("exos", frame.to_bytes()).await?;
+            Ok(())
+        }
+    });
 
 // Your own subscriber loop, and your own reconnection.
 tokio::spawn(async move {
@@ -300,8 +300,8 @@ from. What crosses is what the session name reduces to and never the name.
 
 Two things to know before running two of anything:
 
-- **A signing key is no longer optional.** `exos::bus` refuses to register
-  without `exos::keys`, because a random key per process is a token that
+- **A signing key is no longer optional.** `bus` refuses to register without
+  `keys`, because a random key per process is a token that
   verifies on the node that minted it and nowhere else.
 - **Ordering narrows.** Within one node the last patch a tab receives for a
   topic is still the newest. Across nodes there is nothing serializing two

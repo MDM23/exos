@@ -12,9 +12,10 @@
 //! is nothing.
 
 use core::time::Duration;
-use std::sync::{Arc, Once, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use axum::{
+    Router,
     body::{Body, to_bytes},
     extract::Path,
     http::{Request, Response, StatusCode, header},
@@ -22,7 +23,7 @@ use axum::{
 use exos::{Audience, Effect, Fragment, Frame, Id, Kind, Markup, Topic, publish, send};
 use tokio::{
     sync::Mutex,
-    sync::mpsc::{UnboundedReceiver, unbounded_channel},
+    sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     time::timeout,
 };
 use tokio_stream::StreamExt as _;
@@ -41,35 +42,50 @@ impl Audience for Viewer {
 /// for is the frame arriving rather than a moment when it must already have.
 static SENT: OnceLock<Mutex<UnboundedReceiver<Frame>>> = OnceLock::new();
 
-/// Registers the bus, once, from inside this test's runtime.
-///
-/// Written the way an adapter is, holding a client of its own: a closure
-/// answering with a future, rather than an async closure, because the future an
-/// async closure returns borrows what it captured and a spawned one cannot.
-/// This is the file that would notice if that stopped being the shape.
-async fn bus() -> tokio::sync::MutexGuard<'static, UnboundedReceiver<Frame>> {
-    static REGISTERED: Once = Once::new();
+/// The broker this node sends into, which is a channel a test reads.
+fn broker() -> Arc<UnboundedSender<Frame>> {
+    static BROKER: OnceLock<Arc<UnboundedSender<Frame>>> = OnceLock::new();
 
-    REGISTERED.call_once(|| {
+    Arc::clone(BROKER.get_or_init(|| {
         let (sender, receiver) = unbounded_channel();
-        let broker = Arc::new(sender);
 
         drop(SENT.set(Mutex::new(receiver)));
 
-        // First, and a bus refuses to be registered without it: a cluster
-        // signs with one key, and a random one per process is a token that
-        // verifies on the node that minted it and nowhere else.
-        exos::keys(exos::Keys::from_secret("a cluster agrees about this"));
+        Arc::new(sender)
+    }))
+}
 
-        exos::bus(move |frame: Frame| {
+/// This node: the application, with the key and the bus it was started with.
+///
+/// The bus is written the way an adapter is, holding a client of its own: a
+/// closure answering with a future, rather than an async closure, because the
+/// future an async closure returns borrows what it captured and a spawned one
+/// cannot. This is the file that would notice if that stopped being the shape.
+///
+/// Built from inside this test's runtime, which is where a bus takes the handle
+/// it spawns sends on.
+fn node() -> Router {
+    let broker = broker();
+
+    exos::app()
+        // First, and a bus refuses to be registered without it: a cluster signs
+        // with one key, and a random one per process is a token that verifies
+        // on the node that minted it and nowhere else.
+        .keys(exos::Keys::from_secret("a cluster agrees about this"))
+        .bus(move |frame: Frame| {
             let broker = Arc::clone(&broker);
 
             async move {
                 broker.send(frame)?;
                 Ok(())
             }
-        });
-    });
+        })
+        .into()
+}
+
+/// The frames this node sent, with the application in place around them.
+async fn bus() -> tokio::sync::MutexGuard<'static, UnboundedReceiver<Frame>> {
+    drop(node());
 
     SENT.get()
         .expect("the receiver is set with the registration")
@@ -196,7 +212,7 @@ async fn serve(Path(topic): Path<String>) -> Effect {
 
 /// A request from one browser, which means one carrying its cookie.
 async fn from(name: &Id, request: axum::http::request::Builder, body: Body) -> Response<Body> {
-    exos::app()
+    node()
         .oneshot(
             request
                 .header(header::COOKIE, format!("exos={name}"))
@@ -259,7 +275,7 @@ async fn subscribing(name: &Id, connection: &str, topic: &Topic) -> StatusCode {
 /// Opened with the cookie, because that is what a stream carries and what
 /// tells a rotation which streams are this browser's.
 async fn opened(name: &Id) -> (String, Body) {
-    let response = exos::app()
+    let response = node()
         .oneshot(
             Request::builder()
                 .uri("/_exos/live")

@@ -89,8 +89,8 @@
 //! the same from here, so treating them as a group would let one visitor's
 //! sign-in end the streams of every anonymous visitor at once.
 //!
-//! With a [bus](crate::bus) registered it reaches the browser's tabs on the
-//! other nodes as well, since the tabs it did not sign out in are streaming
+//! With a [bus](crate::App::bus) registered it reaches the browser's tabs on
+//! the other nodes as well, since the tabs it did not sign out in are streaming
 //! from wherever the load balancer put them.
 //!
 //! # Where it cannot be reached
@@ -271,7 +271,7 @@ impl Session {
     /// every millisecond of it is a tab showing a name that is no longer this
     /// browser's.
     ///
-    /// Wherever those tabs are: with a [bus](crate::bus) registered, what the
+    /// Wherever those tabs are: with a [bus](crate::App::bus) registered, what the
     /// name reduces to crosses and every node does the same to its own
     /// registry. Nothing waits for them, so this returns as quickly on a
     /// cluster as it does alone.

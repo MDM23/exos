@@ -7,7 +7,7 @@
 //!
 //! ```no_run
 //! # fn main() -> Result<(), std::env::VarError> {
-//! exos::keys(exos::Keys::from_secret(std::env::var("EXOS_SECRET")?));
+//! let app = exos::app().keys(exos::Keys::from_secret(std::env::var("EXOS_SECRET")?));
 //! # Ok(())
 //! # }
 //! ```
@@ -73,6 +73,14 @@ impl Keys {
     fn sign(&self, label: &str, message: &[u8]) -> [u8; 32] {
         mac(&mac(&self.0, label.as_bytes()), message)
     }
+
+    /// Whether two keys are the same key.
+    ///
+    /// Private, and in constant time, because a key that can be compared from
+    /// outside is a key that can be guessed one byte at a time.
+    fn same_as(&self, other: &Self) -> bool {
+        self.0.ct_eq(&other.0).into()
+    }
 }
 
 impl core::fmt::Debug for Keys {
@@ -94,22 +102,30 @@ static KEYS: OnceLock<Keys> = OnceLock::new();
 /// Whether an application said what the key is.
 static SAID: AtomicBool = AtomicBool::new(false);
 
-/// Configures the key everything signed derives from.
+/// Configures the key everything signed derives from, for
+/// [`App::keys`](crate::App::keys).
 ///
-/// Call it once, before serving.
+/// Saying the same secret again is saying nothing new, which is what lets an
+/// application be built more than once.
 ///
 /// # Panics
 ///
-/// If a key is already in place, either because this was called twice or
-/// because something was signed first and got the random one. Both mean two
-/// parts of the program disagree about the key, and quietly keeping the older
-/// one would show up later as tokens that intermittently fail to verify.
-pub fn keys(keys: Keys) {
-    assert!(
-        KEYS.set(keys).is_ok(),
-        "the signing key is already in place; exos::keys goes once, before \
-         anything is served"
-    );
+/// If a different key is already in place, either because two parts of the
+/// program disagree about the secret or because something was signed first and
+/// got the random one.
+pub(crate) fn set(keys: Keys) {
+    let mut said = Some(keys);
+    let configured = KEYS.get_or_init(|| said.take().expect("this closure runs once, and here"));
+
+    // Still holding it means something else got there first, which is the only
+    // case there is anything to check.
+    if let Some(said) = said {
+        assert!(
+            configured.same_as(&said),
+            "the signing key is already in place; App::keys goes once, before \
+             anything is served"
+        );
+    }
 
     SAID.store(true, Ordering::Relaxed);
 }
@@ -119,7 +135,7 @@ pub fn keys(keys: Keys) {
 ///
 /// Its own flag rather than asking whether [`KEYS`] holds anything, because by
 /// the time anything asks, the fallback has usually filled it in. What a
-/// [`bus`](crate::bus) needs to know is where the key came from.
+/// [`bus`](crate::App::bus) needs to know is where the key came from.
 pub(crate) fn configured_by_hand() -> bool {
     SAID.load(Ordering::Relaxed)
 }
@@ -130,7 +146,8 @@ fn configured() -> &'static Keys {
         eprintln!(
             "exos: no signing key configured, using a random one for this \
              process. Tokens will not survive a restart and two instances will \
-             not agree. Call exos::keys with a secret before serving."
+             not agree. Give the application a secret with App::keys before \
+             serving."
         );
 
         Keys::random()

@@ -8,8 +8,9 @@
 //!
 //! An audience is the other half. It is written onto the connection by the
 //! server when the stream opens, from the session name the request carried, and
-//! nothing the client sends can add one. [`identify`] is where an application
-//! says what a name stands for.
+//! nothing the client sends can add one.
+//! [`App::identify`](crate::App::identify) is where an application says what a
+//! name stands for.
 //!
 //! # Why the server writes it and the client cannot
 //!
@@ -34,12 +35,12 @@
 //!
 //! # Once per process
 //!
-//! [`identify`] goes once, before serving, the way the signing key does. An
-//! application that never calls it has no audiences, which is exactly right for
-//! one that only publishes fragments: nothing is resolved and nothing is paid
-//! for.
+//! [`App::identify`](crate::App::identify) goes once, the way the signing key
+//! does. An application that never says it has no audiences, which is exactly
+//! right for one that only publishes fragments: nothing is resolved and nothing
+//! is paid for.
 
-use core::{future::Future, hash::Hash, pin::Pin};
+use core::{future::Future, hash::Hash, panic::Location, pin::Pin};
 use std::{collections::HashSet, sync::OnceLock};
 
 use crate::{Id, live::Topic};
@@ -148,77 +149,35 @@ pub type Resolution = Result<Audiences, Box<dyn core::error::Error + Send + Sync
 type Resolver =
     Box<dyn Fn(Option<Id>) -> Pin<Box<dyn Future<Output = Resolution> + Send>> + Send + Sync>;
 
-static RESOLVER: OnceLock<Resolver> = OnceLock::new();
+/// The resolver, and where it was said, since no two closures can be compared.
+static RESOLVER: OnceLock<(&'static Location<'static>, Resolver)> = OnceLock::new();
 
-/// Says who a stream belongs to, from the session name it carried.
-///
-/// Called once per connection, on the stream's `GET`, which is the one place
-/// identity can be established without inventing a second channel: an
-/// `EventSource` is opened with an ordinary request and therefore carries
-/// cookies.
-///
-/// The name arrives as an `Option` because a stream cannot start a session. Its
-/// response headers went out when it opened, so there is no cookie to set, and
-/// a visitor whose very first request is the stream has no name yet.
-///
-/// ```
-/// use exos::{Audience, Audiences};
-///
-/// #[derive(Hash)]
-/// struct Viewer(u32);
-///
-/// impl Audience for Viewer {
-///     const NAME: &'static str = "viewer";
-/// }
-///
-/// # struct Sessions;
-/// # impl Sessions {
-/// #     async fn viewer(&self, _: &exos::Id) -> Result<Option<u32>, std::io::Error> {
-/// #         Ok(Some(7))
-/// #     }
-/// # }
-/// # exos::provide(Sessions);
-/// exos::identify(async |name| {
-///     // What anonymous means is not exos's to decide: a visit with no name
-///     // has nothing to be addressed by, and a name with nobody behind it may
-///     // still be worth addressing.
-///     let Some(name) = name else {
-///         return Ok(Audiences::none());
-///     };
-///
-///     Ok(match exos::data::<Sessions>().viewer(&name).await? {
-///         Some(user) => Audiences::of(&Viewer(user)),
-///         None => Audiences::none(),
-///     })
-/// });
-/// ```
-///
-/// The lookup is the application's, and so is what it means for a name to
-/// resolve to nobody. exos never learns what a user is.
+/// Says who a stream belongs to, for [`App::identify`](crate::App::identify).
 ///
 /// # Panics
 ///
-/// If a resolver is already in place, which means two parts of the program
-/// disagree about who a connection is. Keeping the first one quietly would show
-/// up later as tabs that receive nothing for no visible reason.
-pub fn identify<F, Fut>(resolver: F)
+/// If a resolver was already said somewhere else, which means two parts of the
+/// program disagree about who a connection is. The same place saying it again
+/// is one application built twice and says nothing new.
+pub(crate) fn set<F, Fut>(resolver: F, at: &'static Location<'static>)
 where
     F: Fn(Option<Id>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Resolution> + Send + 'static,
 {
     let erased: Resolver = Box::new(move |name| Box::pin(resolver(name)));
+    let (said, _) = RESOLVER.get_or_init(|| (at, erased));
 
     assert!(
-        RESOLVER.set(erased).is_ok(),
-        "a resolver is already in place; exos::identify goes once, before \
-         anything is served"
+        *said == at,
+        "a resolver is already in place, from {said}; App::identify goes once, \
+         before anything is served"
     );
 }
 
 /// The audiences `name` stands for, or none at all if nothing was configured.
 pub(crate) async fn resolve(name: Option<Id>) -> Resolution {
     match RESOLVER.get() {
-        Some(resolver) => resolver(name).await,
+        Some((_, resolver)) => resolver(name).await,
         None => Ok(Audiences::none()),
     }
 }

@@ -10,7 +10,7 @@
 //! typo in one is a compile error.
 
 use axum::extract::Path;
-use exos::{Audience, Audiences, Effect, Id, Markup, on_click, view};
+use exos::{Audience, Audiences, Effect, Id, Markup, Resolution, on_click, view};
 
 use crate::{
     room,
@@ -42,29 +42,28 @@ impl Audience for Role {
     const NAME: &'static str = "role";
 }
 
-/// Teaches exos what a session name stands for.
+/// What a session name stands for, which is what the application hands
+/// `identify`.
 ///
 /// This runs once per connection, on the stream's `GET`, which carries the
 /// cookie because an `EventSource` is opened with an ordinary request. Both
 /// arms earn their place: the first is one person and their job at once, and
 /// the second is why the name arrives as an `Option` rather than exos deciding
 /// on the application's behalf that an anonymous visitor is nobody.
-pub(crate) fn identify() {
-    exos::identify(async |name: Option<Id>| {
-        // No name at all, which is a browser whose very first request is the
-        // stream. There is nothing to key an audience on, and no cookie can be
-        // set from here to make one.
-        let Some(name) = name else {
-            return Ok(Audiences::none());
-        };
+pub(crate) async fn audiences(name: Option<Id>) -> Resolution {
+    // No name at all, which is a browser whose very first request is the
+    // stream. There is nothing to key an audience on, and no cookie can be set
+    // from here to make one.
+    let Some(name) = name else {
+        return Ok(Audiences::none());
+    };
 
-        Ok(match exos::data::<Accounts>().of(&name).await {
-            Some(account) => Audiences::of(&Viewer(account.id)).and(&account.role),
-            // A name with nobody behind it is still a name. That is the whole
-            // reason a guest can be outbid and hear about it.
-            None => Audiences::of(&Guest(name)),
-        })
-    });
+    Ok(match exos::data::<Accounts>().of(&name).await {
+        Some(account) => Audiences::of(&Viewer(account.id)).and(&account.role),
+        // A name with nobody behind it is still a name. That is the whole
+        // reason a guest can be outbid and hear about it.
+        None => Audiences::of(&Guest(name)),
+    })
 }
 
 // -----------------------------------------------------------------------------

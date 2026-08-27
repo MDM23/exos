@@ -45,7 +45,7 @@ async fn page() -> Page {
 /// The application as a downstream crate would compose it, and the whole of
 /// what it says about where exos lives.
 fn mounted() -> Router {
-    Router::new().nest(BASE, exos::app())
+    Router::new().nest(BASE, exos::app().into())
 }
 
 async fn served(uri: &str) -> axum::response::Response {

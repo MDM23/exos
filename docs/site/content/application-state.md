@@ -3,11 +3,17 @@
 Provided once, reachable by type. No `State<T>` threaded through signatures:
 
 ```rust
-exos::provide(Files::seed());
+exos::app().provide(Files::seed())
 
 let files = exos::data::<Files>();          // panics if missing
 let maybe = exos::try_data::<Files>();      // Option<Arc<Files>>
 ```
+
+Where the application is built is where it belongs, and it says what the
+application *starts* with: building the same one again does not put the seed
+back over whatever has changed it since. `exos::provide` is the other half and
+replaces outright, which is what a background job loading something later and a
+test swapping a value both want; it hands back whatever it displaced.
 
 A missing value is a wiring mistake made once at startup, not a per-request
 condition, so `data` panicking and naming the type is the right default.

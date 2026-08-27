@@ -84,9 +84,10 @@ instead of excluding one another.
 
 ## Crates
 
-- [`exos`](crates/exos) is the runtime library, and returns a plain
-  `axum::Router` so it composes into an axum application rather than replacing
-  one. `Router::new().nest("/admin", exos::app())` needs no configuration:
+- [`exos`](crates/exos) is the runtime library, and hands back an application
+  that converts into a plain `axum::Router`, so it composes into an axum
+  application rather than replacing one.
+  `Router::new().nest("/admin", exos::app().into())` needs no configuration:
   exos works out where it was mounted and puts that in front of every URL it
   writes, and the browser runtime finds it from the URL it was itself loaded
   from.

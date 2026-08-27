@@ -1,15 +1,14 @@
-//! The one middleware exos mounts inside its own layers.
+//! Middleware an application puts on [`exos::app`], and where that leaves it.
 //!
-//! What makes it worth an attribute is where it runs. Mounted on the router
-//! `app` returns, it would sit above the layer that reads the cookie and would
-//! have to parse one of its own; here it asks [`exos::session`] like anything
-//! else being served.
+//! Ordinary axum middleware. What matters is that it runs inside exos's own
+//! layers rather than above them: it asks [`exos::session`] like anything else
+//! being served, instead of parsing a cookie of its own.
 
 use axum::{
     body::Body,
     extract::Request,
     http::{StatusCode, header},
-    middleware::Next,
+    middleware::{Next, from_fn},
     response::{IntoResponse as _, Redirect, Response},
 };
 use exos::{Markup, view};
@@ -22,7 +21,6 @@ struct Viewer(String);
 
 /// The application's whole session guard, which is what one is meant to look
 /// like: resolve who this is, refuse if it is nobody.
-#[exos::guard]
 async fn guard(request: Request, next: Next) -> Response {
     if request.uri().path() == "/login" {
         return next.run(request).await;
@@ -66,7 +64,11 @@ async fn request(uri: &str, session: Option<&str>) -> Response {
         builder = builder.header(header::COOKIE, format!("exos={session}"));
     }
 
+    // `route_layer` rather than `layer`: a guard answers early, and one that
+    // ran for a request matching no route would report every mistyped URL as
+    // somewhere to sign in.
     exos::app()
+        .route_layer(from_fn(guard))
         .oneshot(builder.body(Body::empty()).expect("a valid request"))
         .await
         .expect("the router answers")
