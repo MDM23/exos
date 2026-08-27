@@ -97,6 +97,8 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
         path.value()
     );
 
+    let link_summary = format!("An `<a>` pointing at `{}`.", path.value());
+
     quote! {
         #[doc = concat!("Typed client-side caller for [`", stringify!(#name), "`].")]
         #[allow(non_snake_case, unused_imports)]
@@ -110,6 +112,15 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
             /// every link to it rather than producing one that 404s.
             pub fn url(#(#path_parameters),*) -> ::std::string::String {
                 ::exos::url(::std::format!(#format, #(#arguments),*))
+            }
+
+            #[doc = #link_summary]
+            ///
+            /// The `href`, and `aria-current="page"` where this is the page
+            /// being rendered, so a nav bar marks where it is without every
+            /// template that draws one being told which page that is.
+            pub fn link(#(#path_parameters),*) -> ::exos::Link {
+                ::exos::Link::to(url(#(#arguments),*))
             }
 
             #[doc = #summary]
@@ -228,6 +239,22 @@ mod tests {
             !expanded.contains("pub fn url (p0 : u32 , body"),
             "a link has no body to send"
         );
+    }
+
+    /// The link is the URL plus what marks the page being read, so it is built
+    /// from the same `url` rather than from a second copy of the path.
+    #[test]
+    fn generates_a_link_from_that_same_url() {
+        let expanded = expand_ok(
+            r#""/docs/{page}""#,
+            "async fn show(Path(p): Path<String>) {}",
+        );
+
+        assert!(
+            expanded.contains("pub fn link (p0 : String) -> :: exos :: Link"),
+            "{expanded}"
+        );
+        assert!(expanded.contains("Link :: to (url (p0))"), "{expanded}");
     }
 
     /// One place decides what a route's URL is. Prefixing in both would put the

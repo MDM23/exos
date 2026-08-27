@@ -39,6 +39,7 @@ async fn page() -> Page {
             <body>
                 <h1>"Behind a proxy"</h1>
                 <button {on_click(|_| favorite::post(3))}>"Favorite"</button>
+                <a {page::link()}>"This page"</a>
             </body>
         </html>
     })
@@ -101,6 +102,16 @@ async fn what_the_browser_is_given_carries_the_prefix() {
             .contains("/admin/files/3/favorite"),
         "and so is every action"
     );
+}
+
+/// The server was asked for `/page` and the browser is at `/admin/page`, so
+/// the link marked as the current one is the second of those.
+#[tokio::test]
+async fn the_page_being_read_is_the_one_the_browser_asked_for() {
+    drop(behind_a_proxy());
+
+    assert_eq!(attribute("aria-current").await, "page");
+    assert_eq!(attribute("href").await, "/admin/page");
 }
 
 /// The other half, and the one that makes this different from nesting: the

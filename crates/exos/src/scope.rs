@@ -199,11 +199,12 @@ pub(crate) async fn layer(request: Request, next: Next) -> Response {
     // rendering, which happens later in this same one.
     crate::base::observe(&request);
 
-    // One small allocation per request, empty until something writes to it: a
-    // `HashMap` does not allocate for its entries until the first insert.
-    STATE
-        .scope(State::Request(Arc::default()), next.run(request))
-        .await
+    // Seeded rather than empty: which page a request is for is the one thing a
+    // view cannot go and read for itself later.
+    let store = Arc::<Store>::default();
+    Scope(Arc::clone(&store)).set(crate::base::here(&request));
+
+    STATE.scope(State::Request(store), next.run(request)).await
 }
 
 #[cfg(test)]

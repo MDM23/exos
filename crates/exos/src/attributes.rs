@@ -18,7 +18,7 @@ pub use crate::attributes::{
         Event, EventType, Target, on, on_change, on_click, on_dblclick, on_focusout, on_input,
         on_keydown, on_submit,
     },
-    helper::{Attr, Bind, BindKind, Class, attr, bind, class, preserve, prop, show, text},
+    helper::{Attr, Bind, BindKind, Class, Link, attr, bind, class, preserve, prop, show, text},
 };
 
 // -----------------------------------------------------------------------------

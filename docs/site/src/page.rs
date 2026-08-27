@@ -69,7 +69,7 @@ pub(crate) fn shell(slug: &str, title: &str, outline: &[Heading], body: Markup) 
                     // A link closes the menu on the way out, so a phone does
                     // not land on the next page with the sidebar still over it.
                     <nav class="sidebar" aria-label="Documentation" {on_click(|_| menu.set(false))}>
-                        { sidebar(slug) }
+                        { sidebar() }
                     </nav>
 
                     <main class="article">
@@ -97,8 +97,8 @@ fn missing() -> Page {
     )
 }
 
-/// The groups and their pages, with the one being read marked.
-fn sidebar(current: &str) -> Markup {
+/// The groups and their pages. Which one is being read is `link`'s to say.
+fn sidebar() -> Markup {
     view! {
         {
             nav::groups()
@@ -112,10 +112,7 @@ fn sidebar(current: &str) -> Markup {
                                 .iter()
                                 .map(|entry| view! {
                                     <li>
-                                        <a
-                                            href={ show::url(entry.slug.clone()) }
-                                            aria-current={ (entry.slug == current).then_some("page") }
-                                        >{ entry.title.as_str() }</a>
+                                        <a {show::link(entry.slug.clone())}>{ entry.title.as_str() }</a>
                                     </li>
                                 })
                                 .collect::<Vec<_>>()

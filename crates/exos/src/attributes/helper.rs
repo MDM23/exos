@@ -35,6 +35,46 @@ impl IntoAttributes for Class {
     }
 }
 
+/// A link to one of this application's own URLs.
+///
+/// The `href`, and `aria-current="page"` where that URL is the page being
+/// rendered. Marking it is what a nav bar has to do anyway, and doing it here
+/// means the page being read is decided once rather than threaded through every
+/// template that draws a link to it.
+///
+/// A route's own `link()` is the one to reach for, since it is built from the
+/// handler's signature. This is for a path that is not a route's:
+///
+/// ```rust
+/// # use exos::{Link, Markup, view};
+/// # fn files() -> Markup {
+/// view! { <a {Link::to(exos::url("/files"))}>"Files"</a> }
+/// # }
+/// ```
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[must_use = "an attribute does nothing until it is written onto an element"]
+pub struct Link(String);
+
+impl Link {
+    /// A link to `url`, which is one of this application's URLs and therefore
+    /// already carries the base: what [`url`](crate::url) hands back, or a
+    /// route's own `url()`.
+    pub fn to(url: impl Into<String>) -> Self {
+        Self(url.into())
+    }
+}
+
+impl IntoAttributes for Link {
+    fn write(self, attributes: &mut Attributes) {
+        let here = crate::base::is_here(&self.0);
+        attributes.set("href", self.0);
+
+        if here {
+            attributes.set("aria-current", "page");
+        }
+    }
+}
+
 /// A binding: the signal's name, its type, and what may be wrong with it.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[must_use = "an attribute does nothing until it is written onto an element"]
@@ -224,6 +264,16 @@ mod tests {
         let mut attributes = Attributes::new();
         bind(&query).write(&mut attributes);
         assert!(attributes.render().contains("data-bind-kind=\"string\""));
+    }
+
+    /// Outside a request there is no page to be on, so a link is an `href` and
+    /// nothing else. Which one is marked is `base`'s to say and tested there.
+    #[test]
+    fn a_link_is_the_url_it_was_given() {
+        let mut attributes = Attributes::new();
+        Link::to("/files").write(&mut attributes);
+
+        assert_eq!(attributes.render(), " href=\"/files\"");
     }
 
     #[test]

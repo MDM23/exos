@@ -68,6 +68,19 @@ renaming the route or changing its parameter type breaks every link to it rather
 than leaving one that 404s. It is the same guarantee `show::get(..)` gives an
 action, and it is the one to reach for.
 
+**`link` writes the whole anchor.** It is that URL, plus `aria-current="page"`
+where the URL is the page being rendered:
+
+```rust
+view! { <a {show::link(3)}>"Open"</a> }
+```
+
+Which page that is comes from the request, so a sidebar marks where the reader
+is without every template that draws a link being handed the answer. Where there
+is no page to be on, nothing is marked: a background job has no request, and a
+[live fragment](live-fragments) renders again for every viewer a publish
+reaches, none of whom is promised to be on the page that triggered it.
+
 For anything that is not a route, `exos::url` joins a path to the base:
 
 ```rust

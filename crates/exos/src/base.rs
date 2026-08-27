@@ -42,6 +42,14 @@
 //!
 //! Said explicitly it wins, and discovery never runs.
 //!
+//! # Which page this is
+//!
+//! Relative URLs need that answered wherever a fragment can render, which is
+//! why they are out. Marking the link to the page being read needs it only
+//! where there is a page, so [`is_here`] answers out of the request scope and
+//! answers "no" from a background job or a live fragment, which is the honest
+//! answer for markup that renders again for every viewer a publish reaches.
+//!
 //! # The client is not told either
 //!
 //! It works it out too, and from a different direction. The runtime is itself
@@ -135,6 +143,34 @@ pub(crate) fn path() -> &'static str {
 /// another host.
 pub fn url(path: impl AsRef<str>) -> String {
     format!("{}/{}", base_path(), path.as_ref().trim_start_matches('/'))
+}
+
+/// Whether `url` is the page being rendered.
+///
+/// What [`Link`](crate::Link) marks with `aria-current`. False wherever there is
+/// no page to be on, which is a background job and a live fragment alike.
+pub(crate) fn is_here(url: &str) -> bool {
+    crate::scope::current()
+        .and_then(|scope| scope.get::<Here>())
+        .is_some_and(|here| here.0 == url)
+}
+
+/// The page a request is for, as a link to it would be written.
+///
+/// In the request scope rather than beside the base, because it is the half of
+/// this module that changes per request. A view cannot extract it for itself, so
+/// it is put there on the way in.
+#[derive(Debug)]
+pub(crate) struct Here(String);
+
+/// Where a request is, as the browser asked for it.
+///
+/// The base and the path the router sees, added back up: nesting rewrites the
+/// path and the base is what it took off, and behind a proxy the base was said
+/// rather than seen and the sum is still what is in the address bar. Which makes
+/// it the same string [`url`] builds, and therefore comparable to one.
+pub(crate) fn here(request: &Request) -> Here {
+    Here(url(request.uri().path()))
 }
 
 /// Learns the mount point from a request, once.
@@ -261,6 +297,25 @@ mod tests {
     fn the_root_path_is_a_single_slash() {
         assert_eq!(url(""), "/");
         assert_eq!(url("/"), "/");
+    }
+
+    /// What a link is marked by, and the two places it says nothing: a fragment
+    /// renders again for every viewer a publish reaches, and none of them is
+    /// promised to be on the page whoever triggered it was.
+    #[test]
+    fn the_page_being_served_is_the_only_current_one() {
+        crate::with_scope(|| {
+            crate::scope().set(Here(String::from("/docs/effects")));
+
+            assert!(is_here("/docs/effects"));
+            assert!(!is_here("/docs/routes"));
+            assert!(!crate::detached(|| is_here("/docs/effects")));
+        });
+    }
+
+    #[test]
+    fn nothing_is_current_outside_a_request() {
+        assert!(!is_here("/docs/effects"));
     }
 
     #[test]

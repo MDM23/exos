@@ -35,7 +35,7 @@ async fn page() -> Page {
             <body>
                 <h1>"Nested"</h1>
                 <button {on_click(|_| favorite::post(3))}>"Favorite"</button>
-                <a href={ page::url() }>"This page"</a>
+                <a {page::link()}>"This page"</a>
                 <a id="written" href={ exos::url("/files") }>"Files"</a>
             </body>
         </html>
@@ -150,12 +150,17 @@ async fn a_typed_caller_posts_to_where_the_browser_can_reach_it() {
 }
 
 /// A link built from the route rather than from a string, which is what makes
-/// renaming the route a compile error at every place that links to it.
+/// renaming the route a compile error at every place that links to it. It is
+/// also the page being served, and knowing that means adding the prefix the
+/// request arrived under back to the path the router was left with.
 #[tokio::test]
-async fn a_route_knows_its_own_url() {
+async fn a_route_knows_its_own_url_and_that_it_is_the_page_being_read() {
     let html = rendered().await;
 
-    assert!(html.contains("href=\"/admin/page\""), "{html}");
+    assert!(
+        html.contains("href=\"/admin/page\" aria-current=\"page\""),
+        "{html}"
+    );
     assert_eq!(status("/admin/page").await, StatusCode::OK);
 }
 
