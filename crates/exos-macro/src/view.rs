@@ -6,7 +6,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use rstml::{
     Parser, ParserConfig,
-    node::{Node, NodeAttribute, NodeElement, NodeName},
+    node::{KVAttributeValue, KeyedAttribute, Node, NodeAttribute, NodeElement},
 };
 
 mod signals;
@@ -28,20 +28,33 @@ const RAW_TEXT: &[&str] = &["script", "style"];
 pub(crate) fn expand(input: TokenStream) -> TokenStream {
     let config = ParserConfig::new()
         .always_self_closed_elements(VOID.iter().copied().collect::<HashSet<_>>())
-        .raw_text_elements(RAW_TEXT.iter().copied().collect::<HashSet<_>>());
+        .raw_text_elements(RAW_TEXT.iter().copied().collect::<HashSet<_>>())
+        .recover_block(true);
 
-    let nodes = match Parser::new(config).parse_simple(input) {
-        Ok(nodes) => nodes,
-        Err(error) => return error.to_compile_error(),
-    };
+    // A template being typed is a template that does not parse, which is most
+    // of the time an editor asks what this expands to. So the errors are
+    // collected beside the tree rather than instead of it, and every block
+    // that did arrive is emitted with the spans it was written at. That is
+    // what rust-analyzer completes in: it expands the macro twice, once as
+    // written and once with a marker at the caret, and walks off the end of
+    // the first if the two do not correspond. A lone `compile_error!` does
+    // not correspond to anything.
+    let (nodes, diagnostics) = Parser::new(config).parse_recoverable(input).split_vec();
 
     let mut body = TokenStream::new();
     for node in &nodes {
         emit_node(node, &mut body, false);
     }
 
+    let errors = diagnostics.into_iter().map(|error| {
+        // Named through the value rather than the type: rstml does not
+        // re-export it, and a dependency for one call is not worth it.
+        error.emit_as_expr_tokens()
+    });
+
     quote! {{
         let mut __out = ::std::string::String::new();
+        #(#errors)*
         #body
         ::exos::Markup(__out)
     }}
@@ -127,7 +140,7 @@ fn emit_element<C: rstml::node::CustomNode>(element: &NodeElement<C>, out: &mut 
                 // whatever the handles on this element declare.
                 signals::reject_value(attribute.value(), out);
             } else {
-                emit_attribute(&attribute.key, attribute.value(), out);
+                emit_attribute(attribute, out);
             }
         }
     }
@@ -200,36 +213,44 @@ fn emit_attribute_blocks<C: rstml::node::CustomNode>(
     });
 }
 
-fn emit_attribute(key: &NodeName, value: Option<&syn::Expr>, out: &mut TokenStream) {
-    let name = key.to_string();
+fn emit_attribute(attribute: &KeyedAttribute, out: &mut TokenStream) {
+    let name = attribute.key.to_string();
 
-    match value {
+    match attribute
+        .possible_value
+        .to_value()
+        .map(|value| &value.value)
+    {
         // `class="files"`, written straight into the markup.
-        Some(syn::Expr::Lit(syn::ExprLit {
+        Some(KVAttributeValue::Expr(syn::Expr::Lit(syn::ExprLit {
             lit: syn::Lit::Str(text),
             ..
-        })) => {
+        }))) => {
             let escaped = escape_attribute(&text.value());
             push_literal(&format!(" {name}=\"{escaped}\""), out);
         }
 
         // `class={expr}`. An `Option` that is `None` drops the attribute,
-        // which is what `aria-current` and friends need.
-        Some(expression) => {
-            let open = format!(" {name}=\"");
-
-            out.extend(quote! {
-                if let Some(__value) = ::exos::AttributeValue::attribute_value(&(#expression)) {
-                    __out.push_str(#open);
-                    ::exos::Render::render_to(&__value, &mut __out);
-                    __out.push('"');
-                }
-            });
-        }
+        // which is what `aria-current` and friends need. A block that did not
+        // parse is emitted as it was written, for the reason `expand` gives.
+        Some(KVAttributeValue::Expr(expression)) => emit_attribute_value(&name, expression, out),
+        Some(KVAttributeValue::InvalidBraced(block)) => emit_attribute_value(&name, block, out),
 
         // `<input disabled>`.
         None => push_literal(&format!(" {name}"), out),
     }
+}
+
+fn emit_attribute_value(name: &str, value: &impl quote::ToTokens, out: &mut TokenStream) {
+    let open = format!(" {name}=\"");
+
+    out.extend(quote! {
+        if let Some(__value) = ::exos::AttributeValue::attribute_value(&(#value)) {
+            __out.push_str(#open);
+            ::exos::Render::render_to(&__value, &mut __out);
+            __out.push('"');
+        }
+    });
 }
 
 #[cfg(test)]
@@ -242,6 +263,18 @@ mod tests {
 
     fn expand_ok(template: &str) -> String {
         expand(template.parse().expect("valid template")).to_string()
+    }
+
+    /// The block is what an editor completes in, so it stays in the expansion
+    /// even when it is half written and the macro is reporting an error about
+    /// it.
+    #[test]
+    fn a_block_that_does_not_parse_keeps_its_tokens() {
+        let expanded = expand_ok("<a href={ thing. }>{ locale:: }</a>");
+
+        assert!(expanded.contains("compile_error"), "{expanded}");
+        assert!(expanded.contains("thing ."), "{expanded}");
+        assert!(expanded.contains("locale ::"), "{expanded}");
     }
 
     #[test]
