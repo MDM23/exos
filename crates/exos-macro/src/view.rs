@@ -34,11 +34,15 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     // A template being typed is a template that does not parse, which is most
     // of the time an editor asks what this expands to. So the errors are
     // collected beside the tree rather than instead of it, and every block
-    // that did arrive is emitted with the spans it was written at. That is
-    // what rust-analyzer completes in: it expands the macro twice, once as
-    // written and once with a marker at the caret, and walks off the end of
-    // the first if the two do not correspond. A lone `compile_error!` does
-    // not correspond to anything.
+    // that did arrive is emitted with the spans it was written at.
+    //
+    // That is what rust-analyzer completes in. It expands the macro twice,
+    // once as written and once with a marker spliced in at the caret, then
+    // reads the offset the marker landed at in the second expansion back into
+    // the first. So the two have to agree character for character up to that
+    // point, which is why the errors go last: a `compile_error!` ahead of the
+    // body shifts it, and the caret is read against whatever the shift lands
+    // on rather than against what is being typed.
     let (nodes, diagnostics) = Parser::new(config).parse_recoverable(input).split_vec();
 
     let mut body = TokenStream::new();
@@ -54,8 +58,8 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 
     quote! {{
         let mut __out = ::std::string::String::new();
-        #(#errors)*
         #body
+        #(#errors)*
         ::exos::Markup(__out)
     }}
 }
@@ -275,6 +279,18 @@ mod tests {
         assert!(expanded.contains("compile_error"), "{expanded}");
         assert!(expanded.contains("thing ."), "{expanded}");
         assert!(expanded.contains("locale ::"), "{expanded}");
+    }
+
+    /// Nothing goes in front of the body, because an editor reads the caret's
+    /// offset in one expansion of this against another and anything ahead of
+    /// the body moves it. Completion opens on whatever the shift lands on
+    /// rather than on what is being typed, which looks like it works.
+    #[test]
+    fn an_error_comes_after_the_body_it_is_about() {
+        let expanded = expand_ok("<a>{ locale:: }</a>");
+        let body = expanded.find("push_str").expect("a body");
+
+        assert!(body < expanded.find("compile_error").expect("an error"));
     }
 
     #[test]
