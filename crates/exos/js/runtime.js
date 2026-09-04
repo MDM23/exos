@@ -1211,6 +1211,7 @@
                 // A page handed over by an action is a navigation that saved a
                 // fetch, so it starts the same way one does.
                 reseed();
+                autofocus();
                 break;
             }
 
@@ -1456,6 +1457,7 @@
 
             morph(document.body, next.body);
             reseed();
+            autofocus();
             document.title = next.title;
             if (push) history.pushState(null, "", response.url || url);
             window.scrollTo(0, 0);
@@ -1465,6 +1467,20 @@
         } finally {
             announce("idle", { kind: "navigate", url });
         }
+    }
+
+    // The caret a load would have placed. A browser honours `autofocus` while
+    // the document is loading and never again: the first candidate taken, or
+    // focus landing anywhere at all, settles it for the life of the document,
+    // and clicking a link is enough to land it on the link. A page that arrives
+    // by morph is a load as far as its markup is concerned, so it places the
+    // caret itself rather than leaving the attribute to mean nothing after the
+    // first navigation.
+    //
+    // Only whole documents. A patch is an update to the page being read, and a
+    // fragment that wants the caret says so with a focus effect.
+    function autofocus() {
+        focusLater("[autofocus]");
     }
 
     // -------------------------------------------------------------------------

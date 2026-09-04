@@ -141,6 +141,26 @@ test("a navigation starts the page as its own markup declares it", async () => {
     assert.equal(window.exos.signals.draft, "", "the arriving page said it starts empty");
 });
 
+test("a navigation places the caret the arriving page asks for", async () => {
+    const window = boot(`<a href="/next">next</a>`);
+
+    // Where a click leaves the focus, and what ends the browser's own
+    // autofocus for the life of the document.
+    window.document.querySelector("a").focus();
+
+    window.fetch = async () => ({
+        text: async () =>
+            `<!DOCTYPE html><html><head><title>next</title></head>` +
+            `<body><input id="field" autofocus></body></html>`,
+        url: "http://localhost/next",
+    });
+
+    await window.exos.navigate("http://localhost/next", true);
+    await settled();
+
+    assert.equal(window.document.activeElement, window.document.getElementById("field"));
+});
+
 test("a control keeps what the viewer typed when a patch lands on it", async () => {
     const window = boot(
         `<form id="form"><input id="field" data-bind="draft" data-bind-kind="string"></form>`,
