@@ -738,8 +738,15 @@
         },
     };
 
-    const BINDING_SELECTOR = Object.keys(BINDINGS)
-        .concat("data-signals", "data-signals-root", "data-messages")
+    // The attributes an effect is made from. Named rather than read off the
+    // table twice, because the morph asks the same question of one element.
+    const BOUND_ATTRIBUTES = Object.keys(BINDINGS);
+
+    const BINDING_SELECTOR = BOUND_ATTRIBUTES.concat(
+        "data-messages",
+        "data-signals",
+        "data-signals-root",
+    )
         .map((name) => `[${name}]`)
         .join(",");
 
@@ -1303,9 +1310,28 @@
         // open <details>, a third-party widget.
         if (from.hasAttribute("data-preserve")) return;
 
+        // An effect captures the expression it was bound with, and an element
+        // is bound once. So a node whose binding attributes changed is not the
+        // node that arrived: reusing it leaves every effect reading what the
+        // page before it declared, and the reapply below writes those values
+        // into this page's controls. Two forms of the same shape are how this
+        // shows up, one field wearing another form's value.
+        if (rebound(from, to)) {
+            from.replaceWith(to);
+            bindTree(to);
+            return;
+        }
+
         syncAttributes(from, to);
         morphChildren(from, to);
         reapply(from);
+    }
+
+    // Whether two same-shaped elements are live in different ways. A control
+    // the server moved from one field to another is the ordinary case, and it
+    // is why the value is compared rather than the presence of the attribute.
+    function rebound(from, to) {
+        return BOUND_ATTRIBUTES.some((name) => from.getAttribute(name) !== to.getAttribute(name));
     }
 
     // A binding owns what it writes, and the markup that arrives does not know

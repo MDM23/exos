@@ -555,6 +555,30 @@ test("an element whose tag changed is replaced and its bindings rebuilt", () => 
     assert.ok(slot.classList.contains("lit"), "bound by the morph, not by the observer later");
 });
 
+// The bug: a sign-in form and a registration form are the same shape, so
+// navigating between them reused the inputs. Their effects still read the
+// fields they were bound to, and the browser's autofilled credentials came
+// back up in the name fields of the form that arrived.
+test("a control the server rebound is not the control that was there", async () => {
+    const field = (name) => `<input data-bind="${name}" data-bind-kind="string">`;
+    const window = boot(`<form id="form" data-signals-root='{"email":""}'>${field("email")}</form>`);
+
+    const before = window.document.querySelector("input");
+    before.value = "filled in by the browser";
+    before.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await settled();
+
+    window.exos.applyPatch(
+        `<form id="form" data-signals-root='{"firstname":""}'>${field("firstname")}</form>`,
+    );
+    await settled();
+
+    const after = window.document.querySelector("input");
+
+    assert.notEqual(after, before, "the node bound to the old field is gone");
+    assert.equal(after.value, "", "and nothing of it came through");
+});
+
 // Replacing the node instead would drop a selection or an IME composition
 // sitting in it, which is the same class of loss as rebuilding an element.
 test("changed text updates the node rather than replacing it", () => {
