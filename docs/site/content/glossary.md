@@ -42,6 +42,9 @@ test writes `exos::app()` in the helper that serves it.
 | `base_path()` | The prefix, discovered or told |
 | `url(path)` | That prefix in front of a path |
 | `name::url(..)` | The URL of one route, from its own path and parameter types |
+| `name::link(..)` | The whole anchor: that URL, and `aria-current` where it is the page being read |
+| `Link::to(url)` | The same for a URL that is not a route's |
+| `Link::section()` | Marks it while a page below it is being read, for a nav bar's link to a section |
 | `name::get(..)`, `name::post(..)`, … | Records a call to it, with the payload type checked |
 | `Page` | A whole document, answering `no-cache, private` |
 | `Markup` | A fragment, as a response and as the type every template produces |

@@ -53,24 +53,54 @@ impl IntoAttributes for Class {
 /// ```
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[must_use = "an attribute does nothing until it is written onto an element"]
-pub struct Link(String);
+pub struct Link {
+    url: String,
+    section: bool,
+}
 
 impl Link {
     /// A link to `url`, which is one of this application's URLs and therefore
     /// already carries the base: what [`url`](crate::url) hands back, or a
     /// route's own `url()`.
     pub fn to(url: impl Into<String>) -> Self {
-        Self(url.into())
+        Self {
+            url: url.into(),
+            section: false,
+        }
+    }
+
+    /// Marks it while a page below it is being read, too.
+    ///
+    /// What a nav bar's link to a section wants, and what a link in a page's
+    /// body does not, so it is said here rather than by the route: the same
+    /// route is linked to from both.
+    ///
+    /// It is then `aria-current="true"` on `/users/123` and `"page"` on `/users`
+    /// itself, because the section holding the page is not that page. CSS that
+    /// matches `[aria-current]` styles the two together.
+    ///
+    /// ```rust
+    /// # use exos::{Link, Markup, view};
+    /// # fn users() -> Markup {
+    /// view! { <a {Link::to(exos::url("/users")).section()}>"Users"</a> }
+    /// # }
+    /// ```
+    ///
+    /// The root is nobody's section. Every page is below it, so a link to `/` is
+    /// marked on `/` alone whether or not this was said.
+    pub fn section(mut self) -> Self {
+        self.section = true;
+        self
     }
 }
 
 impl IntoAttributes for Link {
     fn write(self, attributes: &mut Attributes) {
-        let here = crate::base::is_here(&self.0);
-        attributes.set("href", self.0);
+        let current = crate::base::current(&self.url, self.section);
+        attributes.set("href", self.url);
 
-        if here {
-            attributes.set("aria-current", "page");
+        if let Some(current) = current {
+            attributes.set("aria-current", current);
         }
     }
 }
@@ -272,6 +302,11 @@ mod tests {
     fn a_link_is_the_url_it_was_given() {
         let mut attributes = Attributes::new();
         Link::to("/files").write(&mut attributes);
+
+        assert_eq!(attributes.render(), " href=\"/files\"");
+
+        let mut attributes = Attributes::new();
+        Link::to("/files").section().write(&mut attributes);
 
         assert_eq!(attributes.render(), " href=\"/files\"");
     }

@@ -81,6 +81,26 @@ is no page to be on, nothing is marked: a background job has no request, and a
 [live fragment](live-fragments) renders again for every viewer a publish
 reaches, none of whom is promised to be on the page that triggered it.
 
+**`section` marks the pages below it too.** A main navigation points at
+`/users`, and the reader opening `/users/123` has not left that section:
+
+```rust
+#[exos::get("/users")]
+async fn index() -> Page { /* ... */ }
+
+view! { <a {index::link().section()}>"Users"</a> }
+```
+
+It is then `aria-current="true"` rather than `"page"`, because the section
+holding the page being read is not that page. CSS that matches `[aria-current]`
+styles both, and only one link in the document still claims to be the page.
+
+Saying it on the link rather than on the route is what lets the same route be
+linked to from a nav bar and from a page's body, where marking the section would
+be wrong. Below means below the separator, so `/users` does not take in
+`/users-archive`, and the root is nobody's section: every page is below `/`, so
+a link to it is marked on `/` alone whether or not `section` was said.
+
 For anything that is not a route, `exos::url` joins a path to the base:
 
 ```rust

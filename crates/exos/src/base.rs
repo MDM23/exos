@@ -46,7 +46,7 @@
 //!
 //! Relative URLs need that answered wherever a fragment can render, which is
 //! why they are out. Marking the link to the page being read needs it only
-//! where there is a page, so [`is_here`] answers out of the request scope and
+//! where there is a page, so [`current`] answers out of the request scope and
 //! answers "no" from a background job or a live fragment, which is the honest
 //! answer for markup that renders again for every viewer a publish reaches.
 //!
@@ -145,14 +145,26 @@ pub fn url(path: impl AsRef<str>) -> String {
     format!("{}/{}", base_path(), path.as_ref().trim_start_matches('/'))
 }
 
-/// Whether `url` is the page being rendered.
+/// How `url` stands to the page being rendered, as `aria-current` says it.
 ///
-/// What [`Link`](crate::Link) marks with `aria-current`. False wherever there is
-/// no page to be on, which is a background job and a live fragment alike.
-pub(crate) fn is_here(url: &str) -> bool {
-    crate::scope::current()
-        .and_then(|scope| scope.get::<Here>())
-        .is_some_and(|here| here.0 == url)
+/// What [`Link`](crate::Link) writes. `None` wherever there is no page to be on,
+/// which is a background job and a live fragment alike.
+///
+/// A `section` is marked for the pages below it as well, and marked `"true"`
+/// there rather than `"page"`, since the section holding the page being read is
+/// not that page.
+pub(crate) fn current(url: &str, section: bool) -> Option<&'static str> {
+    let here = crate::scope::current().and_then(|scope| scope.get::<Here>())?;
+
+    if here.0 == url {
+        return Some("page");
+    }
+
+    // Below means below the separator, so `/users` does not take in
+    // `/users-archive`. It also leaves the root out, which already ends with
+    // the slash this adds and so matches nothing: every page is below `/`, and
+    // a home link marked on all of them says nothing about where the reader is.
+    (section && here.0.starts_with(&format!("{url}/"))).then_some("true")
 }
 
 /// The page a request is for, as a link to it would be written.
@@ -307,15 +319,58 @@ mod tests {
         crate::with_scope(|| {
             crate::scope().set(Here(String::from("/docs/effects")));
 
-            assert!(is_here("/docs/effects"));
-            assert!(!is_here("/docs/routes"));
-            assert!(!crate::detached(|| is_here("/docs/effects")));
+            assert_eq!(current("/docs/effects", false), Some("page"));
+            assert_eq!(current("/docs/routes", false), None);
+            assert_eq!(crate::detached(|| current("/docs/effects", false)), None);
         });
     }
 
     #[test]
     fn nothing_is_current_outside_a_request() {
-        assert!(!is_here("/docs/effects"));
+        assert_eq!(current("/docs/effects", false), None);
+    }
+
+    /// A nav bar's section link, which is marked while a page under it is read
+    /// and marked as the section rather than as the page.
+    #[test]
+    fn a_section_takes_in_the_pages_below_it() {
+        crate::with_scope(|| {
+            crate::scope().set(Here(String::from("/users/123")));
+
+            assert_eq!(current("/users", true), Some("true"));
+            assert_eq!(current("/users", false), None);
+            assert_eq!(
+                current("/users-archive", true),
+                None,
+                "below is below the separator, not any prefix of the string"
+            );
+        });
+    }
+
+    #[test]
+    fn a_section_being_the_page_itself_is_still_the_page() {
+        crate::with_scope(|| {
+            crate::scope().set(Here(String::from("/users")));
+
+            assert_eq!(current("/users", true), Some("page"));
+        });
+    }
+
+    /// Every page is below the root, so a home link marked on all of them says
+    /// nothing about where the reader is. Asking for it changes nothing, and a
+    /// mount point is the same root spelled with the base on the front.
+    #[test]
+    fn the_root_is_nobodys_section() {
+        crate::with_scope(|| {
+            crate::scope().set(Here(String::from("/users/123")));
+            assert_eq!(current("/", true), None);
+
+            crate::scope().set(Here(String::from("/")));
+            assert_eq!(current("/", true), Some("page"));
+
+            crate::scope().set(Here(String::from("/admin/users")));
+            assert_eq!(current("/admin/", true), None);
+        });
     }
 
     #[test]

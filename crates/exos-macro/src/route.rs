@@ -119,6 +119,10 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
             /// The `href`, and `aria-current="page"` where this is the page
             /// being rendered, so a nav bar marks where it is without every
             /// template that draws one being told which page that is.
+            ///
+            /// [`section`](::exos::Link::section) marks it while a page below
+            /// it is being read as well, which is what a nav bar's link to a
+            /// section wants.
             pub fn link(#(#path_parameters),*) -> ::exos::Link {
                 ::exos::Link::to(url(#(#arguments),*))
             }
