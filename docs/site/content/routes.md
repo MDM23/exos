@@ -68,6 +68,10 @@ renaming the route or changing its parameter type breaks every link to it rather
 than leaving one that 404s. It is the same guarantee `show::get(..)` gives an
 action, and it is the one to reach for.
 
+Each parameter is percent-encoded as one segment, so a title carrying a `/`, a
+`?` or a percent sign names itself instead of reshaping the URL around it. A
+wildcard (`{*rest}`) is a path rather than a segment and keeps its separators.
+
 **`link` writes the whole anchor.** It is that URL, plus `aria-current="page"`
 where the URL is the page being rendered:
 

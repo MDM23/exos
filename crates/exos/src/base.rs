@@ -58,6 +58,7 @@
 //! self-verifying: if the script is running at all, the URL it came from was
 //! right.
 
+use core::fmt::{self, Display, Write as _};
 use std::sync::OnceLock;
 
 use axum::extract::{OriginalUri, Request};
@@ -143,6 +144,75 @@ pub(crate) fn path() -> &'static str {
 /// another host.
 pub fn url(path: impl AsRef<str>) -> String {
     format!("{}/{}", base_path(), path.as_ref().trim_start_matches('/'))
+}
+
+/// One path parameter, as a route's typed `url` writes it.
+///
+/// Everything outside the unreserved set becomes a percent escape, so the value
+/// names itself rather than changing the shape of the URL around it: a `/` in a
+/// title is a character of that title and not another segment, and `?`, `#` and
+/// `%` likewise. The typed caller exists so that a link cannot be wrong, and a
+/// value written in raw is the one way left to make one that is.
+///
+/// ```
+/// assert_eq!(exos::segment(&"one/two?three"), "one%2Ftwo%3Fthree");
+/// ```
+pub fn segment(value: &impl Display) -> String {
+    encoded(value, false)
+}
+
+/// A wildcard parameter, whose value is a path rather than one segment.
+///
+/// The separators are kept and everything between them is a [`segment`], so
+/// what arrives as a path stays one and each name in it still names itself.
+///
+/// ```
+/// assert_eq!(exos::segments(&"notes/a b.md"), "notes/a%20b.md");
+/// ```
+pub fn segments(value: &impl Display) -> String {
+    encoded(value, true)
+}
+
+fn encoded(value: &impl Display, separators: bool) -> String {
+    let mut out = String::new();
+
+    // Writing into a String is infallible, so the result carries no
+    // information worth propagating.
+    let _ = write!(
+        Encoding {
+            out: &mut out,
+            separators
+        },
+        "{value}"
+    );
+
+    out
+}
+
+/// Percent-encoding on the way through, so a `Display` value is written once.
+struct Encoding<'out> {
+    out: &'out mut String,
+    /// Whether `/` is a separator to keep, which is what a wildcard means.
+    separators: bool,
+}
+
+impl fmt::Write for Encoding<'_> {
+    fn write_str(&mut self, text: &str) -> fmt::Result {
+        self.out.reserve(text.len());
+
+        for byte in text.bytes() {
+            match byte {
+                b'-' | b'.' | b'0'..=b'9' | b'A'..=b'Z' | b'_' | b'a'..=b'z' | b'~' => {
+                    self.out.push(char::from(byte));
+                }
+                b'/' if self.separators => self.out.push('/'),
+                // Uppercase, which is what RFC 3986 asks producers for.
+                _ => write!(self.out, "%{byte:02X}")?,
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// How `url` stands to the page being rendered, as `aria-current` says it.
@@ -390,5 +460,40 @@ mod tests {
     #[should_panic(expected = "a base starts with `/`")]
     fn a_relative_base_is_refused() {
         drop(normalize("admin"));
+    }
+
+    /// The unreserved set goes through as itself, and everything else is a
+    /// percent escape: an escaped character always decodes back, so encoding
+    /// more than strictly necessary costs characters and never meaning.
+    #[test]
+    fn a_segment_keeps_the_unreserved_set_and_escapes_the_rest() {
+        assert_eq!(segment(&"aZ09-._~"), "aZ09-._~");
+        assert_eq!(segment(&"a b"), "a%20b");
+        assert_eq!(segment(&"100%"), "100%25");
+        assert_eq!(segment(&"a#b?c"), "a%23b%3Fc");
+    }
+
+    /// The one that matters. A `/` in a value is a character of the value, and
+    /// written raw it would be a segment boundary the route knows nothing
+    /// about.
+    #[test]
+    fn a_segment_is_one_segment() {
+        assert_eq!(segment(&"one/two"), "one%2Ftwo");
+        assert_eq!(segments(&"one/two"), "one/two");
+        assert_eq!(segments(&"one/t o"), "one/t%20o");
+    }
+
+    /// Bytes rather than characters, which is the only encoding a URL has.
+    #[test]
+    fn what_is_not_ascii_is_escaped_as_the_bytes_it_is_made_of() {
+        assert_eq!(segment(&"schön"), "sch%C3%B6n");
+    }
+
+    /// Anything that displays, which is what a path parameter's type is held
+    /// to already: the caller interpolates it, so `u32` and `Uuid` arrive here
+    /// the same way a `String` does.
+    #[test]
+    fn a_number_needs_no_escaping_and_gets_none() {
+        assert_eq!(segment(&7_u32), "7");
     }
 }

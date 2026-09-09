@@ -386,6 +386,7 @@ writing against it usually means something above was meant to do the job.
 | `IntoJs<T>` | The bound every helper takes, so a call site can pass an expression or a plain value |
 | `IntoPayload<T>` | The bound a generated caller's body takes |
 | `call(method, url, payload)` | What a typed caller records. By hand it gives up the checking the caller exists for |
+| `segment(v)`, `segments(v)` | What a typed `url` writes a parameter with: one percent-encoded segment, or a wildcard, which keeps its separators |
 | `Placement` | `Element` or `Document`, which is where a signal's name lives |
 | `Field<M>` | The type of the per-field tokens `#[model]` generates |
 | `ModelRejection` | What the `Model<T>` extractor refuses with. Only `Refused` is meant for a viewer |
@@ -413,5 +414,5 @@ The runtime reads a vocabulary of attributes the helpers above emit:
 projected sentence, `data-text`, `data-show`, `data-class`, `data-attr`,
 `data-prop` and `data-bind` with its `-kind`, `-state`, `-rules`, `-arms`,
 `-check` and `-rows` companions bind, `data-on-*` dispatches, and `data-row`,
-`data-rows` and `<exos-live data-topic data-token>` are structure. They are the wire
-between the two halves rather than something to write.
+`data-rows` and `<exos-live data-topic data-token>` are structure. They are the
+wire between the two halves rather than something to write.

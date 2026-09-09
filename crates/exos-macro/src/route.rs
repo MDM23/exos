@@ -52,7 +52,7 @@ pub(crate) fn expand(attribute: TokenStream, item: TokenStream, method: &str) ->
 fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
     let name = &function.sig.ident;
     let (path_types, body_type) = extractors(function);
-    let (format, arguments) = template(path, name.span());
+    let (format, arguments, written) = template(path, name.span());
 
     // A path parameter the signature does not account for would silently
     // produce a broken URL, so refuse rather than guess.
@@ -111,7 +111,7 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
             /// destructures, so a renamed route or a changed parameter breaks
             /// every link to it rather than producing one that 404s.
             pub fn url(#(#path_parameters),*) -> ::std::string::String {
-                ::exos::url(::std::format!(#format, #(#arguments),*))
+                ::exos::url(::std::format!(#format, #(#written),*))
             }
 
             #[doc = #link_summary]
@@ -171,24 +171,43 @@ fn extractors(function: &ItemFn) -> (Vec<syn::GenericArgument>, Option<syn::Gene
     (path_types, body_type)
 }
 
-/// Turns `/files/{id}/favorite` into a format string and its arguments.
-fn template(path: &LitStr, span: Span) -> (String, Vec<Ident>) {
+/// Turns `/files/{id}/favorite` into a format string, its arguments, and how
+/// each argument is written into it.
+///
+/// A parameter is percent-encoded as one segment, so a value carrying `/`, `?`
+/// or a percent sign names itself rather than reshaping the URL. A wildcard
+/// (`{*rest}`) is a path and keeps its separators, which is the whole of the
+/// difference between the two.
+fn template(path: &LitStr, span: Span) -> (String, Vec<Ident>, Vec<TokenStream>) {
     let value = path.value();
     let mut format = String::new();
     let mut arguments = Vec::new();
+    let mut written = Vec::new();
 
     for segment in value.split('/').skip(1) {
         format.push('/');
 
-        if segment.starts_with('{') && segment.ends_with('}') {
-            format.push_str("{}");
-            arguments.push(Ident::new(&format!("p{}", arguments.len()), span));
-        } else {
+        let Some(name) = segment
+            .strip_prefix('{')
+            .and_then(|it| it.strip_suffix('}'))
+        else {
             format.push_str(segment);
-        }
+            continue;
+        };
+
+        let argument = Ident::new(&format!("p{}", arguments.len()), span);
+
+        written.push(if name.starts_with('*') {
+            quote! { ::exos::segments(&#argument) }
+        } else {
+            quote! { ::exos::segment(&#argument) }
+        });
+
+        arguments.push(argument);
+        format.push_str("{}");
     }
 
-    (format, arguments)
+    (format, arguments, written)
 }
 
 #[cfg(test)]
@@ -207,7 +226,7 @@ mod tests {
 
     fn parts(path: &str) -> (String, usize) {
         let literal = LitStr::new(path, Span::call_site());
-        let (format, arguments) = template(&literal, Span::call_site());
+        let (format, arguments, _) = template(&literal, Span::call_site());
         (format, arguments.len())
     }
 
@@ -259,6 +278,22 @@ mod tests {
             "{expanded}"
         );
         assert!(expanded.contains("Link :: to (url (p0))"), "{expanded}");
+    }
+
+    /// Which encoder a parameter is written with, since the two differ only in
+    /// what they do with a `/` and the wrong one is invisible until a value
+    /// carries one. What each of them then writes is [`exos::segment`]'s own
+    /// business and is tested where it lives.
+    #[test]
+    fn a_wildcard_is_written_as_a_path_and_everything_else_as_a_segment() {
+        let segment = expand_ok(r#""/files/{id}""#, "async fn show(Path(id): Path<u32>) {}");
+        let wildcard = expand_ok(
+            r#""/files/{*rest}""#,
+            "async fn under(Path(rest): Path<String>) {}",
+        );
+
+        assert!(segment.contains("exos :: segment (& p0)"), "{segment}");
+        assert!(wildcard.contains("exos :: segments (& p0)"), "{wildcard}");
     }
 
     /// One place decides what a route's URL is. Prefixing in both would put the

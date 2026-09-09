@@ -3,14 +3,13 @@
 Nine findings from a review of the tree on 2026-09-07, read against the code,
 and what is left of them.
 
-Status: triage. Three entries are built, the two marked below and the duplicate
-id; the rest is not. The review itself was an outside
-document and is not in the tree, so this is written to stand without it: every
-entry says what the defect is rather than pointing at where it was reported.
-Entries that belong to a document that already exists say so rather than being
-restated, and the three proposals this project declines are kept with the
-reason, so they are not re-proposed by the next reader who has the same good
-idea.
+Status: triage. Four entries are built, the three marked below and the
+duplicate id; the rest is not. The review itself was an outside document and is
+not in the tree, so this is written to stand without it: every entry says what
+the defect is rather than pointing at where it was reported. Entries that
+belong to a document that already exists say so rather than being restated, and
+the three proposals this project declines are kept with the reason, so they are
+not re-proposed by the next reader who has the same good idea.
 
 Everything below was checked against the source. Two entries are marked **read,
 not run**: their shape is plain in the code and the race they describe was not
@@ -19,7 +18,7 @@ reproduced here.
 ## Worth fixing
 
 Six defects, each small, each with a fix that fits in the file it is in. They
-are ordered by what a user would notice, and the first two are built.
+are ordered by what a user would notice. Three of them are marked done.
 
 ### A lagged stream is told it will catch up, and it will not. Done
 
@@ -59,15 +58,22 @@ solved this already by capturing the URL before the fetch and comparing after
 it; navigation needs the same, but against a generation counter rather than a
 URL, since navigating twice to the same URL is a thing people do.
 
-### A typed URL does not encode what it interpolates
+### A typed URL does not encode what it interpolates. Done
 
-[route.rs](../../crates/exos-macro/src/route.rs) builds `url` with a bare
+[route.rs](../../crates/exos-macro/src/route.rs) built `url` with a bare
 `format!`, so a `String` parameter carrying `/`, `?`, `#` or a percent sign
-writes a different URL than the one the type promised. This is the sharpest of
+wrote a different URL than the one the type promised. This was the sharpest of
 the six, because the typed caller exists precisely so that a link cannot be
-wrong: it currently proves the parameters are of the right type and not that
-they name what they are given. Percent-encode each parameter as one path
-segment. A wildcard parameter is the exception and needs its own answer.
+wrong: it proved the parameters were of the right type and not that they name
+what they are given.
+
+`exos::segment` percent-encodes one parameter, keeping the unreserved set and
+escaping everything else as the bytes it is made of. The wildcard's own answer
+is `exos::segments`, which keeps the separators and encodes each name between
+them, because `{*rest}` is a path rather than a segment. The macro picks by the
+shape of the parameter in the path, and a route test builds a URL and asks for
+it, so the round trip through axum's own decoding is what is asserted rather
+than the spelling alone.
 
 ### A textarea's value is not an attribute
 

@@ -42,6 +42,17 @@ mod globbed {
     }
 }
 
+/// A name rather than a number, which is where encoding starts to matter.
+#[exos::get("/files/named/{name}")]
+async fn named(axum::extract::Path(name): axum::extract::Path<String>) -> Markup {
+    view! { <h1>{ name }</h1> }
+}
+
+#[exos::get("/files/under/{*rest}")]
+async fn under(axum::extract::Path(rest): axum::extract::Path<String>) -> Markup {
+    view! { <h1>{ rest }</h1> }
+}
+
 async fn status(uri: &str, method: &str) -> StatusCode {
     exos::app()
         .oneshot(
@@ -54,6 +65,28 @@ async fn status(uri: &str, method: &str) -> StatusCode {
         .await
         .expect("the router answers")
         .status()
+}
+
+/// What a GET of `uri` answered with, which is how a URL a caller built is
+/// checked against the route it was built from.
+async fn read(uri: &str) -> String {
+    let response = exos::app()
+        .oneshot(
+            Request::builder()
+                .uri(uri)
+                .body(Body::empty())
+                .expect("a valid request"),
+        )
+        .await
+        .expect("the router answers");
+
+    assert_eq!(response.status(), StatusCode::OK, "{uri}");
+
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("the body is readable");
+
+    String::from_utf8(bytes.to_vec()).expect("the body is UTF-8")
 }
 
 #[tokio::test]
@@ -163,4 +196,26 @@ async fn one_application_answers_more_than_one_request() {
 
         assert_eq!(response.status(), StatusCode::OK, "{uri}");
     }
+}
+
+/// The typed caller proves a parameter is of the right type. Encoding is what
+/// makes it prove the parameter *names* what it was given: a `/` written in
+/// raw is another segment, so the URL lands on another route or on none, and
+/// the one thing the caller exists to rule out is a link that is wrong.
+#[tokio::test]
+async fn a_parameter_names_itself_rather_than_reshaping_the_url() {
+    let url = named::url(String::from("annual report/2026?draft"));
+
+    assert_eq!(url, "/files/named/annual%20report%2F2026%3Fdraft");
+    assert_eq!(read(&url).await, "<h1>annual report/2026?draft</h1>");
+}
+
+/// A wildcard is a path rather than one segment, so the separators it was
+/// given are separators and everything between them is still a name.
+#[tokio::test]
+async fn a_wildcard_keeps_the_path_it_was_given() {
+    let url = under::url(String::from("notes/a b/c?d"));
+
+    assert_eq!(url, "/files/under/notes/a%20b/c%3Fd");
+    assert_eq!(read(&url).await, "<h1>notes/a b/c?d</h1>");
 }

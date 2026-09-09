@@ -56,7 +56,7 @@ pub use crate::{
         attr, bind, class, on, on_change, on_click, on_dblclick, on_focusout, on_input, on_keydown,
         on_submit, preserve, prop, show, text,
     },
-    base::{base_path, url},
+    base::{base_path, segment, segments, url},
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry},
     effect::{Effect, EffectStream, Step},
