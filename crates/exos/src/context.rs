@@ -68,13 +68,20 @@ pub(crate) fn declare<T: Send + Sync + 'static>(value: T, at: &'static Location<
     static DECLARED: OnceLock<RwLock<HashSet<(TypeId, &'static Location<'static>)>>> =
         OnceLock::new();
 
-    let first = DECLARED
+    // The guard is held across the provide rather than dropped after the
+    // insert, so whoever is told the type is already declared is told it by
+    // somebody who has finished declaring it. Between the two there is a
+    // window where an application has been built, is serving a request, and
+    // reads a type nothing has stored yet, which surfaces as a panic in a
+    // handler rather than as anything the caller could have seen coming.
+    // Two threads building an application at once is exactly what a test
+    // module does.
+    let mut declared = DECLARED
         .get_or_init(RwLock::default)
         .write()
-        .expect("the declaration lock is never held across a panic")
-        .insert((TypeId::of::<T>(), at));
+        .expect("the declaration lock is never held across a panic");
 
-    if first {
+    if declared.insert((TypeId::of::<T>(), at)) {
         drop(provide(value));
     }
 }
@@ -120,6 +127,8 @@ pub fn data<T: Send + Sync + 'static>() -> Arc<T> {
     reason = "a failing assertion is the point of a test"
 )]
 mod tests {
+    use std::{sync::Barrier, thread};
+
     use super::*;
 
     // Distinct types per test, which is the discipline the module docs ask of
@@ -140,6 +149,54 @@ mod tests {
     fn a_missing_type_is_none_rather_than_a_panic() {
         struct NeverProvided;
         assert!(try_data::<NeverProvided>().is_none());
+    }
+
+    /// Two threads building an application at once, which is what a module of
+    /// tests does. Whoever is told the type is already declared has to be told
+    /// so by somebody who has finished declaring it, or it goes on to serve a
+    /// request out of a registry that holds nothing yet.
+    ///
+    /// The window is a few instructions wide, so this races over a good many
+    /// types rather than one: a declaration is per type, so one type is one
+    /// chance at it for the life of the process.
+    #[test]
+    fn a_declaration_is_finished_before_a_second_caller_is_told_of_it() {
+        macro_rules! race {
+            ($($name:ident)*) => {$(
+                {
+                    struct $name;
+
+                    // One call site, so both threads declare the same type at
+                    // the same place and exactly one of them is the first.
+                    fn seed() {
+                        declare($name, Location::caller());
+                    }
+
+                    let ready = Arc::new(Barrier::new(2));
+                    let racing: Vec<_> = (0..2)
+                        .map(|_| {
+                            let ready = Arc::clone(&ready);
+
+                            thread::spawn(move || {
+                                ready.wait();
+                                seed();
+                                try_data::<$name>().is_some()
+                            })
+                        })
+                        .collect();
+
+                    for racer in racing {
+                        assert!(
+                            racer.join().expect("neither thread panics"),
+                            "a declaration was announced before it had landed"
+                        );
+                    }
+                }
+            )*};
+        }
+
+        race!(A B C D E F G H I J K L M N O P Q R S T);
+        race!(U V W X Y Z);
     }
 
     #[test]
