@@ -1210,16 +1210,17 @@
                 navigate(payload, true);
                 break;
 
-            case "page": {
-                const next = new DOMParser().parseFromString(payload, "text/html");
-                morph(document.body, next.body);
-                if (next.title) document.title = next.title;
+            case "page":
                 // A page handed over by an action is a navigation that saved a
-                // fetch, so it starts the same way one does.
+                // fetch, so it starts the same way one does, and it is the
+                // navigation the tab is on: an older fetch still in flight has
+                // been overtaken by this document and must not land on it.
+                navigation += 1;
+
+                present(new DOMParser().parseFromString(payload, "text/html"));
                 reseed();
                 autofocus();
                 break;
-            }
 
             case "patch":
                 applyPatch(payload);
@@ -1398,7 +1399,15 @@
         const isField = from instanceof HTMLInputElement || from instanceof HTMLTextAreaElement;
 
         if (!isBound && isField) {
-            const value = to.getAttribute("value");
+            // A textarea has no value attribute: what it is worth is what is
+            // written between its tags. Reading the attribute there finds
+            // nothing, so an unbound textarea kept whatever had been typed
+            // into it while an <input> in the same position took the server's
+            // word, which is one control disagreeing with its neighbour about
+            // who owns the value.
+            const value =
+                from instanceof HTMLTextAreaElement ? to.textContent : to.getAttribute("value");
+
             if (value !== null && from.value !== value) from.value = value;
             if (from instanceof HTMLInputElement) from.checked = to.hasAttribute("checked");
         }
@@ -1499,20 +1508,68 @@
 
     window.addEventListener("popstate", () => navigate(location.href, false));
 
+    // What a whole document arriving replaces, wherever one arrives: a
+    // navigation, a page an action handed over, and a repair after a
+    // reconnect all put one up and have to put up the same amount of it.
+    //
+    // The body, the title, and how to read the document. `lang` and `dir` are
+    // on <html> rather than in it, so a morph of the body cannot reach them,
+    // and a page in another language served to a tab that was reading one
+    // would keep the previous language: wrong for a screen reader, for
+    // hyphenation, for quotation marks, and for which side the text starts on.
+    //
+    // The rest of the head is not reconciled. Stylesheets and scripts have
+    // lifecycles a morph cannot fake, and getting that right is a design
+    // rather than a line here.
+    function present(next) {
+        morph(document.body, next.body);
+
+        if (next.title) document.title = next.title;
+
+        for (const name of ["lang", "dir"]) {
+            const value = next.documentElement.getAttribute(name);
+
+            if (value === null) document.documentElement.removeAttribute(name);
+            else document.documentElement.setAttribute(name, value);
+        }
+    }
+
+    // Which navigation the tab is on.
+    //
+    // Click through two links quickly and the answers come back in whatever
+    // order the network decides. Only the newest one may land: the page the
+    // reader asked for last is the page they are waiting for, and an older
+    // answer arriving after it would take them somewhere they have left, with
+    // the URL bar agreeing.
+    //
+    // A counter rather than the URL the repair path compares, because
+    // navigating twice to the same URL is a thing people do.
+    let navigation = 0;
+
     async function navigate(url, push) {
+        const generation = ++navigation;
+
         announce("busy", { kind: "navigate", url });
 
         try {
             const response = await fetch(url, { headers: { "X-Exos-Navigate": "true" } });
-            const next = new DOMParser().parseFromString(await response.text(), "text/html");
+            const html = await response.text();
 
-            morph(document.body, next.body);
+            // Superseded while this was in flight. Nothing to undo: this
+            // navigation never touched the document.
+            if (generation !== navigation) return;
+
+            present(new DOMParser().parseFromString(html, "text/html"));
             reseed();
             autofocus();
-            document.title = next.title;
             if (push) history.pushState(null, "", response.url || url);
             window.scrollTo(0, 0);
         } catch (error) {
+            // A newer navigation is the tab's answer to this one having
+            // failed, and loading the URL it has moved on from would be worse
+            // than the failure.
+            if (generation !== navigation) return;
+
             console.error("[exos] navigation failed, falling back to a load:", error);
             location.assign(url);
         } finally {
@@ -1654,8 +1711,7 @@
             // page it is on would be the worse bug of the two.
             if (location.href !== url) return;
 
-            morph(document.body, next.body);
-            if (next.title) document.title = next.title;
+            present(next);
         } catch (error) {
             // Quietly, and without the fallback to a full load that a
             // navigation makes. The stream has only just come back and the

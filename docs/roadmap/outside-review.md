@@ -3,13 +3,15 @@
 Nine findings from a review of the tree on 2026-09-07, read against the code,
 and what is left of them.
 
-Status: triage. Four entries are built, the three marked below and the
-duplicate id; the rest is not. The review itself was an outside document and is
-not in the tree, so this is written to stand without it: every entry says what
-the defect is rather than pointing at where it was reported. Entries that
-belong to a document that already exists say so rather than being restated, and
-the three proposals this project declines are kept with the reason, so they are
-not re-proposed by the next reader who has the same good idea.
+Status: the six defects and the duplicate id are built, and each entry says
+what closed it. What is left is the two grants, which want to become a stage of
+[sessions and identity](sessions-and-identity.md) rather than to live here. The
+review itself was an outside document and is not in the tree, so this is
+written to stand without it: every entry says what the defect was rather than
+pointing at where it was reported. Entries that belong to a document that
+already exists say so rather than being restated, and the three proposals this
+project declines are kept with the reason, so they are not re-proposed by the
+next reader who has the same good idea.
 
 Everything below was checked against the source. Two entries are marked **read,
 not run**: their shape is plain in the code and the race they describe was not
@@ -17,8 +19,8 @@ reproduced here.
 
 ## Worth fixing
 
-Six defects, each small, each with a fix that fits in the file it is in. They
-are ordered by what a user would notice. Three of them are marked done.
+Six defects, each small, each with a fix that fitted in the file it was in.
+They are ordered by what a user would notice, and all six are built.
 
 ### A lagged stream is told it will catch up, and it will not. Done
 
@@ -49,14 +51,15 @@ clears `subscribed`, so the next mutation asks again.
 Backoff and request ordering are the larger version of this and are worth
 having, but they are a different entry from the one-line lie.
 
-### An older navigation can land on a newer one
+### An older navigation can land on a newer one. Done
 
-`navigate` awaits a fetch and then morphs, with no check that it is still the
-navigation the tab wants. Click through two links quickly, have the first
-answer last, and the page and the URL end up on the first. The repair path
+`navigate` awaited a fetch and then morphed, with no check that it was still
+the navigation the tab wanted. Click through two links quickly, have the first
+answer last, and the page and the URL ended up on the first. The repair path
 solved this already by capturing the URL before the fetch and comparing after
-it; navigation needs the same, but against a generation counter rather than a
-URL, since navigating twice to the same URL is a thing people do.
+it; navigation counts instead, since navigating twice to the same URL is a
+thing people do. A page an action hands over takes a number too: it is the
+navigation the tab is on, and a fetch still in flight has been overtaken by it.
 
 ### A typed URL does not encode what it interpolates. Done
 
@@ -75,26 +78,28 @@ shape of the parameter in the path, and a route test builds a URL and asks for
 it, so the round trip through axum's own decoding is what is asserted rather
 than the spelling alone.
 
-### A textarea's value is not an attribute
+### A textarea's value is not an attribute. Done
 
-The property reapply in `syncAttributes` reads `to.getAttribute("value")`,
-which a `<textarea>` never has: its value is its text content. An unbound
-textarea a user has typed into therefore keeps the user's text when the server
-sends a new one, while an `<input>` in the same position takes the server's.
-Read the incoming value per element kind and the branch keeps the one exception
-it means to have, which is a control a binding owns.
+The property reapply in `syncAttributes` read `to.getAttribute("value")`, which
+a `<textarea>` never has: its value is its text content. An unbound textarea a
+user had typed into therefore kept the user's text when the server sent a new
+one, while an `<input>` in the same position took the server's. The incoming
+value is now read per element kind, and the branch keeps the one exception it
+means to have, which is a control a binding owns.
 
-### A navigation changes the body and nothing else about the document
+### A navigation changes the body and nothing else about the document. Done
 
-`navigate` morphs `document.body` and sets the title. `lang`, `dir`, and
-anything in the head do not move, so a page in another language is served as
+`navigate` morphed `document.body` and set the title. `lang`, `dir`, and
+anything in the head did not move, so a page in another language was served as
 one and read as the previous one. Localization is the reason to care and is why
-this is not cosmetic: [localization](localization.md) puts the locale on the
-document, and navigation currently unputs it.
+this was not cosmetic: [localization](localization.md) puts the locale on the
+document, and navigation unput it.
 
-The narrow fix is `lang` and `dir` on `<html>`, which is the part with an
-obvious right answer. Head reconciliation in general, stylesheets and scripts
-and their lifecycles, is a design and not a fix.
+`lang` and `dir` move now, and a page saying nothing about either clears them
+rather than inheriting what was there. One function puts a whole document up,
+so a navigation, a page an action handed over and a repair after a reconnect
+all move the same amount of it. Head reconciliation in general, stylesheets and
+scripts and their lifecycles, is still a design rather than a fix.
 
 ## The one that was undersold, and is done
 

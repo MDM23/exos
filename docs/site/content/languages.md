@@ -66,7 +66,9 @@ view! {
 
 `lang`, and `dir` where the script runs right to left. Not decoration: the
 browser hands `document.documentElement.lang` to every `Intl` call, so this is
-how the two halves of a page agree on the language.
+how the two halves of a page agree on the language. Both move with a
+navigation, which morphs the body and would otherwise leave a page in one
+language being read as the one before it.
 
 A response that reached step 2 carries `Vary: Accept-Language`, including one
 whose request sent no header at all, because a request that had sent one would

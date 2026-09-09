@@ -141,6 +141,100 @@ test("a navigation starts the page as its own markup declares it", async () => {
     assert.equal(window.exos.signals.draft, "", "the arriving page said it starts empty");
 });
 
+// A page in another language is served as one and has to be read as one. `lang`
+// and `dir` sit on <html>, which a morph of the body cannot reach, so a
+// navigation used to leave the previous language in place: a screen reader in
+// the wrong voice, hyphenation by the wrong rules, and the text starting on the
+// wrong side of the box.
+test("a navigation brings the language of the page it lands on", async () => {
+    const window = boot(`<p>hello</p>`);
+    window.document.documentElement.lang = "en";
+
+    const page = (attributes) => async () => ({
+        text: async () =>
+            `<!DOCTYPE html><html ${attributes}><head><title>next</title></head>` +
+            `<body><p>next</p></body></html>`,
+        url: "http://localhost/next",
+    });
+
+    window.fetch = page(`lang="ar" dir="rtl"`);
+    await window.exos.navigate("http://localhost/next", true);
+    await settled();
+
+    assert.equal(window.document.documentElement.lang, "ar");
+    assert.equal(window.document.documentElement.dir, "rtl");
+
+    // And a page that says nothing about its language does not inherit the
+    // one before it, which would be the same lie the other way round.
+    window.fetch = page("");
+    await window.exos.navigate("http://localhost/plain", true);
+    await settled();
+
+    assert.ok(!window.document.documentElement.hasAttribute("lang"));
+    assert.ok(!window.document.documentElement.hasAttribute("dir"));
+});
+
+// Click through two links quickly and the answers come back in whatever order
+// the network decides. Only the newest may land: the older one's page, and the
+// URL that goes with it, are somewhere the reader has already left.
+test("an older navigation does not land on the page a newer one put up", async () => {
+    const window = boot(`<main id="page">first</main>`);
+
+    const answers = [];
+    window.fetch = (url) =>
+        new Promise((resolve) =>
+            answers.push(() =>
+                resolve({
+                    text: async () =>
+                        `<!DOCTYPE html><html><head><title>${url}</title></head>` +
+                        `<body><main id="page">${url}</main></body></html>`,
+                    url,
+                }),
+            ),
+        );
+
+    const slow = window.exos.navigate("http://localhost/a", true);
+    const quick = window.exos.navigate("http://localhost/b", true);
+
+    // The second click answers first and the first click answers last, which
+    // is the whole of what the network is allowed to do here.
+    answers[1]();
+    await quick;
+    answers[0]();
+    await slow;
+    await settled();
+
+    assert.equal(window.document.getElementById("page").textContent, "http://localhost/b");
+    assert.equal(window.document.title, "http://localhost/b");
+    assert.equal(window.location.href, "http://localhost/b");
+});
+
+// A textarea's value is what is written between its tags rather than an
+// attribute, so reading `value` off the incoming element found nothing and the
+// control kept what had been typed into it. The input beside it took the
+// server's word, which is two controls disagreeing about who owns a value.
+test("an unbound textarea takes the value the server sent, like the input beside it", async () => {
+    const window = boot(
+        `<form id="form"><textarea>first</textarea><input value="first"></form>`,
+    );
+
+    const note = window.document.querySelector("textarea");
+    const title = window.document.querySelector("input");
+
+    note.value = "half typed";
+    title.value = "half typed";
+
+    window.exos.applyPatch(
+        `<form id="form"><textarea>second</textarea><input value="second"></form>`,
+    );
+    await settled();
+
+    assert.equal(title.value, "second");
+    assert.equal(note.value, "second");
+    assert.ok(note.isConnected, "and it is the same control, not a rebuilt one");
+});
+
+
 test("a navigation places the caret the arriving page asks for", async () => {
     const window = boot(`<a href="/next">next</a>`);
 

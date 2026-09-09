@@ -130,5 +130,6 @@ JavaScript and nothing else works.
 If pages were only effects, every page URL would serve two representations
 depending on who asked, which means `Vary` on a custom header and two cache
 entries forever. Navigation does not need the effect anyway: the runtime
-fetches the document and morphs `<body>`. `Effect::page` is for the narrower
-case where an action wants to hand over a new page and save a round-trip.
+fetches the document and morphs `<body>`, taking the title and the `lang` and
+`dir` of the page it landed on with it. `Effect::page` is for the narrower case
+where an action wants to hand over a new page and save a round-trip.
