@@ -3,19 +3,17 @@
 Nine findings from a review of the tree on 2026-09-07, read against the code,
 and what is left of them.
 
-Status: the six defects and the duplicate id are built, and each entry says
-what closed it. What is left is the two grants, which want to become a stage of
-[sessions and identity](sessions-and-identity.md) rather than to live here. The
-review itself was an outside document and is not in the tree, so this is
-written to stand without it: every entry says what the defect was rather than
-pointing at where it was reported. Entries that belong to a document that
-already exists say so rather than being restated, and the three proposals this
-project declines are kept with the reason, so they are not re-proposed by the
-next reader who has the same good idea.
+Status: built, all of it, and each entry says what closed it and what was
+declined on the way. The review itself was an outside document and is not in
+the tree, so this is written to stand without it: every entry says what the
+defect was rather than pointing at where it was reported. Entries that belong
+to a document that already exists say so rather than being restated, and the
+three proposals this project declines are kept with the reason, so they are not
+re-proposed by the next reader who has the same good idea.
 
-Everything below was checked against the source. Two entries are marked **read,
-not run**: their shape is plain in the code and the race they describe was not
-reproduced here.
+Everything below was checked against the source, and the two findings that were
+read rather than run when this was written have since been run: the race one of
+them describes has its own test.
 
 ## Worth fixing
 
@@ -128,30 +126,85 @@ the second overwriting the first. That is what makes duplicate copies keep
 their nodes, and it holds for a duplicated `id` an application writes by hand
 as well.
 
-## Two grants that outlive the authority behind them
+## Two grants that outlive the authority behind them. Done
 
-Both findings raised as urgent are one sentence: cryptographically valid is not
-currently the same as still authorized, and exos has no way to say the
-difference. **Read, not run.**
+Both findings were raised as urgent and as one sentence: cryptographically
+valid is not the same as still authorized, and exos has no way to say the
+difference. Read against the code they turned out to be one defect, one
+missing lever, and one thing that was never as bad as it read.
 
-- `Topic::verify` in [live.rs](../../crates/exos/src/live.rs) checks an HMAC
-  over the topic and the session id. Nothing consults the application about
-  whether that session is still one. A browser that keeps a cookie and a token
-  from before it was signed out can subscribe again, and the empty audience set
-  the resolver correctly returns does not stop it, because a topic grant is not
-  an audience.
-- `stream()` resolves identity and then registers, with an await between. A
-  rotation landing in that window closes the streams it can see, and the one
-  being opened is not yet one of them, so it registers afterwards with the
-  audiences of the session that has just gone.
+### The registration race, which was the defect
 
-[Sessions and identity](sessions-and-identity.md) stage 4 already knows the
-second shape of this: it is why signing in answers with a `reload` rather than
-a patch. What it does not have is a fence. One generation counter per session
-name, checked under the registry lock at `open` and at `subscribe`, answers
-both, and the cluster version of it is the awkward part rather than the
-process-local one. This wants to become a stage of that document rather than
-living here.
+`stream()` resolved identity and then registered, with an await between. A
+rotation landing in that window closed the streams it could see, and the one
+being opened was not yet one of them, so it registered afterwards with the
+audiences of the session that had just gone and held them for as long as the
+tab stayed open. The window contained the application's database call, so it
+was tens of milliseconds rather than instants.
+
+The fix is the order, not a counter. A connection registers before the resolver
+is awaited and is identified afterwards, and `identify` answers with whether
+there was still a connection to identify: a revocation in the window now finds
+something to end, and the stream is told so and answers the tab with an ended
+stream rather than a status, since `EventSource` treats a status as a failure
+and stops. Nothing can reach a connection in between, because a send matches
+audiences and a publish matches topics and it has neither.
+
+### The token, which the connection already fences
+
+`Topic::verify` checks an HMAC over the topic and the session id, and consults
+nobody about whether that session is still one. What that is worth is smaller
+than it looks. `subscribe` does not resolve identity; it writes topics onto a
+connection that was identified when it opened, so a revocation that ends the
+stream ends the grant with it, and the tab comes back and is resolved again. A
+browser whose cookie has actually been taken away verifies nothing at all,
+because a token without a session verifies against nothing.
+
+What is left is a browser that goes on sending a cookie the application has
+retired, and what it can watch is a live fragment, whose content is
+viewer-independent by
+[this crate's own invariant](../../crates/exos/src/live.rs). The lever below
+closes it wherever the application knows to say so; closing it in general would
+take asking the resolver again in `subscribe`, which is the wrong trade twice
+over. `Ok(Audiences::none())` today means *anonymous*, *a name nobody
+recognises* and *signed out* at once, so the resolver would need a fourth
+answer, which is a breaking change to every `identify`. And it would put a
+database call on every change of a tab's visible fragment set, where the whole
+design is one resolve per connection.
+
+### The lever that was missing
+
+A resolver runs once per connection, so authority taken away without the cookie
+changing, a viewer removed from a team, an account disabled, reached nothing at
+all: exos holds a name and nothing behind it, and had no way to be told. It
+does now. `disconnect` was already written, already crosses the bus and already
+had tests, and it is public: the half that knows says so, every tab under that
+name ends, and each comes back asking who it is now.
+
+### What a generation counter would have cost
+
+The counter this document originally proposed closes the last microseconds of
+the race, between the middleware reading the cookie and the handler taking the
+registry lock. It needs revocations to be *remembered* rather than performed,
+which is a map keyed by session name with a retention policy: a tunable, a
+sweeper, and a new silent failure when the sweep is too eager.
+
+On a cluster it is worse than awkward, and worth writing down before anybody
+proposes it again. Ending a stream is idempotent and needs no agreement: a
+revocation crosses as a key, every node applies it to its own registry, and a
+node that never held one of that browser's tabs does nothing. Remembering a
+revocation is shared state with a lifetime. Every node would have to hold the
+same set of retired names for the same window, which means a frame that is not
+a fan-out but a fact to be replicated, a node that joins late or misses a frame
+holding a set with a hole in it and no way to know, and clocks agreeing on when
+an entry may go. That is a coordination problem in a system that has carefully
+avoided having one: [more than one instance](more-than-one-instance.md) is
+built on frames nobody has to acknowledge.
+
+So the counter stays unbuilt. What is left of the race is a window with no
+await in it, and the residual case is a browser whose stream request read a
+cookie that a rotation retired between that read and the registry lock, which
+costs that tab a stale identity until it reconnects.
 
 ## Where it moves a document that already exists
 

@@ -51,13 +51,10 @@ mod stream;
 
 pub use crate::live::{
     bus::{Frame, Kind, Sent, deliver},
-    stream::{connected, connection_count, publish, send},
+    stream::{connected, connection_count, disconnect, publish, send},
 };
 
-pub(crate) use crate::live::{
-    bus::set as set_bus,
-    stream::{disconnect, routes},
-};
+pub(crate) use crate::live::{bus::set as set_bus, stream::routes};
 
 // -----------------------------------------------------------------------------
 //                                    TOPICS

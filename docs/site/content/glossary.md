@@ -238,6 +238,7 @@ and is written by the server; see
 | `App::identify(resolver)` | Says what a session name stands for. Once, where the application is built |
 | `send(&audience, &effect)` | Pushes an effect to a person wherever they are |
 | `connected(&audience)` | Whether anybody by that name is streaming. A hint, never a guarantee |
+| `disconnect(&name)` | Ends the streams a session name opened, for authority taken away without the cookie changing |
 
 ## More than one instance
 

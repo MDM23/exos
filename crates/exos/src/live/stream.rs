@@ -133,8 +133,10 @@ const RETRY_WHEN_RENAMED: Duration = Duration::from_millis(150);
 struct Connection {
     /// Who the server decided this connection belongs to when it opened.
     ///
-    /// Never written again, and never from a client request. The module docs
-    /// say why this is its own field rather than part of `topics`.
+    /// Empty between registering and [`identify`], which is a connection
+    /// nothing can address. Written once there and never again, and never from
+    /// a client request. The module docs say why this is its own field rather
+    /// than part of `topics`.
     audiences: HashSet<String>,
     /// What this connection is called on a bus.
     ///
@@ -554,9 +556,17 @@ fn reduction(of: &str, value: &impl Hash) -> String {
 /// Registers a connection under a fresh id, with the receiver its response
 /// drains.
 ///
-/// The audiences arrive here rather than being written afterwards, so there is
-/// no moment where a connection is reachable and does not yet know who it is.
-fn open(session: Option<&Id>, audiences: HashSet<String>) -> (String, broadcast::Receiver<Event>) {
+/// Unidentified. [`identify`] writes who it belongs to once the resolver has
+/// answered, and registering first is the whole point: a connection that is
+/// not in the registry cannot be found, so a revocation landing while the
+/// resolver was being awaited would sweep past it and leave it to register
+/// afterwards as the browser that has just stopped existing.
+///
+/// Nothing can reach it in the meantime. A [`send`] matches audiences and a
+/// [`publish`] matches topics, and a connection that has just opened has
+/// neither, so being in the registry early costs an entry nothing addresses
+/// and buys the only moment in which a revocation can see it.
+fn open(session: Option<&Id>) -> (String, broadcast::Receiver<Event>) {
     let id = mint();
     let (sender, receiver) = broadcast::channel(CAPACITY);
 
@@ -566,7 +576,7 @@ fn open(session: Option<&Id>, audiences: HashSet<String>) -> (String, broadcast:
         .insert(
             id.clone(),
             Connection {
-                audiences,
+                audiences: HashSet::new(),
                 key: reduction("connection", &id),
                 sender,
                 session: session.map(|name| reduction("session", name)),
@@ -577,14 +587,47 @@ fn open(session: Option<&Id>, audiences: HashSet<String>) -> (String, broadcast:
     (id, receiver)
 }
 
+/// Writes who a connection belongs to, and says whether there was still one.
+///
+/// False is a revocation that landed while the resolver was being awaited. The
+/// browser this stream was opening for is not that browser any more, and the
+/// audiences it was about to be given belong to the session that has gone.
+fn identify(id: &str, audiences: HashSet<String>) -> bool {
+    let mut registry = connections()
+        .lock()
+        .expect("the registry lock is never held across a panic");
+
+    let Some(connection) = registry.get_mut(id) else {
+        return false;
+    };
+
+    connection.audiences = audiences;
+
+    true
+}
+
 /// Ends every stream that opened under `name`, and says how many.
 ///
-/// What a rotation does to the browser it renamed. A session name that has
-/// been replaced or taken away leaves that browser's streams identified as
-/// somebody who no longer exists, and there is no way to correct one in place:
-/// re-resolving it would carry a connection across the boundary rotation
-/// exists to draw, so a stolen cookie with a stream open would be upgraded to
-/// the new identity rather than cut off by it.
+/// What a rotation does to the browser it renamed, and what an application
+/// calls when it takes authority away without touching the cookie. A resolver
+/// runs once per connection, so a viewer removed from a team or an account
+/// disabled leaves every open stream carrying the audiences it was resolved
+/// with, and exos cannot know: it holds a name and nothing behind it. This is
+/// how the half that does know says so.
+///
+/// ```no_run
+/// # fn disable(_: &exos::Id) {}
+/// # fn example(name: &exos::Id) {
+/// disable(name);
+/// exos::disconnect(name);
+/// # }
+/// ```
+///
+/// A session name that has been replaced or taken away leaves that browser's
+/// streams identified as somebody who no longer exists, and there is no way to
+/// correct one in place: re-resolving it would carry a connection across the
+/// boundary rotation exists to draw, so a stolen cookie with a stream open
+/// would be upgraded to the new identity rather than cut off by it.
 ///
 /// Ending them is what rotation is for, and the client needs nothing new to
 /// cope. `EventSource` reconnects on its own, carrying whatever cookie the
@@ -613,7 +656,7 @@ fn open(session: Option<&Id>, audiences: HashSet<String>) -> (String, broadcast:
 /// # Panics
 ///
 /// If the registry lock was poisoned; see [`connection_count`].
-pub(crate) fn disconnect(name: &Id) -> usize {
+pub fn disconnect(name: &Id) -> usize {
     let key = reduction("session", name);
     let ended = revoke(&key);
 
@@ -742,19 +785,36 @@ async fn stream() -> Response {
     // streams a name opened, and audiences cannot be worked backwards.
     let session = crate::session().id();
 
+    // Registered before the resolver is awaited rather than after it, so that
+    // a revocation landing in between has something to find; see [`open`].
+    let (id, receiver) = open(session.as_ref());
+
     let audiences = match identity::resolve(session.clone()).await {
         Ok(audiences) => audiences.into_keys(),
         Err(error) => {
             // Refusing is the loud version of what opening anyway would do
             // silently. `EventSource` retries on its own, so a resolver that
             // fails because a database blinked costs a delay rather than a tab.
+            close(&id);
             eprintln!("exos: a stream was refused because identifying it failed: {error}");
 
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };
 
-    let (id, receiver) = open(session.as_ref(), audiences);
+    if !identify(&id, audiences) {
+        // Revoked while this was opening, so the browser it was opening for is
+        // not this browser any more. Answered as an ended stream rather than
+        // as a status, which is the same thing a rotation does to a stream
+        // that was already open: the tab comes straight back and is resolved
+        // again, with whatever cookie it holds by then. A status would be a
+        // worse answer than it looks, since `EventSource` treats one as a
+        // failure and stops rather than reconnecting.
+        return Sse::new(tokio_stream::once(Ok::<Event, Infallible>(
+            Event::default().retry(RETRY_WHEN_RENAMED),
+        )))
+        .into_response();
+    }
 
     let events = BroadcastStream::new(receiver)
         // A tab that fell behind is repaired rather than skipped ahead. It
@@ -841,6 +901,20 @@ mod tests {
 
     use super::*;
     use crate::Markup;
+
+    /// A stream that has finished opening: registered, and then identified as
+    /// whoever the resolver said. What [`stream`] does either side of awaiting
+    /// one, for the tests that are about neither.
+    fn opened(
+        session: Option<&Id>,
+        audiences: HashSet<String>,
+    ) -> (String, broadcast::Receiver<Event>) {
+        let (id, receiver) = open(session);
+
+        assert!(identify(&id, audiences), "nothing has revoked anything");
+
+        (id, receiver)
+    }
 
     /// The routes with the layers [`app`](crate::app) puts around them.
     ///
@@ -1002,7 +1076,7 @@ mod tests {
 
     #[tokio::test]
     async fn subscribing_keeps_only_the_topics_it_can_prove() {
-        let (id, _receiver) = open(None, HashSet::new());
+        let (id, _receiver) = opened(None, HashSet::new());
 
         let real = Topic::new("presence", &(42_u32,));
         let forged = Topic::new("presence", &(43_u32,));
@@ -1030,7 +1104,7 @@ mod tests {
     /// profile, subscribes to nothing at all.
     #[tokio::test]
     async fn a_topic_somebody_else_was_served_is_dropped() {
-        let (id, _receiver) = open(None, HashSet::new());
+        let (id, _receiver) = opened(None, HashSet::new());
 
         let topic = Topic::new("presence", &(44_u32,));
         let (_theirs, stolen) = browser(&[&topic]);
@@ -1077,7 +1151,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_connection_is_addressable_as_whoever_opened_it() {
-        let (_id, _receiver) = open(None, identity::Audiences::of(&Viewer(1)).into_keys());
+        let (_id, _receiver) = opened(None, identity::Audiences::of(&Viewer(1)).into_keys());
 
         assert!(connected(&Viewer(1)));
         assert!(!connected(&Viewer(2)), "and as nobody else");
@@ -1089,7 +1163,7 @@ mod tests {
     /// and nothing arriving from a client reaches the second.
     #[tokio::test]
     async fn a_client_cannot_talk_its_way_into_an_audience() {
-        let (id, _receiver) = open(None, HashSet::new());
+        let (id, _receiver) = opened(None, HashSet::new());
 
         // The exact string the server would have written had it decided this
         // connection was viewer 3, handed back as a topic with a real token.
@@ -1118,7 +1192,7 @@ mod tests {
         let audiences = identity::Audiences::of(&Viewer(4)).into_keys();
 
         {
-            let (id, _receiver) = open(None, audiences);
+            let (id, _receiver) = opened(None, audiences);
             assert!(connected(&Viewer(4)));
 
             close(&id);
@@ -1157,6 +1231,23 @@ mod tests {
         );
     }
 
+    /// The fence, at the level it is drawn. A connection registers before the
+    /// resolver is awaited, so a revocation landing in that window finds it
+    /// rather than sweeping past, and what `identify` answers is whether it
+    /// did: a stream told no is a browser that is not that browser any more.
+    #[tokio::test]
+    async fn a_stream_revoked_while_it_was_opening_is_never_identified() {
+        let name = Id::random();
+        let (id, _receiver) = open(Some(&name));
+
+        assert_eq!(disconnect(&name), 1, "the stream that was still opening");
+        assert!(!identify(
+            &id,
+            identity::Audiences::of(&Viewer(30)).into_keys()
+        ));
+        assert!(!connected(&Viewer(30)), "so it is nobody at all");
+    }
+
     // ---- sending to a person ------------------------------------------------
 
     /// How many events are waiting. `sse::Event` cannot be read back, so a unit
@@ -1178,9 +1269,10 @@ mod tests {
     async fn an_effect_reaches_every_stream_in_its_audience_and_no_other() {
         let audience = identity::Audiences::of(&Viewer(5)).into_keys();
 
-        let (_id, mut tab) = open(None, audience.clone());
-        let (_id, mut other_tab) = open(None, audience);
-        let (_id, mut somebody_else) = open(None, identity::Audiences::of(&Viewer(6)).into_keys());
+        let (_id, mut tab) = opened(None, audience.clone());
+        let (_id, mut other_tab) = opened(None, audience);
+        let (_id, mut somebody_else) =
+            opened(None, identity::Audiences::of(&Viewer(6)).into_keys());
 
         send(&Viewer(5), &crate::Effect::reload());
 
@@ -1191,7 +1283,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_step_becomes_one_event() {
-        let (_id, mut tab) = open(None, identity::Audiences::of(&Viewer(7)).into_keys());
+        let (_id, mut tab) = opened(None, identity::Audiences::of(&Viewer(7)).into_keys());
 
         let effect = crate::Effect::patch(Markup(String::from("<p id=\"x\"></p>")))
             .focus("#x")
@@ -1206,7 +1298,7 @@ mod tests {
     /// so it costs nothing and says nothing.
     #[tokio::test]
     async fn sending_nothing_or_to_nobody_is_silent() {
-        let (_id, mut tab) = open(None, identity::Audiences::of(&Viewer(8)).into_keys());
+        let (_id, mut tab) = opened(None, identity::Audiences::of(&Viewer(8)).into_keys());
 
         send(&Viewer(8), &crate::Effect::none());
         send(&Viewer(9), &crate::Effect::reload());
@@ -1282,7 +1374,7 @@ mod tests {
     /// key does.
     #[tokio::test]
     async fn a_topic_is_not_a_way_into_an_audience() {
-        let (id, mut receiver) = open(None, HashSet::new());
+        let (id, mut receiver) = opened(None, HashSet::new());
 
         let claimed = identity::key(&Viewer(10));
         let topic = Topic::from_raw(&claimed);
@@ -1313,8 +1405,8 @@ mod tests {
     /// delivery from elsewhere reaches exactly what a local publish would.
     #[tokio::test]
     async fn a_frame_reaches_the_connection_watching_its_key() {
-        let (id, mut watching) = open(None, HashSet::new());
-        let (_id, mut elsewhere) = open(None, HashSet::new());
+        let (id, mut watching) = opened(None, HashSet::new());
+        let (_id, mut elsewhere) = opened(None, HashSet::new());
 
         let topic = Topic::new("presence", &(20_u32,));
         let (name, proof) = browser(&[&topic]);
@@ -1337,8 +1429,8 @@ mod tests {
     #[tokio::test]
     async fn a_frame_reaches_the_set_its_kind_names_and_no_other() {
         let key = identity::key(&Viewer(21));
-        let (_id, mut person) = open(None, identity::Audiences::of(&Viewer(21)).into_keys());
-        let (id, mut tab) = open(None, HashSet::new());
+        let (_id, mut person) = opened(None, identity::Audiences::of(&Viewer(21)).into_keys());
+        let (id, mut tab) = opened(None, HashSet::new());
 
         let topic = Topic::from_raw(&key);
         let (name, proof) = browser(&[&topic]);
@@ -1365,8 +1457,8 @@ mod tests {
     /// cookie proved the names before they crossed.
     #[tokio::test]
     async fn a_forwarded_subscription_is_what_the_connection_watches() {
-        let (id, mut tab) = open(None, HashSet::new());
-        let (_id, mut elsewhere) = open(None, HashSet::new());
+        let (id, mut tab) = opened(None, HashSet::new());
+        let (_id, mut elsewhere) = opened(None, HashSet::new());
 
         let topic = Topic::new("presence", &(22_u32,));
         let watching = vec![topic.as_str().to_owned()];
@@ -1394,7 +1486,7 @@ mod tests {
     #[tokio::test]
     async fn a_rotation_ends_the_streams_that_opened_under_the_old_name() {
         let name = Id::random();
-        let (_id, _receiver) = open(
+        let (_id, _receiver) = opened(
             Some(&name),
             identity::Audiences::of(&Viewer(11)).into_keys(),
         );
@@ -1411,11 +1503,11 @@ mod tests {
         let mine = Id::random();
         let theirs = Id::random();
 
-        let (_id, _mine) = open(
+        let (_id, _mine) = opened(
             Some(&mine),
             identity::Audiences::of(&Viewer(12)).into_keys(),
         );
-        let (_id, _theirs) = open(
+        let (_id, _theirs) = opened(
             Some(&theirs),
             identity::Audiences::of(&Viewer(13)).into_keys(),
         );
@@ -1434,11 +1526,11 @@ mod tests {
         let name = Id::random();
         let theirs = Id::random();
 
-        let (_id, _receiver) = open(
+        let (_id, _receiver) = opened(
             Some(&name),
             identity::Audiences::of(&Viewer(15)).into_keys(),
         );
-        let (_id, _elsewhere) = open(
+        let (_id, _elsewhere) = opened(
             Some(&theirs),
             identity::Audiences::of(&Viewer(16)).into_keys(),
         );
@@ -1457,7 +1549,7 @@ mod tests {
     /// anonymous visitor in the process.
     #[tokio::test]
     async fn a_stream_that_opened_with_no_name_is_never_ended_by_a_rotation() {
-        let (_id, _receiver) = open(None, identity::Audiences::of(&Viewer(14)).into_keys());
+        let (_id, _receiver) = opened(None, identity::Audiences::of(&Viewer(14)).into_keys());
 
         assert_eq!(disconnect(&Id::random()), 0);
         assert!(connected(&Viewer(14)));

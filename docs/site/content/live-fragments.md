@@ -173,6 +173,21 @@ in as somebody else keeps the audiences it had until the stream drops. That is
 why sign-in answers with `Effect::reload()`, which drops the document and the
 stream with it.
 
+Rotating or ending a session ends that browser's streams for the same reason,
+and they come back resolved again. What exos cannot see is authority taken away
+while the name stays the same, a viewer removed from a team or an account
+disabled, because it holds a name and nothing behind it. The half that knows
+says so:
+
+```rust
+disable(&name);
+exos::disconnect(&name);
+```
+
+Every tab that opened under that name ends, on every node, and comes back
+asking the resolver who it is now. Calling it where nothing changed costs those
+tabs one reconnect.
+
 ## Sending to a person
 
 `publish` reaches whoever is watching a fragment. `send` reaches whoever *is*

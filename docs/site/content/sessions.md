@@ -178,6 +178,13 @@ exists to draw: somebody holding a stolen cookie with a stream open would be
 *upgraded* to the new identity rather than cut off by it. Ending the stream is
 what makes rotation mean what it says.
 
+**Authority taken away without the cookie changing is yours to say.** A viewer
+removed from a team or an account disabled leaves the name it was and every
+stream under it resolved as whoever it used to be, and exos holds a name and
+nothing behind it. `exos::disconnect(&name)` ends those streams the way a
+rotation does, wherever they are, and each comes back asking your resolver who
+that name is now.
+
 Pushing those tabs a reload would not work either, and it is worth knowing why
 before reaching for it in application code. The push would go out while the
 response carrying the new cookie was still being written, so a tab acting on it

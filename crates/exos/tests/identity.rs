@@ -21,6 +21,7 @@ use axum::{
     response::Response,
 };
 use exos::{Audience, Audiences, Id, connected, data};
+use tokio::sync::Notify;
 use tower::ServiceExt as _;
 
 /// Who a name stands for, which exos never learns.
@@ -77,6 +78,23 @@ impl Audience for Visitor {
 /// The name that stands in for a database that is not answering.
 const UNREACHABLE: &str = "ffffffffffffffffffffffffffffffff";
 
+/// The name whose resolution is held open, so that a test can do something to
+/// a browser while its stream is still opening. A database call is where that
+/// window is in anything real, and this is the only way to stand in one.
+static HELD: Mutex<Option<Id>> = Mutex::new(None);
+
+/// Said when the resolver has been entered, and said back when it may answer.
+static RESOLVING: Notify = Notify::const_new();
+static ANSWERED: Notify = Notify::const_new();
+
+fn hold(name: &Id) {
+    *HELD.lock().expect("the lock is not poisoned") = Some(name.clone());
+}
+
+fn held(name: &Id) -> bool {
+    HELD.lock().expect("the lock is not poisoned").as_ref() == Some(name)
+}
+
 /// exos's half of signing in, which is the rotation. What a name means is the
 /// application's; what a rotation does to the streams it renamed is exos's.
 #[exos::post("/sign-in")]
@@ -105,6 +123,12 @@ fn app() -> Router {
 
             if name.as_str() == UNREACHABLE {
                 return Err("the sessions table is unreachable".into());
+            }
+
+            // Where the window is, held open on request.
+            if held(&name) {
+                RESOLVING.notify_one();
+                ANSWERED.notified().await;
             }
 
             Ok(match data::<Sessions>().viewer(&name).await {
@@ -271,4 +295,81 @@ async fn opening_a_stream_never_names_the_browser() {
     let stream = opened(None).await;
 
     assert!(stream.headers().get(header::SET_COOKIE).is_none());
+}
+
+/// Authority can be taken away without the name changing: a viewer removed
+/// from a team, an account disabled, a permission revoked. A resolver runs
+/// once per connection, so every open stream goes on carrying what it was
+/// resolved with, and exos cannot know any of it: it holds a name and nothing
+/// behind it. The half that does know says so, and the streams end the way a
+/// rotation ends them.
+#[tokio::test]
+async fn an_application_can_end_the_streams_a_name_opened() {
+    let id = known(Who { id: 5, team: 50 });
+
+    let stream = opened(Some(id.as_str())).await;
+    assert!(connected(&Viewer(5)));
+
+    assert_eq!(exos::disconnect(&id), 1, "the one stream it had opened");
+    assert!(!connected(&Viewer(5)));
+
+    drop(stream);
+}
+
+/// The window the resolver's await opens. A rotation walks the connections and
+/// ends the ones the old name holds; a stream that has read the cookie but not
+/// registered yet is not one of them, so without a fence it would register
+/// afterwards as the browser that has just stopped existing, and hold that
+/// identity for as long as the tab stayed open.
+///
+/// Registering before the resolver is awaited is what closes it: the walk finds
+/// a connection to end, and the stream is told so when it comes back to say who
+/// it is.
+#[tokio::test]
+async fn a_rotation_landing_while_a_stream_opens_leaves_nothing_behind() {
+    let id = known(Who { id: 9, team: 90 });
+    hold(&id);
+
+    let racing = {
+        let id = id.clone();
+        tokio::spawn(async move { opened(Some(id.as_str())).await })
+    };
+
+    // The stream has read the cookie and is inside the resolver.
+    RESOLVING.notified().await;
+
+    let response = app()
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/sign-in")
+                .header(header::COOKIE, format!("exos={id}"))
+                .body(Body::empty())
+                .expect("a valid request"),
+        )
+        .await
+        .expect("the router answers");
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+
+    ANSWERED.notify_one();
+    let stream = racing.await.expect("the stream task does not panic");
+
+    assert!(
+        !connected(&Viewer(9)),
+        "the stream that was opening did not register as the name that has gone"
+    );
+
+    // Told to come straight back rather than refused: `EventSource` treats a
+    // status as a failure and stops, where a stream that ends is one it
+    // reopens, with whatever cookie the browser holds by then.
+    assert_eq!(stream.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(stream.into_body(), usize::MAX)
+        .await
+        .expect("the body is readable");
+    let body = String::from_utf8(body.to_vec()).expect("the body is text");
+
+    assert!(body.contains("retry:"), "{body:?}");
+    assert!(!body.contains("event: connection"), "{body:?}");
 }

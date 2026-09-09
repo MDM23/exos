@@ -67,7 +67,8 @@ pub use crate::{
     },
     keys::Keys,
     live::{
-        Fragment, Frame, Kind, Sent, Topic, connected, connection_count, deliver, publish, send,
+        Fragment, Frame, Kind, Sent, Topic, connected, connection_count, deliver, disconnect,
+        publish, send,
     },
     locale::{Direction, Lang, LocaleSet, PluralCategory, lang, locale},
     message::{Count, Counted, Enumerable},
