@@ -73,8 +73,10 @@ them is a bug:
 - **An unverifiable topic is dropped** and the rest of the subscription applies,
   because one stale fragment left over from a previous page should not cost a
   tab its other subscriptions.
-- **A lagged tab skips ahead**, through the `filter_map` on the broadcast
-  stream, because a client that cannot keep up should not stall the publisher.
+- **A lagged tab has its stream ended**, rather than skipping ahead, because a
+  patch is a fragment's whole state and the message it missed may be the last
+  one that fragment ever sends. It still never stalls the publisher: it
+  reconnects and fetches the page back.
 - **A send to a closed receiver is discarded**, because that is a tab that went
   away between the check and the send.
 - **A publish nobody is watching is free and silent**, which is what lets a
@@ -95,7 +97,7 @@ reconnect, which "reads as a network glitch". Both are written down as known
 failure modes and neither is detectable from inside a running process.
 
 That list is the design working. A framework that shouted at a user's flaky
-network would be worse than one that skips ahead quietly. But **silence is only
+network would be worse than one that repairs itself quietly. But **silence is only
 defensible when it is counted**, and none of these is counted. The instrument
 set below is derived from that list rather than from a general wish to have
 tracing.

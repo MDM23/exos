@@ -1723,6 +1723,14 @@
                 source?.close();
                 source = null;
                 openStream();
+            } else if (!response.ok) {
+                // A 500 or a 503 leaves the server watching whatever it was
+                // watching before, and the comparison above means nothing asks
+                // again while the visible set holds still. Forgetting what was
+                // claimed is what makes the next mutation retry, rather than
+                // the tab believing a fragment is subscribed for as long as it
+                // stays on screen.
+                subscribed = "";
             }
         } catch (error) {
             console.error("[exos] could not subscribe:", error);

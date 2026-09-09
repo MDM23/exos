@@ -1140,6 +1140,28 @@ test("a connection the server has forgotten is dropped and reopened", async () =
     assert.equal(claimed(window).at(-1), "fresh");
 });
 
+// A claim the server refused is not one it is holding. The comparison that
+// keeps this quiet is against what the tab believes it has already said, so a
+// tab that remembered a rejected claim as sent would wait for patches nobody
+// is sending it, and go on waiting for as long as the page holds still.
+test("a subscription the server refused is claimed again on the next change", async () => {
+    const window = boot(live());
+    const [stream] = window.transport.streams;
+
+    window.transport.responses.status = 503;
+    stream.emit("connection", "named");
+    await settled();
+
+    assert.equal(claimed(window).length, 1, "it tried once");
+
+    window.transport.responses.status = 204;
+    window.document.body.appendChild(window.document.createElement("p"));
+    await settled();
+
+    assert.equal(claimed(window).length, 2, "and again, though the set is the same");
+    assert.deepEqual(watching(window), [["presence-1", "token-for-presence-1"]]);
+});
+
 /** What the tab last told the server it is watching. */
 const watching = (window) =>
     window.transport.requests.filter((request) => request.url === "/_exos/subscribe").at(-1)

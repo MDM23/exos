@@ -84,10 +84,11 @@ const SUBSCRIBE: &str = "/_exos/subscribe";
 /// with a step would make the two indistinguishable to the client's dispatch.
 const HELLO: &str = "connection";
 
-/// How far a slow tab may lag before it starts missing messages.
+/// How far a slow tab may lag before its stream is ended.
 ///
-/// Missing them is the correct failure: a client that cannot keep up with a
-/// live feed should skip ahead rather than stall the publisher.
+/// A publisher is never stalled by a tab that cannot keep up. What such a tab
+/// gets is a reconnect and the page fetched back, rather than the messages it
+/// missed being silently skipped; see [`stream`].
 const CAPACITY: usize = 64;
 
 /// How long a browser waits before reopening a stream that dropped.
@@ -756,9 +757,19 @@ async fn stream() -> Response {
     let (id, receiver) = open(session.as_ref(), audiences);
 
     let events = BroadcastStream::new(receiver)
-        // A lagged tab skips ahead rather than stalling the publisher; the
-        // next publish of anything it watches brings it back in line.
-        .filter_map(|event| event.ok().map(Ok::<Event, Infallible>));
+        // A tab that fell behind is repaired rather than skipped ahead. It
+        // still never stalls the publisher, but skipping is only harmless for
+        // a value the next message restates: a patch is a fragment's whole
+        // state, so a fragment that settles after the publish this tab missed
+        // stays wrong on it until something publishes that fragment again,
+        // which may be never.
+        //
+        // Ending the stream is the repair that already exists. `EventSource`
+        // reopens, the greeting it gets is not the first one, and the client
+        // fetches the page back, which is exactly what a dropped connection
+        // costs. That makes the capacity above a tuning number rather than a
+        // silent boundary on correctness.
+        .map_while(|event| event.ok().map(Ok::<Event, Infallible>));
 
     Sse::new(Disconnect {
         greeting: Some(Event::default().retry(RETRY).event(HELLO).data(&id)),
@@ -773,8 +784,8 @@ async fn stream() -> Response {
 /// browser goes away.
 ///
 /// The greeting rides here rather than being pushed through the channel so that
-/// it cannot be dropped by the lag filter above, and so that it is first by
-/// construction rather than by a race with the first publish. Without the
+/// a tab lagging cannot end the stream before its name has arrived, and so that
+/// it is first by construction rather than by a race with the first publish. Without the
 /// deregistration the registry grows by one entry per tab ever opened, and
 /// every publish walks them all.
 struct Disconnect<S> {
@@ -1114,6 +1125,36 @@ mod tests {
         }
 
         assert!(!connected(&Viewer(4)));
+    }
+
+    /// A tab that fell behind is repaired rather than skipped ahead. Skipping
+    /// is only harmless where the next message restates the value, and a patch
+    /// is the fragment's whole state: the publish that settled it is exactly
+    /// the one such a tab missed, and nothing is scheduled to send it again.
+    /// Ending the stream hands the tab to the reconnect path, which fetches
+    /// the page back.
+    #[tokio::test]
+    async fn a_tab_that_lags_past_the_capacity_is_told_to_start_again() {
+        let (id, body) = greeted().await;
+
+        let sender = connections()
+            .lock()
+            .expect("the registry lock is never held across a panic")
+            .get(&id)
+            .expect("the stream registered itself before it greeted anybody")
+            .sender
+            .clone();
+
+        // One more than the channel holds, with nothing draining it, which is
+        // the slow tab this is about.
+        for _ in 0..=CAPACITY {
+            drop(sender.send(Event::default().event("patch").data("<p id=\"x\"></p>")));
+        }
+
+        assert!(
+            body.into_data_stream().next().await.is_none(),
+            "the stream ends rather than carrying on a message short"
+        );
     }
 
     // ---- sending to a person ------------------------------------------------

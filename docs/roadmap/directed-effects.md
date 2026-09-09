@@ -348,9 +348,10 @@ Three ways a push is lost, none of them fixable by trying harder.
 
 - **No connection.** The recipient is offline. The notification exists in the
   store and their next page load renders it.
-- **A slow tab.** The broadcast channel holds 64 messages and a lagging
-  receiver skips ahead. Correct for patches, which the next publish repairs,
-  and lossy for events, which it does not.
+- **A slow tab.** The broadcast channel holds 64 messages and a receiver that
+  falls behind has its stream ended. Its fragments come back with the page it
+  refetches; the effects it was sent in the meantime do not, because there is
+  nothing to render them from.
 - **The reconnect gap.** `EventSource` reconnects on its own, the server has
   forgotten the connection, and the client re-subscribes. Anything published in
   between is gone.

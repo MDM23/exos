@@ -3,8 +3,8 @@
 Nine findings from a review of the tree on 2026-09-07, read against the code,
 and what is left of them.
 
-Status: triage. One entry is built, the duplicate id below; the rest is not.
-The review itself was an outside
+Status: triage. Three entries are built, the two marked below and the duplicate
+id; the rest is not. The review itself was an outside
 document and is not in the tree, so this is written to stand without it: every
 entry says what the defect is rather than pointing at where it was reported.
 Entries that belong to a document that already exists say so rather than being
@@ -19,9 +19,9 @@ reproduced here.
 ## Worth fixing
 
 Six defects, each small, each with a fix that fits in the file it is in. They
-are ordered by what a user would notice.
+are ordered by what a user would notice, and the first two are built.
 
-### A lagged stream is told it will catch up, and it will not
+### A lagged stream is told it will catch up, and it will not. Done
 
 [stream.rs](../../crates/exos/src/live/stream.rs) drops the `Lagged` error in a
 `filter_map`, under a comment saying the next publish brings the tab back in
@@ -31,20 +31,21 @@ publish stays wrong on that tab until something publishes it again, which may
 be never. The tab is not told, the server is not told, and the repair path that
 already exists for a dropped connection never runs.
 
-The fix is the repair, not a bigger channel: on `Lagged`, end the stream.
-`EventSource` reopens, the greeting is not the first one, and
+The fix was the repair, not a bigger channel: `map_while` ends the stream on
+`Lagged`. `EventSource` reopens, the greeting is not the first one, and
 [loose ends](loose-ends.md#the-reconnect-gap-is-repaired-from-the-client)
-already refetches the page. Sixty-four is then a tuning number rather than a
-silent correctness boundary.
+already refetches the page. Sixty-four is now a tuning number rather than a
+silent correctness boundary, which is what the constant's own docs say. A test
+lags a real stream past the capacity and reads the end of its body.
 
-### A subscription that failed is remembered as sent
+### A subscription that failed is remembered as sent. Done
 
 `syncSubscriptions` in [runtime.js](../../crates/exos/js/runtime.js) writes
 `subscribed` before the fetch and only unwinds it on a thrown error or a 410. A
 500 or a 503 leaves the client believing the server is watching what it asked
 for, and the comparison above the fetch means nothing will ask again until the
-visible set changes. One line: any response that is not `ok` and not 410 clears
-`subscribed` so the next mutation retries.
+visible set changes. One line: any response that is not `ok` and not 410 now
+clears `subscribed`, so the next mutation asks again.
 
 Backoff and request ordering are the larger version of this and are worth
 having, but they are a different entry from the one-line lie.
