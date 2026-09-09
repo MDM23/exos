@@ -158,6 +158,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
+                    .header("x-exos", "true")
                     .uri(uri)
                     .header("content-type", "application/json")
                     .body(Body::from(payload.to_owned()))
@@ -201,6 +202,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
+                    .header("x-exos", "true")
                     .uri("/tracks/remove")
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"picked":[2],"note":""}"#))

@@ -799,11 +799,11 @@ happens to be the one that knows.
 ## What exos will not do
 
 - **No form-encoded bodies, and therefore no CSRF token.** A form posts through
-  the typed caller like every other action, so the three defences in [sessions
-  and identity](sessions-and-identity.md) stage 7 all still hold. A form that
-  submits without JavaScript would step outside all three at once, and buying
-  that back is a token, a helper and a second body format. Not now, and possibly
-  not ever.
+  the typed caller like every other action, which carries the header [sessions
+  and identity](sessions-and-identity.md) stage 7 requires. A form that submits
+  without JavaScript carries neither, so it is refused rather than half
+  defended, and buying it back is a token, a helper and a second body format.
+  Not now, and possibly not ever.
 - **No client-side authority.** The client's copy of a rule is feedback. The
   server checks everything, every time, and it is the extractor that does it so
   that no handler can decline to.

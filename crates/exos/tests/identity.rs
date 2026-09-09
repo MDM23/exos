@@ -258,6 +258,7 @@ async fn rotating_a_name_ends_the_streams_that_carried_it() {
         .oneshot(
             Request::builder()
                 .method("POST")
+                .header("x-exos", "true")
                 .uri("/sign-in")
                 .header(header::COOKIE, format!("exos={id}"))
                 .body(Body::empty())
@@ -342,6 +343,7 @@ async fn a_rotation_landing_while_a_stream_opens_leaves_nothing_behind() {
         .oneshot(
             Request::builder()
                 .method("POST")
+                .header("x-exos", "true")
                 .uri("/sign-in")
                 .header(header::COOKIE, format!("exos={id}"))
                 .body(Body::empty())

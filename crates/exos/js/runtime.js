@@ -1767,7 +1767,7 @@
         try {
             const response = await fetch(`${BASE}/_exos/subscribe`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: { "X-Exos": "true", "Content-Type": "application/json" },
                 body: JSON.stringify({ connection, topics }),
             });
 

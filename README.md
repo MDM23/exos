@@ -162,10 +162,6 @@ carried a real application yet. Known gaps, roughly in priority order:
 
 - **Expressions are compiled with `new Function`**, which a strict CSP without
   `unsafe-eval` blocks. A precompiled mode is the answer.
-- **No CSRF token.** `SameSite=Lax` on the session cookie, the `X-Exos` header
-  and JSON-only bodies are three defences rather than one, which is a policy and
-  is written down in the guide. It leaks for a handler that accepts a
-  form-encoded body, and that is when a token should be built.
 - **A sentence with a link in it cannot cross.** A message whose count is
   client state projects: its variants in the one language the page was rendered
   in ride out with it, and `Intl.PluralRules` picks. What cannot is a message

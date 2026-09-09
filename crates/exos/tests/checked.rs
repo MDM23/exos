@@ -55,6 +55,7 @@ async fn check(model: &str, field: &str, value: &str) -> (StatusCode, String) {
     answered(
         Request::builder()
             .method("POST")
+            .header("x-exos", "true")
             .uri(format!("/_exos/check/{model}/{field}"))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(format!("\"{value}\"")))
@@ -68,6 +69,7 @@ async fn place_order(order: &Order) -> (StatusCode, String) {
     answered(
         Request::builder()
             .method("POST")
+            .header("x-exos", "true")
             .uri("/orders")
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(exos::to_wire(order)))

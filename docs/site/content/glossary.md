@@ -370,6 +370,10 @@ All of them sit under whatever prefix the application is mounted at.
 | `/_exos/check/{model}/{field}` | Answers one `checked_by` rule |
 | `/_exos/<name>-<hash>.<ext>` | Every embedded asset |
 
+Every request with an unsafe method, to these or to an application's own
+routes, has to carry `X-Exos`; see
+[cross-site requests](sessions#cross-site-requests).
+
 ## Exported, but not written by hand
 
 None of this is something an application constructs or names on an ordinary

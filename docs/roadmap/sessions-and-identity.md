@@ -9,9 +9,9 @@ the argument for that, made after a session store was built and then taken out
 again. A live subscription now proves the browser presenting it was served the
 fragment, which was the README's first listed gap.
 
-What is left is [stage 7](#stage-7-csrf-which-is-mostly-already-handled), which
-argues that most of it should stay unbuilt. Each stage below says where it
-stands.
+[Stage 7](#stage-7-csrf-which-is-one-rule) is built too, and is one rule
+rather than the token it was written as an argument against. Each stage below
+says where it stands.
 
 ## Three questions, one mechanism
 
@@ -481,28 +481,44 @@ that renders the wrapper and reads the token out of the markup, carrying its
 cookie the whole way, because there is no way in from outside the crate and
 there should not be.
 
-## Stage 7: CSRF, which is mostly already handled
+## Stage 7: CSRF, which is one rule
 
-**Not built, and mostly should not be.** The README lists this as a gap, and
-the analysis is better than the entry suggests. Three things already stand
-between an attacker's page and a state change.
+**Built**, in [csrf.rs](../../crates/exos/src/csrf.rs), and it is not the token
+this stage spent its first draft arguing against.
 
-- **`SameSite=Lax`** on the session cookie means a cross-site `POST` carries
-  no session at all.
-- **A custom header.** The runtime sends `X-Exos` on every request. A
-  cross-origin request cannot set one without a preflight, and a preflight
-  needs CORS the application never turned on.
-- **JSON bodies.** A cross-origin HTML form can only send the three
-  form-safe content types, and `Json<T>` refuses all of them.
+That draft named three things standing between an attacker's page and a state
+change: `SameSite=Lax` on the session cookie, the `X-Exos` header the runtime
+sends, and `Json<T>` refusing the three content types a cross-origin form can
+post. It called them a policy and left them as circumstances, with one gap
+named, a handler taking a form-encoded body.
 
-Together that is a policy rather than the start of one, and the first two legs
-of it now hold: the session cookie is `SameSite=Lax`, and the guide says all
-three under [cross-site
-requests](../site/content/sessions.md#cross-site-requests) as the reason exos
-ships no token. The gap is real but narrow: a handler that accepts a
-form-encoded body steps outside all three at once. The answer is a token derived
-from the session id, rendered by a helper into the form, and it should be built
-when the first form handler exists rather than before.
+The gap was wider than that. A handler taking no body at all is outside the
+JSON leg too, since there is nothing for the extractor to refuse. `SameSite=Lax`
+is same-*site*, so a sibling origin under the same registrable domain sends the
+cookie with everything. And the header, the one leg that actually distinguishes
+this application's runtime from anybody's page, was sent and never required, so
+it defended nothing on its own.
+
+So it is a rule now: an unsafe method has to carry the header, checked in one
+layer, outermost, for every route exos serves. There is no token to derive, no
+form helper to remember, no secret to rotate and nothing per route to get
+wrong, which is the version of this that fits what exos already is. The other
+two legs stay true and stay unmentioned in the code: they narrow what an
+attacker can send, and the header decides.
+
+What it costs is that an unsafe request which did not come from the runtime is
+refused. That is `curl -X POST` at an application's own routes, and a
+`<form method="post">` submitted without JavaScript, and neither is a shape
+exos serves: an action is `name::post(..)` recorded in Rust, and what reaches a
+cold browser is a `GET`. A webhook or an API for somebody else's program is
+mounted beside the application rather than inside it, on the `Router` an `App`
+converts into, where it is outside the session and the scope as well. That is
+the same escape hatch the layers already had, rather than a new one.
+
+The tax it does levy is on tests. Anything that stands in for the runtime has
+to send what the runtime sends, which is one header per helper in this tree's
+examples, and the refusal says which header is missing so that whoever meets it
+learns it once.
 
 ## What it cost
 

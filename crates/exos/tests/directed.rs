@@ -147,6 +147,7 @@ impl Tab {
             .request(
                 Request::builder()
                     .method("POST")
+                    .header("x-exos", "true")
                     .uri("/_exos/subscribe")
                     .header(header::CONTENT_TYPE, "application/json")
                     .body(Body::from(body))

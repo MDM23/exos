@@ -27,6 +27,7 @@ mod asset;
 mod attributes;
 mod base;
 mod context;
+mod csrf;
 mod discover;
 mod effect;
 mod fnv;

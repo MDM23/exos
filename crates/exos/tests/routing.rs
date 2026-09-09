@@ -58,6 +58,9 @@ async fn status(uri: &str, method: &str) -> StatusCode {
         .oneshot(
             Request::builder()
                 .method(method)
+                // What the runtime sends and what an unsafe request is refused
+                // without; see the `csrf` module.
+                .header("x-exos", "true")
                 .uri(uri)
                 .body(Body::empty())
                 .expect("a valid request"),

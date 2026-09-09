@@ -208,15 +208,15 @@ costs that tab a stale identity until it reconnects.
 
 ## Where it moves a document that already exists
 
-- **CSRF.** [Stage 7](sessions-and-identity.md#stage-7-csrf-which-is-mostly-already-handled)
-  argues that `SameSite=Lax`, the `X-Exos` header and JSON bodies are together
-  a policy, with one narrow gap at form-encoded handlers. The case that
-  argument misses is a good one: a handler taking no body at all is outside the
-  JSON leg too, `X-Exos` is sent and never required, and Lax does not separate
-  a sibling origin on the same site. Sign-out is exactly such a handler. The
-  gap is wider than the stage claims and the guide repeats the claim, so both
-  need amending, and the answer is still the one the stage names plus requiring
-  the header exos already sends.
+- **CSRF, and the review was right.**
+  [Stage 7](sessions-and-identity.md#stage-7-csrf-which-is-one-rule) argued
+  that `SameSite=Lax`, the `X-Exos` header and JSON bodies were together a
+  policy, with one narrow gap at form-encoded handlers. The case that argument
+  missed is a good one: a handler taking no body at all is outside the JSON leg
+  too, `X-Exos` was sent and never required, and Lax does not separate a
+  sibling origin on the same site. Sign-out is exactly such a handler. The
+  stage and the guide are amended and the header is required now, which is the
+  answer the stage named plus the one thing it left out.
 - **Publishing scans every connection** and the bus spawning a task per frame
   are [loose ends](loose-ends.md#publishing-scans-every-connection) and
   [more than one instance](more-than-one-instance.md), with the index they ask

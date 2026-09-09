@@ -215,6 +215,9 @@ async fn from(name: &Id, request: axum::http::request::Builder, body: Body) -> R
     node()
         .oneshot(
             request
+                // What the runtime sends and what exos refuses an unsafe
+                // request without: this stands in for a browser running it.
+                .header("x-exos", "true")
                 .header(header::COOKIE, format!("exos={name}"))
                 .body(body)
                 .expect("a valid request"),

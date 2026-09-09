@@ -46,6 +46,7 @@ async fn posted(draft: &Draft) -> (StatusCode, String) {
         .oneshot(
             Request::builder()
                 .method("POST")
+                .header("x-exos", "true")
                 .uri("/drafts")
                 .header(header::CONTENT_TYPE, "application/json")
                 .body(Body::from(exos::to_wire(draft)))

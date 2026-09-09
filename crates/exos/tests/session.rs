@@ -96,6 +96,10 @@ async fn add_to_cart() -> String {
 async fn request(method: &str, uri: &str, session: Option<&str>) -> Response {
     let mut builder = Request::builder().method(method).uri(uri);
 
+    // What the runtime sends on every call it makes, and what exos refuses
+    // an unsafe request without: this stands in for a browser running it.
+    builder = builder.header("x-exos", "true");
+
     if let Some(session) = session {
         builder = builder.header(header::COOKIE, format!("theme=dark; exos={session}"));
     }

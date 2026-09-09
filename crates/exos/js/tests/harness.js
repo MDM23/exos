@@ -133,6 +133,8 @@ function transports(window, navigations) {
     window.fetch = (url, options = {}) => {
         requests.push({
             url,
+            method: options.method ?? "GET",
+            headers: options.headers ?? {},
             body: options.body === undefined ? null : JSON.parse(options.body),
         });
 

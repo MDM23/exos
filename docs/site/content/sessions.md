@@ -236,20 +236,42 @@ live fragment.
 
 ## Cross-site requests
 
-exos ships no CSRF token, and the reason is that three things already stand
-between an attacker's page and a state change.
+**Every request with an unsafe method has to carry `X-Exos`, which the runtime
+sends on every call it makes.** A page on another origin cannot set a header on
+a request it makes to yours without a preflight, and a preflight needs CORS you
+never turned on. That is the rule, it is enforced for every route exos serves,
+and it is why there is no token to render into a form, no secret to rotate and
+no per-route decision to forget.
+
+Two other things help and neither is the rule, because each has a shape it says
+nothing about.
 
 - **`SameSite=Lax`** on the session cookie means a cross-site `POST` carries no
-  session at all.
-- **A custom header.** The runtime sends `X-Exos` on every request. A
-  cross-origin request cannot set one without a preflight, and a preflight
-  needs CORS you never turned on.
+  session at all. It says nothing about a sibling origin on the same site,
+  which is same-site and gets the cookie.
 - **JSON bodies.** A cross-origin HTML form can only send the three form-safe
-  content types, and `Json<T>` refuses all of them.
+  content types, and `Json<T>` refuses all of them. It says nothing about a
+  handler taking a form-encoded body, or one taking no body at all.
 
-The gap is real but narrow: a handler accepting a form-encoded body steps
-outside all three at once. Do not write one, or bring your own token until exos
-has an opinion about them.
+What it costs is that an unsafe request which did not come from the runtime is
+refused with a `403`, which is every `curl -X POST` at your own routes and
+every `<form method="post">` submitted without JavaScript. Neither is a shape
+exos serves: an action is `name::post(..)`, recorded in Rust and sent by the
+runtime, and a page that reaches a cold browser is a `GET`.
+
+Something that genuinely has to be reachable by another client, a webhook or an
+API for somebody else's program, goes beside the application rather than inside
+it, where it is also outside the session and the scope:
+
+```rust
+let served = axum::Router::new()
+    .merge(axum::Router::from(exos::app()))
+    .route("/hooks/payments", axum::routing::post(hook));
+```
+
+**Turning CORS on undoes it.** A permissive `Access-Control-Allow-Headers` is
+you telling browsers that another origin may send that header, which is the
+whole of what makes it proof. Allow the origins that need it and nothing wider.
 
 ## Where it cannot be reached
 

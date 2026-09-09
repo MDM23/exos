@@ -926,6 +926,7 @@ mod tests {
         routes()
             .layer(axum::middleware::from_fn(crate::session::layer))
             .layer(axum::middleware::from_fn(crate::scope::layer))
+            .layer(axum::middleware::from_fn(crate::csrf::layer))
     }
 
     /// What one browser was served: the name it was given, and a token for
@@ -964,6 +965,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
+                    .header("x-exos", "true")
                     .uri(SUBSCRIBE)
                     .header(header::CONTENT_TYPE, "application/json")
                     .header(header::COOKIE, format!("exos={name}"))

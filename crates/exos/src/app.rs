@@ -439,9 +439,14 @@ fn seal(routes: Router) -> Router {
         // for has to be readable from a view, which is not a handler and can
         // extract nothing, and the response has to say whether it was read.
         .layer(axum::middleware::from_fn(crate::locale::layer))
-        // Last, so that it wraps the merges above rather than only the routes
-        // the application brought: the stream and the assets are requests too.
+        // Last but one, so that it wraps the merges above rather than only the
+        // routes the application brought: the stream and the assets are
+        // requests too.
         .layer(axum::middleware::from_fn(crate::scope::layer))
+        // Outermost, because a request it refuses should cost nothing else: no
+        // session parsed, no scope opened, and none of the middleware the
+        // application mounted inside.
+        .layer(axum::middleware::from_fn(crate::csrf::layer))
         // Once, here, rather than per connection: this is what turns the
         // handlers into services, and nothing about it depends on the request.
         .with_state(())

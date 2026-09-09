@@ -99,6 +99,7 @@ pub(crate) mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
+                    .header("x-exos", "true")
                     .uri(uri)
                     .header("content-type", "application/json")
                     .body(Body::from(payload.to_owned()))

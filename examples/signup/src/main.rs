@@ -135,6 +135,7 @@ pub(crate) mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
+                    .header("x-exos", "true")
                     .uri(format!("/_exos/check/{model}/{field}"))
                     .header("content-type", "application/json")
                     .body(Body::from(format!("\"{value}\"")))
@@ -153,6 +154,7 @@ pub(crate) mod tests {
             .oneshot(
                 Request::builder()
                     .method("POST")
+                    .header("x-exos", "true")
                     .uri(uri)
                     .header("content-type", "application/json")
                     .body(Body::from(payload.to_owned()))

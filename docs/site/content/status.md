@@ -8,12 +8,6 @@ Known gaps, roughly in priority order.
 **Expressions are compiled with `new Function`**, which a strict CSP without
 `unsafe-eval` blocks. A precompiled mode is the answer.
 
-**No CSRF token.** `SameSite=Lax` on the session cookie, the `X-Exos` header
-and JSON-only bodies are three defences rather than one, which is a policy and
-is written down under [cross-site requests](sessions#cross-site-requests). It
-leaks for a handler that accepts a form-encoded body, and that is when a token
-should be built.
-
 **A sentence with a link in it cannot cross.** A message whose count is client
 state [projects](languages#a-count-the-browser-has), and one with a slot does
 not: the runtime would have to build elements rather than write text. Neither

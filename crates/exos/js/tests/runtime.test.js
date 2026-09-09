@@ -405,7 +405,11 @@ test("a field the server alone can judge asks it once the typing stops", async (
     await after(CHECKED);
     await settled();
 
-    assert.deepEqual(window.transport.requests, [{ url: "/_exos/check/m1/code", body: "nope" }]);
+    assert.equal(window.transport.requests.length, 1);
+    assert.deepEqual(
+        window.transport.requests.map(({ url, body }) => ({ url, body })),
+        [{ url: "/_exos/check/m1/code", body: "nope" }],
+    );
     assert.equal(window.exos.signals.errors.code, "not one of ours");
 });
 
@@ -1348,6 +1352,32 @@ test("both copies of a fragment keep their identity across a patch", async () =>
     await settled();
 
     assert.deepEqual([...window.document.querySelectorAll("exos-live")], before);
+});
+
+// The server refuses a request that changes something and does not carry this,
+// because a page on another origin cannot set a header without a preflight
+// nobody granted. So it is not decoration on one call site: every unsafe
+// request the runtime makes has to have it, and a new one that forgets is a
+// feature that works nowhere but in a test.
+test("every request that changes something says it came from the runtime", async () => {
+    const window = boot(live());
+    const [stream] = window.transport.streams;
+
+    // A subscription, an action, and a field the server judges: the three
+    // places the runtime posts from.
+    stream.emit("connection", "named");
+    await settled();
+
+    await posted(window);
+
+    const unsafe = window.transport.requests.filter((request) => request.method !== "GET");
+
+    assert.ok(unsafe.length >= 2, "both kinds of post were made");
+    assert.deepEqual(
+        unsafe.filter((request) => request.headers["X-Exos"] !== "true"),
+        [],
+        "and each of them said so",
+    );
 });
 
 // A set, not a list, because it is a set on the server. One fragment on the
