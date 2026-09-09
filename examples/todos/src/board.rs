@@ -158,7 +158,7 @@ mod tests {
     fn the_list_is_a_live_fragment() {
         let html = markup(Filter::All);
 
-        assert!(html.starts_with("<exos-live style=\"display:contents\" id=\"live-board-"));
+        assert!(html.starts_with("<exos-live style=\"display:contents\" data-topic=\"live-board-"));
         assert!(html.contains("data-token=\""));
     }
 

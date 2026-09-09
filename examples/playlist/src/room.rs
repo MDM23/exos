@@ -186,7 +186,7 @@ mod tests {
     fn the_room_is_a_live_fragment() {
         let html = markup();
 
-        assert!(html.starts_with("<exos-live style=\"display:contents\" id=\"live-room-"));
+        assert!(html.starts_with("<exos-live style=\"display:contents\" data-topic=\"live-room-"));
         assert!(html.contains("data-token=\""));
     }
 

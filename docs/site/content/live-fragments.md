@@ -68,7 +68,7 @@ requester.
 The rendered wrapper carries a token only the server can produce:
 
 ```html
-<exos-live style="display:contents" id="live-presence-cab0087c" data-token="e80842d24f1b7a95c3e0d6118f27ba43">
+<exos-live style="display:contents" data-topic="live-presence-cab0087c" data-token="e80842d24f1b7a95c3e0d6118f27ba43">
 ```
 
 Since the server only renders fragments it decided you may see, being able to

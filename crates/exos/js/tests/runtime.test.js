@@ -1022,7 +1022,12 @@ function oneChunk(window, text) {
 }
 
 /** One live fragment, as the server renders it: a name and the proof of it. */
-const live = (id = "presence-1") => `<exos-live id="${id}" data-token="token-for-${id}"></exos-live>`;
+const live = (topic = "presence-1") =>
+    `<exos-live data-topic="${topic}" data-token="token-for-${topic}"></exos-live>`;
+
+/** The element a topic was rendered on, of which a page may hold several. */
+const at = (window, topic = "presence-1") =>
+    window.document.querySelector(`[data-topic="${topic}"]`);
 
 /** A whole document, the way a fetch of a URL answers with one. */
 const served = (body) =>
@@ -1069,10 +1074,10 @@ test("a patch that does not restate the grant leaves the subscription alone", as
     stream.emit("connection", "named");
     await settled();
 
-    stream.emit("patch", `<exos-live id="presence-1"><span>online</span></exos-live>`);
+    stream.emit("patch", `<exos-live data-topic="presence-1"><span>online</span></exos-live>`);
     await settled();
 
-    const element = window.document.getElementById("presence-1");
+    const element = at(window);
 
     assert.equal(element.dataset.token, "token-for-presence-1");
     assert.equal(element.textContent, "online", "and the content is the patch's");
@@ -1090,14 +1095,14 @@ test("markup that carries a grant replaces the one on the element", async () => 
     stream.emit("connection", "named");
     await settled();
 
-    stream.emit("patch", `<exos-live id="presence-1" data-token="rotated"></exos-live>`);
+    stream.emit("patch", `<exos-live data-topic="presence-1" data-token="rotated"></exos-live>`);
     await settled();
 
     // Twice: the attribute change is what schedules the sync, and the request
     // it sends is a turn behind it.
     await settled();
 
-    assert.equal(window.document.getElementById("presence-1").dataset.token, "rotated");
+    assert.equal(at(window).dataset.token, "rotated");
     assert.deepEqual(window.transport.requests.at(-1).body.topics, [["presence-1", "rotated"]]);
 });
 
@@ -1157,7 +1162,7 @@ test("a fragment that leaves the page is one the tab stops watching", async () =
         ["presence-2", "token-for-presence-2"],
     ]);
 
-    window.document.getElementById("presence-2").remove();
+    at(window, "presence-2").remove();
     await settled();
 
     assert.deepEqual(watching(window), [["presence-1", "token-for-presence-1"]]);
@@ -1185,25 +1190,48 @@ test("a fragment a patch brought with it is one the tab starts watching", async 
 // whatever the viewer was doing there.
 test("a patch lands on the fragment it names and leaves its neighbour alone", async () => {
     const window = boot(
-        `<exos-live id="presence-1" data-token="token-for-presence-1"><span>one</span></exos-live>` +
-            `<exos-live id="presence-2" data-token="token-for-presence-2"><span>two</span></exos-live>`,
+        `<exos-live data-topic="presence-1" data-token="token-for-presence-1"><span>one</span></exos-live>` +
+            `<exos-live data-topic="presence-2" data-token="token-for-presence-2"><span>two</span></exos-live>`,
     );
     const [stream] = window.transport.streams;
 
     stream.emit("connection", "named");
     await settled();
 
-    const untouched = window.document.querySelector("#presence-2 span");
+    const untouched = at(window, "presence-2").querySelector("span");
 
-    stream.emit("patch", `<exos-live id="presence-1"><span>changed</span></exos-live>`);
+    stream.emit("patch", `<exos-live data-topic="presence-1"><span>changed</span></exos-live>`);
     await settled();
 
-    assert.equal(window.document.querySelector("#presence-1 span").textContent, "changed");
+    assert.equal(at(window).querySelector("span").textContent, "changed");
     assert.equal(untouched.textContent, "two");
     assert.ok(
         untouched.isConnected,
         "and it is the same node, not markup that happened to match",
     );
+});
+
+// Why the topic is not the wrapper's id. A page may show one fragment twice,
+// two elements may not share an id, and a morph that keyed on one would index
+// the second over the first and rebuild both copies on every patch. Everything
+// node identity buys, focus, selection, an open <details>, playing media, would
+// be lost on both of them every time either published.
+test("both copies of a fragment keep their identity across a patch", async () => {
+    const window = boot(`<div id="list">${live()}${live()}</div>`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    const before = [...window.document.querySelectorAll("exos-live")];
+    assert.equal(before.length, 2);
+
+    // The container around them, which is where a shared name does the damage:
+    // the copies are morphed as its children rather than found one by one.
+    stream.emit("patch", `<div id="list">${live()}${live()}</div>`);
+    await settled();
+
+    assert.deepEqual([...window.document.querySelectorAll("exos-live")], before);
 });
 
 // A set, not a list, because it is a set on the server. One fragment on the

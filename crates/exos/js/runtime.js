@@ -175,11 +175,10 @@
         // Two elements can carry one id over a page's life, and the scope has
         // to survive that. A morph that replaces a subtree rather than
         // updating it builds the new one before tearing the old one down, so
-        // there is a moment when both are here, and a fragment rendered twice
-        // is two elements with one id for as long as the page lasts. Sharing a
-        // scope name means the departing element's cleanup deletes the
-        // arriving element's signals: the row is still on screen, still
-        // wired, and every write from it goes somewhere nothing is watching.
+        // there is a moment when both are here. Sharing a scope name means the
+        // departing element's cleanup deletes the arriving element's signals:
+        // the row is still on screen, still wired, and every write from it
+        // goes somewhere nothing is watching.
         //
         // A scope is per element rather than per id, so the element that
         // survives a morph keeps its state through the WeakMap and the element
@@ -1262,24 +1261,34 @@
     //                                 PATCHING
     // -------------------------------------------------------------------------
 
-    // A patch is plain HTML. Every top-level element with an id is morphed
-    // over the element that already has that id. No swap strategies and no
-    // target selectors on the client: the server names what it is replacing by
-    // giving it an id, which it had to do anyway.
+    // A patch is plain HTML. Every top-level element that names itself is
+    // morphed over the element already carrying that name. No swap strategies
+    // and no target selectors on the client: the server names what it is
+    // replacing in the markup, which it had to do anyway.
+
+    // What names an element, as a selector: a live fragment by its topic and
+    // everything else by its id. It doubles as the morph's key, because the
+    // two spellings cannot be confused for one another.
+    function named(el) {
+        const topic = el.dataset.topic;
+        if (topic) return `[data-topic="${CSS.escape(topic)}"]`;
+
+        return el.id ? `[id="${CSS.escape(el.id)}"]` : null;
+    }
 
     function applyPatch(html) {
         const template = document.createElement("template");
         template.innerHTML = html;
 
         for (const incoming of [...template.content.children]) {
-            const id = incoming.id;
-            if (!id) continue;
+            const selector = named(incoming);
+            if (!selector) continue;
 
             // querySelectorAll rather than getElementById: one fragment can
             // legitimately appear more than once on a page, and those copies
-            // share an id because they are the same fragment. Updating only
+            // share a topic because they are the same fragment. Updating only
             // the first would leave the rest stale.
-            const existing = document.querySelectorAll(`[id="${CSS.escape(id)}"]`);
+            const existing = document.querySelectorAll(selector);
 
             if (existing.length) {
                 for (const node of existing) morph(node, incoming.cloneNode(true));
@@ -1396,17 +1405,32 @@
     }
 
     function morphChildren(from, to) {
-        // Index the survivors by id so a reorder moves nodes rather than
-        // rebuilding them.
+        // Index the survivors by name so a reorder moves nodes rather than
+        // rebuilding them. A name two children share names neither of them, so
+        // both fall back to position instead of the second stealing the first
+        // and leaving them to be rebuilt on every patch.
         const keyed = new Map();
+        const shared = new Set();
+
         for (const child of from.children) {
-            if (child.id) keyed.set(child.id, child);
+            const name = named(child);
+            if (!name) continue;
+
+            if (keyed.delete(name) || shared.has(name)) shared.add(name);
+            else keyed.set(name, child);
         }
+
+        const keyOf = (node) => {
+            if (node.nodeType !== Node.ELEMENT_NODE) return null;
+
+            const name = named(node);
+            return name && !shared.has(name) ? name : null;
+        };
 
         let cursor = from.firstChild;
 
         for (const incoming of [...to.childNodes]) {
-            const key = incoming.nodeType === Node.ELEMENT_NODE && incoming.id;
+            const key = keyOf(incoming);
             const match = key ? keyed.get(key) : null;
 
             if (match) {
@@ -1419,12 +1443,13 @@
             }
 
             // A same-shaped unkeyed node in the same slot updates in place.
+            const held = cursor && keyOf(cursor);
             const reusable =
                 cursor &&
                 cursor.nodeType === incoming.nodeType &&
                 cursor.nodeName === incoming.nodeName &&
-                !(cursor.nodeType === Node.ELEMENT_NODE && cursor.id && keyed.has(cursor.id)) &&
-                !(incoming.nodeType === Node.ELEMENT_NODE && incoming.id);
+                !(held && keyed.has(held)) &&
+                !key;
 
             if (reusable) {
                 const next = cursor.nextSibling;
@@ -1518,10 +1543,10 @@
     // it currently has on screen, and gets back patches for those and nothing
     // else.
     //
-    // The client never names a topic. It reads the id and token the server put
-    // on the element and hands them straight back, which is also why there is
-    // no authorization to do here: the token is the proof, and it could only
-    // have come from being served the fragment.
+    // The client never names a topic. It reads the topic and the token the
+    // server put on the element and hands them straight back, which is also
+    // why there is no authorization to do here: the token is the proof, and it
+    // could only have come from being served the fragment.
     //
     // It does not name the connection either. The server mints that and says it
     // in the stream's first event, because an id the client picks is an id
@@ -1653,7 +1678,7 @@
     }
 
     async function syncSubscriptions() {
-        const live = [...document.querySelectorAll("exos-live[id][data-token]")];
+        const live = [...document.querySelectorAll("exos-live[data-topic][data-token]")];
 
         // A dev build opens one whatever the page holds, because the stream
         // going away is how it learns the server was rebuilt, and a page under
@@ -1674,8 +1699,8 @@
         // drag silent: reordering a row is a real DOM move, so the pairs come
         // back in a new order, and comparing them in document order posted an
         // identical subscription on every pointer move.
-        const tokens = new Map(live.map((el) => [el.id, el.dataset.token]));
-        const topics = [...tokens.keys()].sort().map((id) => [id, tokens.get(id)]);
+        const tokens = new Map(live.map((el) => [el.dataset.topic, el.dataset.token]));
+        const topics = [...tokens.keys()].sort().map((topic) => [topic, tokens.get(topic)]);
 
         // The visible set usually survives a patch unchanged, and re-sending
         // it would be pure chatter.

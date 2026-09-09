@@ -56,7 +56,8 @@ pub enum Step {
     /// This is only the round-trip-saving path for an action that lands the
     /// user somewhere new.
     Page(Markup),
-    /// Morph this HTML into place, keyed by the ids it carries.
+    /// Morph this HTML into place, keyed by the ids it carries, or by the
+    /// topic where the element is a live fragment.
     Patch(Markup),
     /// Reload the document. The last resort.
     Reload,

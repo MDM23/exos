@@ -413,5 +413,5 @@ The runtime reads a vocabulary of attributes the helpers above emit:
 projected sentence, `data-text`, `data-show`, `data-class`, `data-attr`,
 `data-prop` and `data-bind` with its `-kind`, `-state`, `-rules`, `-arms`,
 `-check` and `-rows` companions bind, `data-on-*` dispatches, and `data-row`,
-`data-rows` and `<exos-live id data-token>` are structure. They are the wire
+`data-rows` and `<exos-live data-topic data-token>` are structure. They are the wire
 between the two halves rather than something to write.

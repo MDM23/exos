@@ -303,7 +303,7 @@ mod tests {
     fn a_lot_is_a_live_fragment() {
         let html = markup(1);
 
-        assert!(html.starts_with("<exos-live style=\"display:contents\" id=\"live-lot-"));
+        assert!(html.starts_with("<exos-live style=\"display:contents\" data-topic=\"live-lot-"));
         assert!(html.contains("data-token=\""));
     }
 

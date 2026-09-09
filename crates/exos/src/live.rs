@@ -266,13 +266,18 @@ impl<R: Fn() -> Markup> Fragment<R> {
     /// `display: contents` keeps the wrapper invisible to layout: a fragment
     /// inside a flex row must not become a box in it.
     ///
+    /// The name goes in `data-topic` and not in `id`, because the same
+    /// fragment may legitimately appear twice on one page while two elements
+    /// may not share an id. The client patches and keys by the topic, and
+    /// `id` stays what it is everywhere else: unique, or absent.
+    ///
     /// The token is written where there is a viewer to bind one to and left
     /// out where there is not, which is every publish; see
     /// [`Topic::token`]. The client keeps a grant a patch does not restate,
     /// so what a publish sends is the content and the name, and the
     /// subscription stays the one the page was served with.
     pub fn to_markup(&self) -> Markup {
-        let mut out = String::from("<exos-live style=\"display:contents\" id=\"");
+        let mut out = String::from("<exos-live style=\"display:contents\" data-topic=\"");
         escape_into(self.topic.as_str(), &mut out);
         out.push('"');
 
@@ -462,7 +467,7 @@ mod tests {
         });
 
         assert!(html.contains("style=\"display:contents\""));
-        assert!(html.contains("id=\"live-presence-"));
+        assert!(html.contains("data-topic=\"live-presence-"));
         assert!(html.contains("data-token=\""));
         assert!(html.contains("<span>online</span>"));
     }
@@ -476,7 +481,7 @@ mod tests {
             .to_markup()
             .into_string();
 
-        assert!(html.contains("id=\"live-presence-"), "{html}");
+        assert!(html.contains("data-topic=\"live-presence-"), "{html}");
         assert!(!html.contains("data-token"), "{html}");
         assert!(html.contains("<span>online</span>"), "{html}");
     }

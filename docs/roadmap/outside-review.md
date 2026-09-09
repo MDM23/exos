@@ -3,7 +3,8 @@
 Nine findings from a review of the tree on 2026-09-07, read against the code,
 and what is left of them.
 
-Status: triage. Nothing here is built. The review itself was an outside
+Status: triage. One entry is built, the duplicate id below; the rest is not.
+The review itself was an outside
 document and is not in the tree, so this is written to stand without it: every
 entry says what the defect is rather than pointing at where it was reported.
 Entries that belong to a document that already exists say so rather than being
@@ -88,7 +89,7 @@ The narrow fix is `lang` and `dir` on `<html>`, which is the part with an
 obvious right answer. Head reconciliation in general, stylesheets and scripts
 and their lifecycles, is a design and not a fix.
 
-## The one that was undersold
+## The one that was undersold, and is done
 
 Duplicate `id` values on repeated fragments were raised as a validity and
 accessibility complaint. It is worse than that, and it is the only thing here
@@ -103,10 +104,17 @@ their identity across a patch; with the shared id, neither does. Everything
 node identity buys, focus, selection, an open `<details>`, a `data-preserve`
 widget, playing media, is lost on both copies every time either publishes.
 
-The fix is to stop overloading `id`: the topic is the subscription's name and
-belongs in `data-topic`, leaving `id` free to be unique or absent. It touches
-`to_markup`, the `exos-live[id][data-token]` selector, and the map that keys
-subscriptions, and it makes the morph's own keying honest again.
+The fix was to stop overloading `id`: the topic is the subscription's name and
+belongs in `data-topic`, leaving `id` free to be unique or absent. It moved
+`to_markup`, the subscription selector and the map keyed off it, and what a
+patch looks its target up by, which is now the topic where there is one and the
+id everywhere else.
+
+The morph's keying went with it, and further than the wrapper: a name two
+children share names neither of them, so both fall back to position rather than
+the second overwriting the first. That is what makes duplicate copies keep
+their nodes, and it holds for a duplicated `id` an application writes by hand
+as well.
 
 ## Two grants that outlive the authority behind them
 
