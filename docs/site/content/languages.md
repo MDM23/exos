@@ -265,3 +265,109 @@ the browser:
 
 Either one, handed an expression, is a build failure that says so: `` `Js<u32>`
 is not a count ``.
+
+## Dates and times
+
+The server sends the instant and the browser writes it. A zone is a fact about
+the reader that reaches the server only after the first render, and the first
+render is the one that matters, so there is no round trip that could tell it in
+time. The browser has the whole IANA database and it has ICU.
+
+```rust
+view! {
+    <td>{ When::date(due) }</td>
+    <td>"Posted " { When::ago(posted) }</td>
+}
+```
+
+`When` is the whole `<time>` element, because there is one way to write that
+element and every call site would otherwise write it by hand:
+
+```html
+<td><time datetime="2026-08-19T09:00:00Z"
+          data-text="date(&quot;2026-08-19T09:00:00Z&quot;)">2026-08-19T09:00:00Z</time></td>
+```
+
+The element's own text is the instant, so a crawler and a reader without the
+runtime see something true rather than something wrong, and a fragment that
+arrives with it is rewritten the moment it lands.
+
+`When::date`, `When::time` and `When::ago` are the three, all taking an
+[`Instant`](https://docs.rs/exos/latest/exos/struct.Instant.html): UTC
+milliseconds, written and read as RFC 3339. Keep whichever date crate the
+application already has and convert at the edge. `.short()` and `.long()` ask
+for another form, and `.to_js()` hands over the expression alone, for a date
+that belongs in a `title` rather than in an element of its own.
+
+Relative time is re-read every half minute while something on the page is
+asking, and not at all while nothing is.
+
+### A time that belongs to a place
+
+A kickoff is at the venue, and every viewer of that fixture list has to see the
+same clock time whatever zone they are in. `zone` takes it as the string the
+application already has:
+
+```rust
+When::time(kickoff).zone("Europe/Berlin")
+```
+
+Left off, the reader's own zone is used, which is what a `created` column wants
+and what a kickoff must not get. A difference between two instants is the same
+difference everywhere, so `When::ago` ignores a zone.
+
+### A date in a message
+
+A time parameter makes the whole message answer with an expression, which is
+the type system saying that the zone is not a server fact. `Date`, `Time` and
+`Ago` declare which of the three ways the sentence reads it:
+
+```rust
+exos::messages! {
+    due(when: Date) {
+        De = "Fällig am {when}",
+        En = "Due on {when}",
+    }
+}
+
+due(at)
+```
+
+The call site says the rest. `due` takes anything that is a `When`, so an
+instant on its own is the usual case and the builder covers a sentence whose
+time belongs somewhere:
+
+```rust
+kickoff_at(When::of(at).long().zone("Europe/Berlin"))
+```
+
+`When::of` is the neutral one, because which of the three reads it is the
+declaration's to say and is imposed over whatever the call site built: "due on"
+and "posted" are properties of the sentence, not of the place it is called
+from.
+
+So a message carrying a date cannot go where only a `String` will do, in a
+`<title>` or an email body. That is a build failure rather than a wrong time,
+and the way out is honest: an application that knows a reader's zone, because
+it is in their profile, formats the date itself and passes the string as an
+ordinary parameter. Email has no browser and was always going to work that way.
+
+A message cannot carry a date and a count at once. Both are the browser's to
+write and a projection crosses on one value; the build says so at the message.
+
+### A control that writes one
+
+`<input type="datetime-local">` hands back a wall clock with no zone, and
+turning that into an instant needs exactly the fact the server does not have.
+A signal or model field of type `Instant` binds as one, so the control reads
+and writes wall clocks and the server receives instants:
+
+```rust
+view! {
+    <input type="datetime-local" {bind(&starts).zone("Europe/Berlin")}>
+}
+```
+
+Say the zone beside the field as well. A reader who cannot see which zone they
+are typing in cannot tell what they typed, and nothing in exos writes content
+next to a control it was handed.

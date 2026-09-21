@@ -2,8 +2,9 @@
 
 Messages defined in Rust, rendered wherever the fact they need is known.
 
-Status: [stage 1](#stage-1-the-locale), [stage 2](#stage-2-messages) and the
-count half of [stage 3](#stage-3-projecting-a-message) are built.
+Status: [stage 1](#stage-1-the-locale), [stage 2](#stage-2-messages), the count
+half of [stage 3](#stage-3-projecting-a-message) and [stage
+5](#stage-5-dates-times-and-relative-time) are built.
 `exos::locales!` declares the set and generates each language's plural
 categories, out of the CLDR table [exos-cldr](../../crates/exos-cldr) vendors as
 ordinary source, and a committed fixture holds `cargo test` and `npm test` to
@@ -20,7 +21,7 @@ that works on both sides, predates exos: it was settled while the framework was
 still a prototype, and lived in a guide draft that was cut when the guide was
 rewritten against code that existed.
 
-Stage 5 waits on nothing. [Sessions and
+Stage 5 waited on nothing. [Sessions and
 identity](../spec/sessions-and-identity.md) already supplies the one thing it
 needs
 from elsewhere, which is a place for an application to say who a request is,
@@ -92,6 +93,15 @@ little, because the runtime already re-runs bindings after a morph.
   rounding data, it changes more often than anything else here, and the
   decisions belong to the application. Format money yourself and pass the
   string as an interpolated parameter.
+- **No server-side date formatting, and no time zone data.** The browser has
+  ICU and it has the zones, which is the whole of what formatting a date takes,
+  and [stage 5](#stage-5-dates-times-and-relative-time) is how a page reaches
+  both. Vendoring a fourth CLDR slice to write the same date worse, on the one
+  side that cannot know the zone, buys nothing a page needs. What is left over
+  is text leaving the process, an email body or a `<title>`, and that is the
+  application's, on the same terms as currency: it knows the reader's zone from
+  their profile or it has no business claiming one, and the crate it formats
+  with is its own choice.
 - **No ordinals and no decimal plural counts** in the stages below. Both are
   additive later; see [open questions](#open-questions).
 - **No URL-prefixed locales.** `/de/...` is routing, an application can build
@@ -639,6 +649,18 @@ open question below.
 
 ## Stage 5: dates, times and relative time
 
+**Built, and independent of stage 4.** What it needs is the locale on the
+document, which is stage 1, and the projection table, which is the built half
+of stage 3. Nothing here asks the server for a zone, so nothing here waits on
+dimensions: a fragment arrives carrying the instant and the binding writes it
+where it lands. A message inside a live fragment still waits on stage 4, but
+that is stage 4's dependency arriving unchanged rather than a new one.
+
+A message that crosses a date *and* a count is the exception, and it waits on
+stage 3's unbuilt half: two client dimensions need a key per combination and a
+return type that is an expression when any argument is one. A message asking
+for both is a compile error saying so.
+
 The server sends the instant. The browser formats it.
 
 ```html
@@ -652,18 +674,26 @@ the runtime see something true rather than something wrong. `date`, `time` and
 `ago` join the helper set, backed by `Intl.DateTimeFormat` and
 `Intl.RelativeTimeFormat` keyed off `document.documentElement.lang`.
 
+A template does not write that element. There is one way to write it, so
+`exos::When` is the element rather than the expression on one, and a call site
+says `{ When::date(at) }`.
+
 Nothing new is needed to survive a patch. A binding owns what it writes, and
 the runtime re-runs an element's bindings after a morph, so a fragment that
 arrives with the ISO text is reformatted the moment it lands. Relative time
 needs one interval that re-runs the visible `ago` bindings, and that is the
 only piece of state this stage adds.
 
-In a message, an `Instant` parameter makes the whole message resolve in the
-browser, which is the type system expressing that the zone is not a server
-fact:
+In a message, a time parameter makes the whole message resolve in the browser,
+which is the type system expressing that the zone is not a server fact:
 
 ```rust
-due(when)    // Js<String>, even in a server render
+due(when: Date) {
+    De = "Fällig am {when}",
+    En = "Due on {when}",
+}
+
+due(at)    // Js<String>, even in a server render
 ```
 
 So a message carrying a date cannot be used where only a `String` will do, in a
@@ -675,6 +705,89 @@ that way.
 
 exos does not ask the browser for its zone. It could, on the stream's `GET`,
 and it would still be wrong for the first render, which is the one that matters.
+
+### A time that belongs to a place
+
+Not every time is read in the reader's zone. A kickoff is at the venue, and
+every viewer of that fixture list has to see the same clock time whatever zone
+they are in.
+
+That is not a second mechanism, because the browser holds the whole IANA
+database and `Intl.DateTimeFormat` takes a `timeZone`. The zone travels as a
+string the application already has, and the helpers take it:
+
+```html
+<time datetime="2026-08-19T09:00:00Z"
+      data-text="time($el.dateTime, 'short', 'Europe/Berlin')">
+```
+
+Omitted, the helper formats in the reader's own zone, which is what a `created`
+column wants and what a kickoff must not get. Nothing on the server resolves an
+offset in either case.
+
+### The same fact, pointed at a form
+
+A `datetime-local` control hands back a wall clock with no zone, and turning it
+into an instant needs exactly the fact the server does not have. The half
+holding the fact does the work, as everywhere else in this stage: an `instant`
+[`BindKind`](../../crates/exos/src/attributes/helper.rs) coerces the control's
+value with the browser's own zone, and the model receives an instant. Where the
+time belongs to a place the binding takes that zone too, and the control says
+which one it is writing in, since a reader who cannot see that cannot tell what
+they typed.
+
+### What it found
+
+**Three declarations rather than one.** `Instant` is one Rust type and a
+sentence reads three ways: "due on" wants a date, a kickoff wants a clock, and
+"posted" wants how long ago. Which one is not a call site's to decide, so the
+parameter is declared `Date`, `Time` or `Ago` beside `Plural` and `Slot`, and
+all three arrive as an `exos::Instant`.
+
+**A crossed value is a number or it is text, and that is the whole of the
+runtime's side.** `msg` already joins a sentence's parts around a value; a
+count has a category to fall in and is written the way the language writes a
+number, and a date arrives already written. A string is the one and the
+category walk is the other, which is two lines rather than a second helper.
+
+**The tick is a signal, so nothing tracks which bindings are visible.** "Now"
+lives in the store like everything else an effect reads, and an effect
+subscribes to what it reads: what a tick re-runs is exactly the bindings that
+called `ago`. A page with no relative time on it never starts the interval, and
+the interval stops itself once a morph has taken the last reader away, which
+the first draft did not do and would have left a timer nobody could find.
+
+**The type is not a calendar.** exos never computes with a date and never
+formats one, so what it owns is the representation both sides agree on: UTC
+milliseconds, written and read as RFC 3339. An application keeps whichever date
+crate it already has and converts at the edge, which is also why no fourth CLDR
+slice was needed.
+
+**The zone label is the template's.** The binding carries the zone the control
+writes in, but naming it beside the field is markup, and nothing here writes
+content next to a control it was handed. `Bind::zone` says so in its
+documentation rather than leaving a reader to find out from a form.
+
+**The element is the API, and it absorbed the free functions.** The first
+version handed back the expression and left the `<time>` element to every call
+site, which is the same five lines written everywhere and four ways to get one
+of them wrong. `exos::When` is the element, `to_js` is the way out of it for a
+`title` or an `aria-label`, and the five free functions it replaced are gone.
+
+**A style reads as a builder rather than as an argument.** `short` and `long`
+are the two forms all three helpers have, so `When::ago(at).short()` needs no
+enum and no silent no-op: `Intl.RelativeTimeFormat` takes a style too, and the
+runtime passes one through in the same argument position for all three.
+
+**A message's time takes what the call site built, and the declaration still
+decides how it is read.** The first version took an `Instant`, which left a
+message no way to say the form and, worse, no way to say the zone: a kickoff
+written as a message came out in the reader's zone, which is the one thing this
+stage says must not happen. The parameter takes `impl Into<When>` instead, so
+`kickoff_at(at)` still works and `kickoff_at(When::of(at).zone(venue))` says
+the rest. Which of the three reads it stays the declaration's and is imposed
+over whatever arrived, since a sentence says "due on" or "posted" whoever calls
+it.
 
 ## Where the data comes from
 

@@ -1716,3 +1716,148 @@ test("a patch carrying a sentence the page has never seen brings its table", asy
 
     assert.equal(window.document.getElementById("later").textContent, "1  item");
 });
+
+// The server sends the instant and this writes it. A zone is a fact about the
+// reader that reaches the server only after the first render, so what is
+// checked here is that nothing on the way in decided anything: the same
+// instant, read in two zones, is two clocks.
+
+const AT = "2026-08-19T09:00:00Z";
+
+/** An element writing `source`, which is one of the three date helpers. */
+const writes = (source) => `<p id="at" data-text="${source}"></p>`;
+
+const shown = (window) => window.document.getElementById("at").textContent;
+
+test("a date is written the way the page's language writes one", async () => {
+    const window = boot(writes(`date('${AT}', 'long', 'UTC')`));
+    await settled();
+
+    assert.equal(shown(window), "August 19, 2026");
+});
+
+test("a time that belongs to a place is read in that place's zone", async () => {
+    const window = boot(writes(`time('${AT}', 'short', 'Europe/Berlin')`));
+    await settled();
+
+    assert.equal(shown(window), "11:00 AM");
+
+    const elsewhere = boot(writes(`time('${AT}', 'short', 'UTC')`));
+    await settled();
+
+    assert.equal(shown(elsewhere), "9:00 AM");
+});
+
+// What the document says it is in, rather than what this runtime was built
+// against. A patch is what brings the new element, since the language is read
+// where the binding runs.
+test("a date arriving after the language changed is written in that language", async () => {
+    const window = boot(`<div id="host"></div>`);
+    window.document.documentElement.lang = "de";
+
+    window.exos.applyPatch(`<div id="host">${writes(`date('${AT}', 'long', 'UTC')`)}</div>`);
+    await settled();
+
+    assert.equal(shown(window), "19. August 2026");
+});
+
+// Every one of the three takes the style as its second argument, which is what
+// lets one builder on the server serve all of them.
+test("a shorter form is asked for the same way whichever helper writes it", async () => {
+    const window = boot(writes(`date('${AT}', 'short', 'UTC')`));
+    await settled();
+
+    assert.equal(shown(window), "8/19/26");
+
+    const relative = boot(writes(`ago('${AT}', 'narrow')`));
+    relative.exos.signals["~now"] = Date.parse(AT) + 2 * 3_600_000;
+    await settled();
+
+    assert.equal(shown(relative), "2h ago");
+
+    relative.document.getElementById("at").remove();
+    await settled();
+    relative.close();
+});
+
+test("what cannot be read as an instant says nothing rather than Invalid Date", async () => {
+    const window = boot(writes("date('yesterday')"));
+    await settled();
+
+    assert.equal(shown(window), "");
+});
+
+// Relative time is the one thing here that goes stale while nobody touches the
+// page, and "now" is kept in the store rather than pushed at the elements: what
+// a tick re-runs is exactly the bindings that asked for it.
+test("relative time is re-read when the clock the page keeps moves", async () => {
+    const window = boot(writes(`ago('${AT}')`));
+    window.exos.signals["~now"] = Date.parse(AT) + 2 * 3_600_000;
+    await settled();
+
+    assert.equal(shown(window), "2 hours ago");
+
+    window.exos.signals["~now"] = Date.parse(AT) + 3 * 86_400_000;
+    await settled();
+
+    assert.equal(shown(window), "3 days ago");
+
+    // The one test that leaves a timer running. A real page is the process;
+    // this one is not, and jsdom's interval would hold the runner open until
+    // the tick after the last binding went away.
+    window.document.getElementById("at").remove();
+    await settled();
+    window.close();
+});
+
+// A `datetime-local` control hands back a wall clock with no zone, and turning
+// it into an instant needs exactly the fact the server does not have.
+
+const control =
+    `<input id="field" type="datetime-local" data-bind="at" data-bind-kind="instant" ` +
+    `data-bind-zone="Europe/Berlin">`;
+
+test("a wall clock typed into a control reaches the model as an instant", async () => {
+    const window = boot(control);
+    const field = window.document.getElementById("field");
+
+    field.value = "2026-08-19T11:00";
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    assert.equal(window.exos.signals.at, AT);
+});
+
+test("and the instant reaches the control as the wall clock again", async () => {
+    const window = boot(control);
+    Object.assign(window.exos.signals, { at: AT });
+    await settled();
+
+    assert.equal(window.document.getElementById("field").value, "2026-08-19T11:00");
+});
+
+// Without a zone the control writes and reads the reader's own, which is what
+// a `created` field wants and what a kickoff must not get.
+test("a control with no zone on it writes the reader's own", async () => {
+    const window = boot(
+        `<input id="field" type="datetime-local" data-bind="at" data-bind-kind="instant">`,
+    );
+
+    const field = window.document.getElementById("field");
+    field.value = "2026-08-19T11:00";
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    const local = new Date("2026-08-19T11:00").toISOString().replace(".000Z", "Z");
+    assert.equal(window.exos.signals.at, local);
+});
+
+// A message carrying a date crosses for the reason one carrying a count does,
+// and arrives already written: only a number has a category to fall in.
+test("a message with a date in it is joined around what the browser wrote", async () => {
+    const window = boot(
+        `<p id="say" data-messages='{"m3":{"lang":"en","say":{"other":["Due on ",""]}}}' ` +
+            `data-text="msg('m3', date('${AT}', 'long', 'UTC'))"></p>`,
+    );
+    await settled();
+
+    assert.equal(window.document.getElementById("say").textContent, "Due on August 19, 2026");
+});

@@ -121,12 +121,35 @@ pub struct Bind {
     rules: Option<String>,
     /// The model that answers the rule this field cannot, where it has one.
     check: &'static str,
+    /// The zone a time belongs to, where it is not the reader's own.
+    zone: Option<String>,
+}
+
+impl Bind {
+    /// The zone this control writes its wall clock in.
+    ///
+    /// A kickoff is at the venue, so what is typed into that field is the
+    /// venue's clock whoever is typing. Without this the control reads and
+    /// writes the reader's own zone, which is what a `created` field wants and
+    /// what a kickoff must not get.
+    ///
+    /// Say so beside the control as well. The reader cannot tell what they
+    /// typed from a field that does not name the zone, and nothing here writes
+    /// content next to a control it was handed.
+    pub fn zone(mut self, zone: impl Into<String>) -> Self {
+        self.zone = Some(zone.into());
+        self
+    }
 }
 
 impl IntoAttributes for Bind {
     fn write(self, attributes: &mut Attributes) {
         attributes.set("data-bind", self.name);
         attributes.set("data-bind-kind", self.kind);
+
+        if let Some(zone) = self.zone {
+            attributes.set("data-bind-zone", zone);
+        }
 
         // Only a model field has either. The control answers its own rules and
         // writes the verdict into the record, which is the same slot a refusal
@@ -181,6 +204,7 @@ impl<T: BindKind> Bindable for Signal<T> {
             group: None,
             arms: "",
             check: "",
+            zone: None,
         }
     }
 }
@@ -195,6 +219,7 @@ impl<T: BindKind> Bindable for crate::Bound<T> {
             group: self.group(),
             arms: self.arms(),
             check: self.check(),
+            zone: None,
         }
     }
 }
@@ -294,6 +319,33 @@ mod tests {
         let mut attributes = Attributes::new();
         bind(&query).write(&mut attributes);
         assert!(attributes.render().contains("data-bind-kind=\"string\""));
+    }
+
+    /// A control writing a time hands back a wall clock, and only the browser
+    /// can say which instant that is. The zone travels with the binding where
+    /// the time belongs to a place rather than to whoever is reading.
+    #[test]
+    fn a_binding_over_a_time_carries_the_zone_it_writes_in() {
+        let starts = signal(crate::Instant::from_millis(0));
+
+        let mut attributes = Attributes::new();
+        bind(&starts).write(&mut attributes);
+        let rendered = attributes.render();
+
+        assert!(
+            rendered.contains("data-bind-kind=\"instant\""),
+            "{rendered}"
+        );
+        assert!(!rendered.contains("data-bind-zone"), "{rendered}");
+
+        let mut attributes = Attributes::new();
+        bind(&starts).zone("Europe/Berlin").write(&mut attributes);
+
+        assert!(
+            attributes
+                .render()
+                .contains("data-bind-zone=\"Europe/Berlin\"")
+        );
     }
 
     /// Outside a request there is no page to be on, so a link is an `href` and

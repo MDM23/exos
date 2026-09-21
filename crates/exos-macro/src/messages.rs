@@ -57,6 +57,9 @@ enum Kind {
     /// A count, whose domain is the plural categories of whichever language is
     /// being rendered, and therefore a different type in every arm.
     Plural,
+    /// An instant, written in the browser because the zone is not a server
+    /// fact. The name says which of the three helpers writes it.
+    Instant(&'static str),
     /// A wrapper the call site supplies, which the words a translation puts
     /// between `{terms}` and `{/terms}` are handed to.
     Slot,
@@ -238,10 +241,14 @@ impl Parse for Arm {
 impl Kind {
     /// What a parameter declared as `declared` is.
     ///
-    /// `Plural` and `Slot` are the two type names this macro reads rather than
+    /// `Plural` and `Slot` are two type names this macro reads rather than
     /// passes through. Neither stands for a type a message could name: the
     /// categories German has are not the categories Arabic has, and a slot is
     /// whatever closure the call site brings.
+    ///
+    /// `Date`, `Time` and `Ago` are one type, [`Instant`](exos::Instant), read
+    /// three ways. Which way is not something a call site should decide, since
+    /// a sentence reads "due on" or "posted" and only one of those is a date.
     fn of(declared: Type) -> Self {
         let named = |name| match &declared {
             Type::Path(path) => path.qself.is_none() && path.path.is_ident(name),
@@ -254,6 +261,12 @@ impl Kind {
 
         if named("Slot") {
             return Self::Slot;
+        }
+
+        for (written, helper) in [("Ago", "ago"), ("Date", "date"), ("Time", "time")] {
+            if named(written) {
+                return Self::Instant(helper);
+            }
         }
 
         Self::Value(Box::new(declared))
@@ -300,7 +313,7 @@ impl Message {
         let templates = self.templates()?;
         let branched = self.branched();
 
-        self.check_nothing_branches_on_a_slot(&branched)?;
+        self.check_nothing_branches_on_a_wrapper_or_a_time(&branched)?;
         self.check_every_slot_is_wrapped_around_something(&templates)?;
         self.check_every_parameter_is_read(&templates, &branched)?;
 
@@ -321,6 +334,43 @@ impl Message {
         let name = &self.name;
         let docs = self.documentation();
         let assertions = self.assertions(&branched);
+
+        // A time is not a fact this side has, so a message carrying one
+        // answers with an expression whichever side it was called from. There
+        // is no half that still resolves here and nothing for an argument to
+        // decide.
+        if let Some((when, helper)) = self.dated(markup)? {
+            let inputs = self
+                .parameters
+                .iter()
+                .map(|parameter| parameter.input(false));
+
+            let there = self.crossing(locale, aliases, &templates, &branched, None)?;
+
+            let projected = quote_spanned! { name.span() =>
+                match __locale {
+                    #(#there)*
+                }
+            };
+
+            return Ok(quote! {
+                #(#assertions)*
+
+                #(#docs)*
+                pub fn #name(#(#inputs),*) -> ::exos::Js<::std::string::String> {
+                    let __locale = ::exos::locale::<#locale>();
+                    let __written = ::exos::Js::into_source(::exos::When::to_js(
+                        &::exos::When::read_as(
+                            ::core::convert::Into::into(#when),
+                            #helper,
+                        ),
+                    ));
+                    let __source: &str = &__written;
+
+                    #projected
+                }
+            });
+        }
 
         // A message with one count and no slot answers on whichever side the
         // count is on. Two counts have no single answer type to give, and a
@@ -377,7 +427,7 @@ impl Message {
             markup,
             Crossing::Measured,
         )?;
-        let there = self.crossing(locale, aliases, &templates, &branched, &count)?;
+        let there = self.crossing(locale, aliases, &templates, &branched, Some(&count))?;
 
         let resolved = quote_spanned! { name.span() =>
             match __locale {
@@ -439,7 +489,7 @@ impl Message {
         aliases: &Path,
         templates: &[Template],
         branched: &[bool],
-        count: &Ident,
+        count: Option<&Ident>,
     ) -> syn::Result<Vec<TokenStream>> {
         let counted = self.counted(|name| Crossing::Crossed.written(name, locale, name));
         let mut emitted = Vec::with_capacity(self.arms.len());
@@ -450,17 +500,47 @@ impl Message {
                 Crossing::Crossed.category(name, aliases, variant)
             });
 
-            let counts = branched
-                .iter()
-                .zip(&self.parameters)
-                .any(|(branched, parameter)| *branched && parameter.name == *count);
+            // What this language says, which is one sentence where it has only
+            // one and a `match` over the values the server knows where it has
+            // several. A message crossing on a time is always this, since a
+            // time is never something an arm tells apart.
+            let said = |index: usize| templates[index].string(&counted);
+
+            let inner = || {
+                let subject = tuple(&subjects, variant.span());
+
+                let arms = arms
+                    .iter()
+                    .map(|index| {
+                        let patterns = self.patterns(*index, variant, aliases, branched)?;
+                        let pattern = tuple(&patterns, variant.span());
+                        let text = said(*index);
+
+                        Ok(quote_spanned! { variant.span() => #pattern => #text, })
+                    })
+                    .collect::<syn::Result<Vec<_>>>()?;
+
+                syn::Result::Ok(quote_spanned! { variant.span() =>
+                    match #subject { #(#arms)* }
+                })
+            };
+
+            let counts = count.is_some_and(|count| {
+                branched
+                    .iter()
+                    .zip(&self.parameters)
+                    .any(|(branched, parameter)| *branched && parameter.name == *count)
+            });
 
             // A language whose sentence is the same whatever the count is
             // crosses as one variant, under the category every language has.
             // The browser falls back to it, so there is nothing to enumerate
             // and nothing for the table to carry twice.
-            if subjects.is_empty() || alone || !counts {
-                let text = templates[arms[0]].string(&counted);
+            if !counts {
+                let text = match subjects.is_empty() || alone {
+                    true => said(arms[0]),
+                    false => inner()?,
+                };
 
                 emitted.push(quote! {
                     #locale::#variant => ::exos::project(
@@ -473,19 +553,7 @@ impl Message {
                 continue;
             }
 
-            let subject = tuple(&subjects, variant.span());
-
-            let inner = arms
-                .iter()
-                .map(|index| {
-                    let patterns = self.patterns(*index, variant, aliases, branched)?;
-                    let pattern = tuple(&patterns, variant.span());
-                    let text = templates[*index].string(&counted);
-
-                    Ok(quote_spanned! { variant.span() => #pattern => #text, })
-                })
-                .collect::<syn::Result<Vec<_>>>()?;
-
+            let inner = inner()?;
             let aliased = at(aliases, variant.span());
 
             emitted.push(quote_spanned! { variant.span() =>
@@ -495,7 +563,7 @@ impl Message {
                         .iter()
                         .map(|__category| (
                             ::exos::PluralCategory::from(*__category),
-                            match #subject { #(#inner)* },
+                            #inner,
                         ))
                         .collect(),
                     __source,
@@ -614,26 +682,101 @@ impl Message {
         Ok(())
     }
 
-    /// Refuses an arm that tries to tell values of a slot apart.
+    /// Refuses an arm that tries to tell values of a slot or a time apart.
     ///
     /// A slot is a wrapper rather than a value. There is nothing to compare it
     /// against, and a language that wants different words inside the wrapper
     /// writes different words inside the wrapper.
-    fn check_nothing_branches_on_a_slot(&self, branched: &[bool]) -> syn::Result<()> {
+    ///
+    /// A time has values in abundance and none of them here: it is written in
+    /// the browser, so a `match` on this side would be looking at an instant
+    /// nothing has formatted yet, and picking a sentence by it is picking one
+    /// by a fact the reader's calendar decides.
+    fn check_nothing_branches_on_a_wrapper_or_a_time(&self, branched: &[bool]) -> syn::Result<()> {
         for (parameter, branched) in self.parameters.iter().zip(branched) {
-            if *branched && matches!(parameter.kind, Kind::Slot) {
-                return Err(syn::Error::new(
-                    parameter.name.span(),
-                    format!(
-                        "`{}` is a slot, which is a wrapper rather than a value, so no arm can \
-                         tell one from another; write `_` for it",
-                        parameter.name
-                    ),
-                ));
+            if !branched {
+                continue;
             }
+
+            let complaint = match parameter.kind {
+                Kind::Slot => format!(
+                    "`{}` is a slot, which is a wrapper rather than a value, so no arm can tell \
+                     one from another; write `_` for it",
+                    parameter.name
+                ),
+                Kind::Instant(_) => format!(
+                    "`{}` is a time, which is written in the browser, so no arm here can tell \
+                     one from another; write `_` for it",
+                    parameter.name
+                ),
+                Kind::Plural | Kind::Value(_) => continue,
+            };
+
+            return Err(syn::Error::new(parameter.name.span(), complaint));
         }
 
         Ok(())
+    }
+
+    /// The instant this message is written around, where it has one.
+    ///
+    /// An instant is not a server fact, so a message carrying one answers with
+    /// an expression whichever side it was called from. What is refused here
+    /// is refused because the answer would otherwise have to be two things at
+    /// once: a message crosses on one value, and a message that builds nodes
+    /// does not cross at all.
+    fn dated(&self, markup: bool) -> syn::Result<Option<(&Ident, &'static str)>> {
+        let mut times = self
+            .parameters
+            .iter()
+            .filter_map(|parameter| match parameter.kind {
+                Kind::Instant(helper) => Some((&parameter.name, helper)),
+                _ => None,
+            });
+
+        let Some((when, helper)) = times.next() else {
+            return Ok(None);
+        };
+
+        if let Some((second, _)) = times.next() {
+            return Err(syn::Error::new(
+                second.span(),
+                format!(
+                    "`{when}` is already what `{}` crosses on, and a message crosses on one \
+                     value; `{second}` would need a second one",
+                    self.name
+                ),
+            ));
+        }
+
+        if let Some(count) = self
+            .parameters
+            .iter()
+            .find(|parameter| matches!(parameter.kind, Kind::Plural))
+            .map(|parameter| &parameter.name)
+        {
+            return Err(syn::Error::new(
+                count.span(),
+                format!(
+                    "`{count}` is a count and `{when}` is a time, and both are the browser's to \
+                     write, so `{}` would have to cross on two values at once",
+                    self.name
+                ),
+            ));
+        }
+
+        if markup {
+            return Err(syn::Error::new(
+                when.span(),
+                format!(
+                    "`{}` has a slot in it, so it builds nodes rather than text and cannot be \
+                     written in the browser; wrap the projected text at the call site instead",
+                    self.name
+                ),
+            ));
+        }
+
+        Ok(Some((when, helper)))
     }
 
     /// Refuses a translation that drops a slot, or uses one twice.
@@ -817,10 +960,14 @@ impl Message {
     /// `written` says what it goes in as, which is the language's own
     /// formatting where the count is known and [`HOLE`](exos::HOLE) where the
     /// browser will supply it.
+    ///
+    /// A time is the other value the browser supplies, and it is never written
+    /// here: it reaches this only from a projection, with a hole where the
+    /// formatted date goes.
     fn counted(&self, written: impl Fn(&Ident) -> TokenStream) -> Vec<(&Ident, TokenStream)> {
         self.parameters
             .iter()
-            .filter(|parameter| matches!(parameter.kind, Kind::Plural))
+            .filter(|parameter| matches!(parameter.kind, Kind::Plural | Kind::Instant(_)))
             .map(|parameter| (&parameter.name, written(&parameter.name)))
             .collect()
     }
@@ -853,8 +1000,10 @@ impl Message {
                     // By reference, so that a parameter which is matched can
                     // still be interpolated, whatever it is. A slot never
                     // reaches this, having been refused as something to
-                    // branch on above.
-                    Kind::Slot | Kind::Value(_) => quote_spanned! { variant.span() => &#name },
+                    // branch on above, and neither does a time.
+                    Kind::Instant(_) | Kind::Slot | Kind::Value(_) => {
+                        quote_spanned! { variant.span() => &#name }
+                    }
                 }
             })
             .collect()
@@ -882,9 +1031,10 @@ impl Message {
                 let domain = match &parameter.kind {
                     Kind::Plural => quote! { #aliases::#variant::Plural },
                     Kind::Value(declared) => declared.to_token_stream(),
-                    // A slot has no values to name, which is refused above, so
-                    // there is nothing here to qualify a name with.
-                    Kind::Slot => TokenStream::new(),
+                    // Neither a slot nor a time has values to name, both being
+                    // refused above, so there is nothing here to qualify a
+                    // name with.
+                    Kind::Instant(_) | Kind::Slot => TokenStream::new(),
                 };
 
                 qualify(&patterns[index], &domain)
@@ -993,6 +1143,11 @@ impl Parameter {
             Kind::Slot => quote! {
                 #name: impl ::core::ops::FnOnce(::exos::Markup) -> ::exos::Markup
             },
+            // An instant, or a `When` where the call site has something to say
+            // about the form or the zone. Which of the three helpers reads it
+            // is not one of those things: a sentence says "due on" or "posted"
+            // whoever calls it, so the declaration wins below.
+            Kind::Instant(_) => quote! { #name: impl ::core::convert::Into<::exos::When> },
             Kind::Value(declared) => quote! { #name: #declared },
         }
     }
@@ -1418,5 +1573,100 @@ mod tests {
 
         assert!(expanded.contains("compile_error"));
         assert!(expanded.contains("built-in slot"), "{expanded}");
+    }
+
+    /// A time is never a fact this side has, so the message answers with an
+    /// expression and there is no half of it that resolves here.
+    #[test]
+    fn a_time_makes_the_whole_message_cross() {
+        let expanded = expand_ok(r#"due(when: Date) { De = "Fällig am {when}", }"#);
+
+        assert!(
+            expanded.contains(
+                "pub fn due (when : impl :: core :: convert :: Into < :: exos :: When >)"
+            ),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains("-> :: exos :: Js < :: std :: string :: String >"),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains(
+                r#":: exos :: When :: read_as (:: core :: convert :: Into :: into (when) , "date""#
+            ),
+            "{expanded}"
+        );
+        assert!(
+            expanded.contains(r#"format ! ("Fällig am {when}" , when = :: exos :: HOLE)"#),
+            "{expanded}"
+        );
+    }
+
+    /// Which of the three ways the browser writes one is the message's to say:
+    /// a sentence reads "due on" or "posted", and only one of those is a date.
+    /// It is imposed rather than passed, so a call site that brought a zone or
+    /// a form keeps them and cannot change which helper reads them.
+    #[test]
+    fn how_a_time_is_written_is_declared_beside_it() {
+        let expanded = expand_ok(r#"posted(when: Ago) { En = "Posted {when}", }"#);
+
+        assert!(
+            expanded.contains(r#"read_as (:: core :: convert :: Into :: into (when) , "ago""#),
+            "{expanded}"
+        );
+    }
+
+    /// The sentence around it is still chosen here, where the server's own
+    /// dimensions are known. Only the date is left to the browser.
+    #[test]
+    fn a_server_dimension_beside_a_time_is_resolved_before_it_crosses() {
+        let expanded = expand_ok(
+            r#"posted(to: Assignee, when: Ago) {
+                En { Me, _ } = "You posted this {when}",
+                En { _, _ } = "Posted {when}",
+            }"#,
+        );
+
+        assert!(expanded.contains("match & to"), "{expanded}");
+        assert!(
+            expanded.contains(":: exos :: PluralCategory :: Other"),
+            "{expanded}"
+        );
+        assert!(!expanded.contains("Enumerable > :: ALL"), "{expanded}");
+    }
+
+    /// Two client dimensions would need a key per combination and a return
+    /// type that is an expression when any argument is one. Neither is built,
+    /// and a message that wants both is told so rather than crossing wrongly.
+    #[test]
+    fn a_count_and_a_time_in_one_message_are_refused() {
+        let expanded =
+            expand_ok(r#"due(count: Plural, when: Date) { En = "{count} due {when}", }"#);
+
+        assert!(expanded.contains("compile_error"));
+        assert!(expanded.contains("two values at once"), "{expanded}");
+    }
+
+    /// A message with a slot builds nodes rather than text, and a projection
+    /// writes text.
+    #[test]
+    fn a_slot_beside_a_time_is_refused() {
+        let expanded =
+            expand_ok(r#"due(link: Slot, when: Date) { En = "{link}due{/link} {when}", }"#);
+
+        assert!(expanded.contains("compile_error"));
+        assert!(
+            expanded.contains("builds nodes rather than text"),
+            "{expanded}"
+        );
+    }
+
+    #[test]
+    fn nothing_branches_on_a_time() {
+        let expanded = expand_ok(r#"due(when: Date) { En { Something } = "{when}", }"#);
+
+        assert!(expanded.contains("compile_error"));
+        assert!(expanded.contains("written in the browser"), "{expanded}");
     }
 }

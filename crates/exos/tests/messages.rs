@@ -116,6 +116,33 @@ exos::messages! {
         En = "{link}<close>{/link}",
     }
 
+    /// A time is not a fact this side has, so the message answers with an
+    /// expression whichever side it was called from, and `Date` is which of
+    /// the three ways the browser writes one.
+    due(when: Date) {
+        Ar = "موعد التسليم {when}",
+        De = "Fällig am {when}",
+        En = "Due on {when}",
+    }
+
+    /// A server dimension beside it is still resolved here. What crosses is
+    /// the one sentence `to` already chose, with a hole where the date goes.
+    posted(to: Assignee, when: Ago) {
+        Ar { .. }          = "نشر {when}",
+        De { .. }          = "Veröffentlicht {when}",
+        En { Me, _ }       = "You posted this {when}",
+        En { Somebody, _ } = "Posted {when}",
+    }
+
+    /// The declaration says which of the three reads it; the call site says
+    /// which zone it belongs to and how long a form to write. A kickoff is at
+    /// the venue, so this one is called with both.
+    kickoff_at(when: Time) {
+        Ar = "انطلاق المباراة {when}",
+        De = "Anstoß um {when}",
+        En = "Kickoff at {when}",
+    }
+
     /// No slot, so a string, and the ampersand is escaped by whatever renders
     /// it rather than by the macro.
     save_and_close {
@@ -178,6 +205,28 @@ async fn projected() -> Page {
                 <p id="selected" {exos::text(items_selected(picked.get().len()))}></p>
                 <p id="assigned" {exos::text(assigned(Assignee::Me, picked.get().len()))}></p>
                 <p id="here">{ items_selected(3) }</p>
+            </body>
+        </html>
+    })
+}
+
+/// The same again over a time, which no argument decides: the zone is the
+/// browser's whoever called this.
+#[exos::get("/messages/dated")]
+async fn dated() -> Page {
+    let locale: Locale = exos::locale();
+    let when = exos::Instant::from_millis(1_787_130_000_000);
+
+    Page(view! {
+        <!DOCTYPE html>
+        <html { exos::lang(locale) }>
+            <body>
+                <p id="due" {exos::text(due(when))}></p>
+                <p id="posted" {exos::text(posted(Assignee::Me, when))}></p>
+                <p id="plain">{ exos::When::ago(when) }</p>
+                <p id="kickoff" {exos::text(kickoff_at(
+                    exos::When::of(when).long().zone("Europe/Berlin"),
+                ))}></p>
             </body>
         </html>
     })
@@ -475,4 +524,59 @@ async fn a_server_side_dimension_does_not_cross_with_it() {
 
     assert!(html.contains("assigned to you"), "{html}");
     assert!(!html.contains("assigned to somebody"), "{html}");
+}
+
+/// A time crosses for the reason a count does, and the message says so in its
+/// return type: there is no argument to decide, because there is no reading of
+/// it the server could finish.
+#[tokio::test]
+async fn a_message_carrying_a_time_is_written_in_the_browser() {
+    let html = body("/messages/dated", "de").await;
+
+    assert!(
+        html.contains("date(&quot;2026-08-19T09:00:00Z&quot;)"),
+        "{html}"
+    );
+    assert!(html.contains("&quot;Fällig am &quot;"), "{html}");
+    assert!(!html.contains("<p id=\"due\">Fällig"), "{html}");
+}
+
+/// And the sentence around it is chosen here, where the server's own
+/// dimensions are known. Only the date is left to the browser.
+#[tokio::test]
+async fn a_dimension_the_server_knows_still_does_not_cross_with_a_time() {
+    let html = body("/messages/dated", "en").await;
+
+    assert!(html.contains("You posted this "), "{html}");
+    assert!(!html.contains("Posted &quot;"), "{html}");
+    assert!(
+        html.contains("ago(&quot;2026-08-19T09:00:00Z&quot;)"),
+        "{html}"
+    );
+}
+
+/// The element's own text is the instant, so a crawler and a reader without
+/// the runtime see something true rather than something wrong.
+#[tokio::test]
+async fn an_element_holding_a_time_says_it_before_the_runtime_writes_it() {
+    let html = body("/messages/dated", "en").await;
+
+    assert!(html.contains("datetime=\"2026-08-19T09:00:00Z\""), "{html}");
+    assert!(html.contains(">2026-08-19T09:00:00Z</time>"), "{html}");
+}
+
+/// The declaration decides which of the three helpers reads the time, and the
+/// call site decides the rest. A kickoff is at the venue, so the message that
+/// says so carries the venue's zone rather than the reader's.
+#[tokio::test]
+async fn a_message_carries_the_zone_and_the_form_its_call_site_asked_for() {
+    let html = body("/messages/dated", "de").await;
+
+    assert!(
+        html.contains(
+            "time(&quot;2026-08-19T09:00:00Z&quot;, &quot;long&quot;, &quot;Europe/Berlin&quot;)"
+        ),
+        "{html}"
+    );
+    assert!(html.contains("&quot;Anstoß um &quot;"), "{html}");
 }

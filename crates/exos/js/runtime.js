@@ -247,6 +247,7 @@
                 "get", "post", "put", "patch", "del",
                 "attr", "append", "focus", "debounce",
                 "rows", "addRow", "dropRow", "rowError", "dirty", "msg",
+                "date", "time", "ago",
                 statement ? source : `return (${source})`,
             );
         } catch (error) {
@@ -464,6 +465,9 @@
             rowError,
             (name) => isDirty(el, name),
             say,
+            date,
+            time,
+            ago,
         );
     }
 
@@ -512,6 +516,14 @@
             return "";
         }
 
+        // A date crossed for the same reason a count does, and arrives already
+        // written: only a number has a category to fall in, and only a number
+        // is the language's to write. A count is a number by the time it gets
+        // here, since `Js<T: Count>` is what the projection would accept.
+        if (typeof count === "string") {
+            return (entry.say.other ?? []).join(count);
+        }
+
         const number = Number(count);
         const { plural, number: written } = formatter(entry.lang);
 
@@ -542,6 +554,193 @@
         } catch (error) {
             console.error("[exos] bad data-messages:", declared, error);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    //                              DATES AND TIMES
+    // -------------------------------------------------------------------------
+
+    // The server sends the instant and this writes it. A zone is a fact about
+    // the reader that reaches the server only after the first render, and the
+    // first render is the one that matters, so the half holding the fact does
+    // the work. Here there is ICU and the whole IANA database, and
+    // `document.documentElement.lang` says which language to read them in.
+    //
+    // A zone may be given instead, for a time that belongs to a place rather
+    // than to whoever is reading: a kickoff is at the venue, and every viewer
+    // of that fixture list has to see the same clock time.
+
+    const language = () => document.documentElement.lang || "en";
+
+    // Built once per language, style and zone, since a binding re-runs on
+    // every morph and an `Intl` object is not free to make.
+    const formats = new Map();
+
+    function format(style, written, zone) {
+        const key = `${language()}/${style}/${written}/${zone ?? ""}`;
+        let held = formats.get(key);
+
+        if (!held) {
+            held = new Intl.DateTimeFormat(language(), { [style]: written, timeZone: zone });
+            formats.set(key, held);
+        }
+
+        return held;
+    }
+
+    // An instant, however it was written, as the number everything below works
+    // in. What cannot be read answers with nothing, since "Invalid Date" is
+    // what a reader would otherwise be shown.
+    function instantAt(value) {
+        const at = value instanceof Date ? value.getTime() : Date.parse(value);
+        return Number.isNaN(at) ? null : at;
+    }
+
+    function date(value, style = "medium", zone = undefined) {
+        const at = instantAt(value);
+        return at === null ? "" : format("dateStyle", style, zone).format(at);
+    }
+
+    function time(value, style = "short", zone = undefined) {
+        const at = instantAt(value);
+        return at === null ? "" : format("timeStyle", style, zone).format(at);
+    }
+
+    // How often `ago` is read again, and where the answer to "now" is kept. In
+    // the store rather than pushed at the elements, because an effect
+    // subscribes to what it reads: what a tick re-runs is exactly the bindings
+    // that asked the question, and a page with no relative time on it never
+    // starts the interval at all.
+    const TICK = 30_000;
+    const NOW = "~now";
+    let ticking = null;
+
+    // The units a difference is read in, largest first, and nothing below a
+    // minute: a clock that says "43 seconds ago" is asking to be watched. The
+    // spans are nominal, since the formatter rounds to a whole unit anyway and
+    // "2 months ago" is not a claim about which two months.
+    const UNITS = [
+        ["year", 31_536_000_000],
+        ["month", 2_592_000_000],
+        ["week", 604_800_000],
+        ["day", 86_400_000],
+        ["hour", 3_600_000],
+        ["minute", 60_000],
+    ];
+
+    const relatives = new Map();
+
+    function relative(style) {
+        const key = `${language()}/${style}`;
+        let held = relatives.get(key);
+
+        if (!held) {
+            held = new Intl.RelativeTimeFormat(language(), { numeric: "auto", style });
+            relatives.set(key, held);
+        }
+
+        return held;
+    }
+
+    function ago(value, style = "long") {
+        const at = instantAt(value);
+        if (at === null) return "";
+
+        // Started by the first binding that asks, and read whether or not it
+        // has ticked yet: the read is what subscribes this effect, so the
+        // first tick is what brings it back.
+        //
+        // And stopped again once a morph has taken the last of them away,
+        // since an interval outliving its readers is a timer nobody can find.
+        if (!ticking) {
+            ticking = setInterval(() => {
+                if (slot(NOW).subscribers.size) return void write(NOW, Date.now());
+
+                clearInterval(ticking);
+                ticking = null;
+            }, TICK);
+        }
+
+        const apart = at - (read(NOW) ?? Date.now());
+        const written = relative(style);
+
+        for (const [unit, span] of UNITS) {
+            if (Math.abs(apart) >= span) return written.format(Math.trunc(apart / span), unit);
+        }
+
+        return written.format(0, "minute");
+    }
+
+    // A formatter whose parts are the fields themselves, which is how a zone's
+    // offset is asked for without carrying a table of them.
+    const zoned = new Map();
+
+    function fieldsIn(zone) {
+        let held = zoned.get(zone);
+
+        if (!held) {
+            held = new Intl.DateTimeFormat("en-US", {
+                timeZone: zone,
+                hour12: false,
+                year: "numeric",
+                month: "2-digit",
+                day: "2-digit",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+            });
+
+            zoned.set(zone, held);
+        }
+
+        return held;
+    }
+
+    // What a zone is ahead of UTC at `at`, in milliseconds. The reader's own
+    // zone is the one case the platform answers directly.
+    function offsetAt(at, zone) {
+        if (!zone) return -new Date(at).getTimezoneOffset() * 60_000;
+
+        const fields = Object.fromEntries(
+            fieldsIn(zone)
+                .formatToParts(at)
+                .map((part) => [part.type, part.value]),
+        );
+
+        const wall = Date.UTC(
+            Number(fields.year),
+            Number(fields.month) - 1,
+            Number(fields.day),
+            Number(fields.hour) % 24,
+            Number(fields.minute),
+            Number(fields.second),
+        );
+
+        return wall - Math.floor(at / 1000) * 1000;
+    }
+
+    // A wall clock in `zone`, as `<input type="datetime-local">` writes one.
+    function wallClock(value, zone) {
+        const at = instantAt(value);
+        if (at === null) return "";
+
+        return new Date(at + offsetAt(at, zone)).toISOString().slice(0, 16);
+    }
+
+    // And the other way: the instant a wall clock in `zone` names.
+    //
+    // Read as UTC first and then corrected by the offset that guess has, twice,
+    // because the offset an hour either side of a transition is not the offset
+    // at the answer. An hour a zone skips or repeats has no one instant to be,
+    // and what comes back for one is the later reading.
+    function instantOf(text, zone) {
+        const naive = instantAt(text.length === 16 ? `${text}:00Z` : `${text}Z`);
+        if (naive === null) return "";
+
+        let at = naive;
+        for (let pass = 0; pass < 2; pass += 1) at = naive - offsetAt(at, zone);
+
+        return new Date(at).toISOString().replace(".000Z", "Z");
     }
 
     // Whether a field has been edited, kept in the store like everything else
@@ -644,8 +843,9 @@
                     : Boolean(value);
             } else if (el.type === "radio") {
                 el.checked = String(value) === el.value;
-            } else if (el.value !== String(value ?? "")) {
-                el.value = String(value ?? "");
+            } else {
+                const written = shown(value, el.getAttribute("data-bind-kind"), el);
+                if (el.value !== written) el.value = written;
             }
         },
 
@@ -894,11 +1094,27 @@
     // An `<input>` always yields a string, but the signal's Rust type decides
     // what the server accepts: pushing "1" into a Vec<u32> fails to
     // deserialize. `data-bind-kind` carries that type across.
-    function coerce(value, kind) {
+    //
+    // A `datetime-local` control is the one that hands back something no
+    // amount of parsing on the server could finish: a wall clock with no zone.
+    // The zone is here, so the instant is made here.
+    function coerce(value, kind, el) {
         if (kind === "number") return Number(value);
         if (kind === "bool") return value === "true";
+        if (kind === "instant") return instantOf(value, zoneOf(el));
         return value;
     }
+
+    // And the same value on its way back to the control, which wants the wall
+    // clock again rather than the instant.
+    function shown(value, kind, el) {
+        if (kind === "instant") return wallClock(value, zoneOf(el));
+        return String(value ?? "");
+    }
+
+    // The zone a control is writing in, where the time belongs to a place
+    // rather than to whoever is reading.
+    const zoneOf = (el) => el.getAttribute("data-bind-zone") || undefined;
 
     for (const type of ["change", "input"]) {
         document.addEventListener(type, (ev) => {
@@ -923,13 +1139,13 @@
                 const value = el.value;
                 const next = current.map(String).includes(value)
                     ? current.filter((held) => String(held) !== value)
-                    : [...current, coerce(value, kind)];
+                    : [...current, coerce(value, kind, el)];
 
                 write(key, next);
             } else if (CHECKABLE.has(el.type)) {
-                write(key, el.type === "radio" ? coerce(el.value, kind) : el.checked);
+                write(key, el.type === "radio" ? coerce(el.value, kind, el) : el.checked);
             } else {
-                write(key, coerce(el.value, kind));
+                write(key, coerce(el.value, kind, el));
             }
 
             // And whatever this field's rules cannot answer, once the typing

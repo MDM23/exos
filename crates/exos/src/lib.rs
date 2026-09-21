@@ -33,6 +33,7 @@ mod effect;
 mod fnv;
 mod hex;
 mod identity;
+mod instant;
 mod js;
 mod keys;
 mod live;
@@ -62,6 +63,7 @@ pub use crate::{
     discover::{AssetSetEntry, RouteEntry},
     effect::{Effect, EffectStream, Step},
     identity::{Audience, Audiences, Resolution},
+    instant::{Instant, NotAnInstant, When},
     js::{
         IntoJs, IntoPayload, Js, append, attr_now, call, debounce, emit, focus_now, quote_js,
         record, when,
