@@ -17,8 +17,8 @@ resolver sketched below takes a session and reads it; exos holds no session
 contents, only the name, so it takes the name and is async and fallible. And it
 takes an `Option` of that name, because a stream cannot start a session and a
 nameless connection is therefore a real state rather than one to design away.
-See [sessions and identity](sessions-and-identity.md) stage 5 for what the built
-version looks like.
+See [sessions and identity](../spec/sessions-and-identity.md#identity-on-the-stream)
+for what the built version looks like.
 
 The smaller items it names in passing, the missing step names, the reconnect
 gap and the topic index, have moved to [loose ends](loose-ends.md), because
@@ -179,7 +179,8 @@ Three consequences, all built in from the start as this stage asked:
 ## Stage 2: the request scope
 
 **Built**, in [scope.rs](../../crates/exos/src/scope.rs), because
-[sessions and identity](sessions-and-identity.md) needed it first. Rendering
+[sessions and identity](../spec/sessions-and-identity.md) needed it first.
+Rendering
 `notification_count(id)` three components deep does not mean threading a user
 id through every caller above it: it is a task-local set by a layer, on the
 same argument [context.rs](../../crates/exos/src/context.rs) makes for `data`,

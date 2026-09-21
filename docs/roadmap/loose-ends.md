@@ -3,12 +3,10 @@
 The small things. Each one is known, each one is independent, and none of them
 is big enough to argue with itself for a document.
 
-Status: open unless an entry says otherwise. The two design documents,
-[sessions and identity](sessions-and-identity.md) and [directed
-effects](directed-effects.md), describe systems that are unfinished: the first
-is built as far as the session, the second not at all. This one describes work
-on the parts that are finished, which is why the entries are short: the thinking
-is already done and what is left is the doing.
+Status: open unless an entry says otherwise. This one describes work on the
+parts of exos that are finished, which is why the entries are short: the
+thinking is already done and what is left is the doing. Everything still being
+designed is in the documents beside it.
 
 Ordered by what would break if it stayed undone, not by effort. A finished entry
 keeps its place rather than moving or leaving, because what it decided is worth
@@ -423,22 +421,20 @@ Four things are deliberately absent, because they are designs rather than
 chores and each has somewhere better to live.
 
 - **Sessions, identity and CSRF**, in [sessions and
-  identity](sessions-and-identity.md). The live token not being bound to a
-  viewer is the README's first listed gap and is a stage of that document, not
-  a loose end.
+  identity](../spec/sessions-and-identity.md), which is built. Binding the live
+  token to a viewer was the README's first listed gap and is closed there.
 - **Directed effects and audiences**, in [directed
-  effects](directed-effects.md), including the `#[derive(Audience)]` sugar,
-  which cannot be a loose end before the trait it derives exists.
-- **Localization**, in [localization](localization.md), whose first two stages
-  are built: the locale set, how a request reaches one, what the document says
-  it was rendered in, and the messages themselves, slots included.
-  Locale-formatted numbers and everything that has to reach the browser are the
-  rest of that document rather than loose ends.
+  effects](directed-effects.md), built as far as pushing an effect to a person.
+  The `#[derive(Audience)]` sugar is the one part of it small enough to be a
+  loose end, and now could be: the trait it derives exists.
+- **Localization**, in [localization](localization.md), built as far as a
+  message whose count the browser holds. Locale-formatted dates and fragments
+  in more than one language are the rest of that document rather than loose
+  ends.
 - **Running more than one instance**, in [more than one
-  instance](more-than-one-instance.md). The connection registry is a
-  process-local `HashMap`, so a publish reaches only the tabs connected to the
-  instance that sent it. Swapping a session store does nothing for it. It needs
-  a bus, and it is the one thing here that cannot be added quietly later.
+  instance](more-than-one-instance.md), built as far as a cluster that needs no
+  sticky sessions. What is left there is the broker doing the filtering, which
+  waits for a volume nothing has reached.
 
 Form validation is absent for the same reason, and now has [forms](forms.md) to
 be absent into. The `Effect` shape was always right for it; what was missing is

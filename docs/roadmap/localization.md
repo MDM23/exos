@@ -21,7 +21,8 @@ still a prototype, and lived in a guide draft that was cut when the guide was
 rewritten against code that existed.
 
 Stage 5 waits on nothing. [Sessions and
-identity](sessions-and-identity.md) already supplies the one thing it needs
+identity](../spec/sessions-and-identity.md) already supplies the one thing it
+needs
 from elsewhere, which is a place for an application to say who a request is,
 and that place is built.
 
@@ -219,7 +220,7 @@ reasons, in increasing order of how much they would hurt:
 
 - **There is nothing to write to.** exos holds a session's name and none of its
   contents, which [stage 3 of sessions and
-  identity](sessions-and-identity.md#stage-3-and-no-store-at-all) argues at
+  identity](../spec/sessions-and-identity.md#no-store-at-all) argues at
   length. A locale would be the first exception, and it is not special enough
   to be one.
 - **A copy drifts from what owns it.** The profile is the preference. A second

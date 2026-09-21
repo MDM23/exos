@@ -51,7 +51,7 @@ whole input, and a render that may read the viewer has no such proof.
 `identify` runs once per connection when the stream opens, which is what makes
 it affordable to be async and fallible. Rendering per subscriber means either
 the framework holds session contents, which [sessions and
-identity](sessions-and-identity.md#stage-3-and-no-store-at-all) argued its way
+identity](../spec/sessions-and-identity.md#no-store-at-all) argued its way
 out of after building one, or it re-resolves per subscriber per publish, which
 is a database call per viewer per price change.
 
@@ -195,7 +195,8 @@ combination.
 - **The live token.** A token is an HMAC over the topic id, and a topic that
   now includes a dimension is still just a topic. Binding it to a session
   remains the open problem it is in [sessions and
-  identity](sessions-and-identity.md), for the reason that document gives:
+  identity](../spec/sessions-and-identity.md), for the reason that document
+  gives:
   `publish` renders outside any request, so a patch introducing a new fragment
   has no session to bind to.
 - **Per-viewer fragments.** A viewer id has an unbounded domain, so it stays

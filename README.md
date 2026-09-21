@@ -174,21 +174,11 @@ carried a real application yet. Known gaps, roughly in priority order:
   with a slot, which would have the runtime build elements rather than text,
   and a message with two counts, which could be on two sides at once.
 
-Where each of those is going is written down in [docs/roadmap](docs/roadmap):
-[sessions and identity](docs/roadmap/sessions-and-identity.md) is the one most
-of the others waited on and is now built, so a live subscription proves the
-browser presenting it was served the fragment,
-[directed effects](docs/roadmap/directed-effects.md) is built as
-far as pushing an effect to a person, [forms](docs/roadmap/forms.md) is built as
-far as rules that answer on both sides and the one rule that answers over the
-wire while a field is typed,
-[localization](docs/roadmap/localization.md) is built as far as a message
-whose count the browser holds,
-[more than one instance](docs/roadmap/more-than-one-instance.md) is built as
-far as a cluster that needs no sticky sessions and where a sign-out means the
-same thing on every node, and [loose
-ends](docs/roadmap/loose-ends.md) collects the smaller work that waits for
-nothing.
+Where each of those is going is written down in
+[docs/roadmap](docs/roadmap/README.md), which lists every design and what is
+left of it. The designs that are finished, [sessions and
+identity](docs/spec/sessions-and-identity.md) and [what an outside review
+found](docs/spec/outside-review.md), have moved to [docs/spec](docs/spec).
 
 ## License
 

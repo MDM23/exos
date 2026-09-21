@@ -16,21 +16,10 @@ does a message with two counts, since they could be on two sides at once.
 ## The roadmap
 
 Where each of those is going is written down in
-[docs/roadmap](https://github.com/MDM23/exos/tree/main/docs/roadmap).
-[Sessions and identity](https://github.com/MDM23/exos/blob/main/docs/roadmap/sessions-and-identity.md)
-is the one most of the others wait on and names both the browser and, on a live
-stream, who it belongs to.
-[Directed effects](https://github.com/MDM23/exos/blob/main/docs/roadmap/directed-effects.md)
-is built as far as pushing an effect to a person.
-[Localization](https://github.com/MDM23/exos/blob/main/docs/roadmap/localization.md)
-is built as far as a message whose count the browser holds, and says what a
-live fragment in eight languages costs.
-[More than one instance](https://github.com/MDM23/exos/blob/main/docs/roadmap/more-than-one-instance.md)
-is built as far as a cluster that needs no sticky sessions and where signing
-out means the same thing on every node, and says which of the ordering
-guarantees survive.
-[Loose ends](https://github.com/MDM23/exos/blob/main/docs/roadmap/loose-ends.md)
-collects the smaller work that waits for nothing.
+[docs/roadmap](https://github.com/MDM23/exos/tree/main/docs/roadmap), whose
+index lists every design and what is left of it. The designs that are finished,
+sessions and identity and what an outside review found, have moved to
+[docs/spec](https://github.com/MDM23/exos/tree/main/docs/spec).
 
 [What exos does not do](limits) is the other half of this page, and is about
 decisions rather than gaps.

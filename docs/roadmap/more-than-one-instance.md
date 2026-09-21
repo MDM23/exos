@@ -25,7 +25,7 @@ Three decisions made for other reasons turn out to be the whole of the easy
 half.
 
 - **A session is a name in a signed cookie and no store**, which [sessions and
-  identity](sessions-and-identity.md#stage-3-and-no-store-at-all) argued for on
+  identity](../spec/sessions-and-identity.md#no-store-at-all) argued for on
   its own merits. Every node reads the same cookie and learns the same thing,
   so there is nothing to replicate and nothing to expire.
 - **A topic is named the same way by every build**, fixed in

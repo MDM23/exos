@@ -165,7 +165,7 @@ what makes it worth asking.
 "A `view!` fragment is a plain function and cannot await" is load-bearing in
 three places: [the guide](../site/content/application-state.md#per-request),
 [session.rs](../../crates/exos/src/session.rs), and [sessions and
-identity](sessions-and-identity.md#stage-3-and-no-store-at-all), where it is
+identity](../spec/sessions-and-identity.md#no-store-at-all), where it is
 the *deciding argument* for exos holding a session's name and none of its
 contents.
 

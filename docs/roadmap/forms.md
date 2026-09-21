@@ -39,8 +39,8 @@ server alone can answer. Written entirely with today's surface, so what a form
 costs without any help is a thing to read rather than a thing to argue about.
 
 It was built first because every stage below it was a guess, which is the method
-the rest of this roadmap was built by: stage 4 of [sessions and
-identity](sessions-and-identity.md) argued for a `reconnect` step until
+the rest of this roadmap was built by: [sessions and
+identity](../spec/sessions-and-identity.md) argued for a `reconnect` step until
 [`examples/auction`](../../examples/auction) showed it loses a race it cannot
 win. The guesses named as most likely to be wrong were stages 4 and 5, and stage
 5 was the one that moved.
@@ -800,10 +800,10 @@ happens to be the one that knows.
 
 - **No form-encoded bodies, and therefore no CSRF token.** A form posts through
   the typed caller like every other action, which carries the header [sessions
-  and identity](sessions-and-identity.md) stage 7 requires. A form that submits
-  without JavaScript carries neither, so it is refused rather than half
-  defended, and buying it back is a token, a helper and a second body format.
-  Not now, and possibly not ever.
+  and identity](../spec/sessions-and-identity.md#csrf-is-one-rule)
+  requires. A form that submits without JavaScript carries neither, so it is
+  refused rather than half defended, and buying it back is a token, a helper
+  and a second body format. Not now, and possibly not ever.
 - **No client-side authority.** The client's copy of a rule is feedback. The
   server checks everything, every time, and it is the extractor that does it so
   that no handler can decline to.
