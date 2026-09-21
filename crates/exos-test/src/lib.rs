@@ -132,6 +132,18 @@ impl Browser {
         }
     }
 
+    /// The same tab, already holding a cookie.
+    ///
+    /// For a browser an application knows before it has been anywhere: a
+    /// session bound to an account out of band, or one that is not valid at
+    /// all, which is a thing a browser really does turn up with. A session it
+    /// was given by a page it loaded needs none of this.
+    #[must_use]
+    pub fn with_cookie(mut self, name: &str, value: &str) -> Self {
+        self.cookies.insert(name.to_owned(), value.to_owned());
+        self
+    }
+
     /// Loads a page, as typing a URL or clicking a link does.
     ///
     /// A `GET` answering with a document is a navigation, and a navigation
@@ -194,6 +206,21 @@ impl Browser {
         self.sync().await;
 
         answer
+    }
+
+    /// Opens the stream without a fragment asking for one.
+    ///
+    /// A page holding a fragment opens one by itself, which is how a tab comes
+    /// by a stream. This is for what arrives on a stream *without* being
+    /// subscribed to: a [directed](exos::send) effect reaches a connection by
+    /// who it belongs to rather than by what it watches, so a test about one
+    /// wants a tab watching nothing, where nothing else can arrive to be
+    /// mistaken for it.
+    pub async fn listen(&mut self) {
+        if self.stream.is_none() {
+            self.stream = Some(self.dial().await);
+            self.sync().await;
+        }
     }
 
     /// The next step this tab is sent over the live stream.
@@ -379,35 +406,47 @@ impl Browser {
 
         self.subscribed = encoded.clone();
 
-        if self.stream.is_none() {
-            self.stream = Some(self.dial().await);
+        // Twice at most. A connection the server has never heard of is a
+        // stream it ended on purpose, which is what a rotation does so that a
+        // tab comes back as whoever it is now, and what a tab does with one is
+        // open another. The tokens it then claims were minted for the session
+        // it has left, so they prove nothing and are dropped, and the page
+        // arriving again is what brings tokens the new session owns.
+        for attempt in 0..2 {
+            if self.stream.is_none() {
+                self.stream = Some(self.dial().await);
+            }
+
+            let connection = &self
+                .stream
+                .as_ref()
+                .expect("a stream was just opened")
+                .connection;
+
+            let body = format!(r#"{{"connection":"{connection}","topics":{encoded}}}"#);
+
+            let answer = self
+                .roundtrip(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/_exos/subscribe")
+                        .header(header::CONTENT_TYPE, "application/json")
+                        .body(Body::from(body))
+                        .expect("a valid request"),
+                )
+                .await;
+
+            match answer.status() {
+                StatusCode::NO_CONTENT => return,
+
+                StatusCode::GONE if attempt == 0 => self.stream = None,
+
+                status => panic!(
+                    "the subscription was refused with {status}: {}",
+                    answer.body()
+                ),
+            }
         }
-
-        let connection = &self
-            .stream
-            .as_ref()
-            .expect("a stream was just opened")
-            .connection;
-
-        let body = format!(r#"{{"connection":"{connection}","topics":{encoded}}}"#);
-
-        let answer = self
-            .roundtrip(
-                Request::builder()
-                    .method("POST")
-                    .uri("/_exos/subscribe")
-                    .header(header::CONTENT_TYPE, "application/json")
-                    .body(Body::from(body))
-                    .expect("a valid request"),
-            )
-            .await;
-
-        assert_eq!(
-            answer.status(),
-            StatusCode::NO_CONTENT,
-            "the subscription was refused: {}",
-            answer.body()
-        );
     }
 
     /// Opens the stream and reads the greeting off it.

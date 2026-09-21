@@ -53,10 +53,9 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "exos",
+ "exos-test",
  "serde",
  "tokio",
- "tokio-stream",
- "tower",
 ]
 
 [[package]]
@@ -486,12 +485,12 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "exos",
+ "exos-test",
  "pulldown-cmark",
  "rust-embed",
  "serde",
  "syntect",
  "tokio",
- "tower",
 ]
 
 [[package]]
@@ -1120,10 +1119,10 @@ dependencies = [
  "axum",
  "base64",
  "exos",
+ "exos-test",
  "png",
  "serde",
  "tokio",
- "tower",
 ]
 
 [[package]]
@@ -1529,9 +1528,9 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "exos",
+ "exos-test",
  "serde",
  "tokio",
- "tower",
 ]
 
 [[package]]
@@ -1705,9 +1704,9 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "exos",
+ "exos-test",
  "serde",
  "tokio",
- "tower",
 ]
 
 [[package]]

@@ -279,32 +279,36 @@ async fn leave() -> Effect {
 )]
 mod tests {
     use axum::http::StatusCode;
+    use exos::Step;
 
     use super::Lots;
-    use crate::tests::{as_guest, body, claimed, request, set_cookie};
+    use crate::tests::{as_guest, claimed, visitor};
 
     #[tokio::test]
     async fn a_visit_is_named_before_the_stream_could_open() {
-        let response = request("GET", "/", None).await;
+        let mut tab = visitor();
+        let page = tab.get("/").await;
 
         // The cookie rides out on the document, so the `EventSource` the
-        // runtime opens a moment later already carries it.
+        // runtime opens a moment later already carries it. This browser was
+        // holding nothing until that page, which is what says the page did it.
         assert!(
-            set_cookie(&response)
-                .expect("the page names the browser")
-                .starts_with("exos=")
+            tab.cookie("exos").is_some(),
+            "the page names the browser: {:?}",
+            page.header("set-cookie")
         );
 
         // Which number is whichever these tests have handed out so far, since
         // the room is global and they run in parallel. That there is one is
         // the thing being claimed.
-        assert!(body(response).await.contains("Bidding as <strong>Guest "));
+        assert!(page.body().contains("Bidding as <strong>Guest "));
     }
 
     #[tokio::test]
     async fn a_name_the_room_knows_is_shown_by_its_own_name() {
-        let session = claimed(1).await;
-        let html = body(request("GET", "/", Some(&session)).await).await;
+        let mut tab = claimed(1).await;
+        let page = tab.get("/").await;
+        let html = page.body();
 
         assert!(
             html.contains("Bidding as <strong>Ada</strong>"),
@@ -318,28 +322,38 @@ mod tests {
     /// handler, so the connection behind it has to go.
     #[tokio::test]
     async fn claiming_an_account_replaces_the_name_and_reloads() {
-        let guest = as_guest().await;
+        let mut tab = as_guest().await;
+        let guest = tab.cookie("exos").expect("a guest is named").to_owned();
 
-        let response = request("POST", "/bidders/1/claim", Some(&guest)).await;
-        assert_eq!(response.status(), StatusCode::OK);
+        let answer = tab.call("POST", "/bidders/1/claim").await;
+        assert_eq!(answer.status(), StatusCode::OK);
 
-        let cookie = set_cookie(&response).expect("a new name");
-        assert!(!cookie.contains(&guest), "the guest's name is gone");
+        assert_ne!(
+            tab.cookie("exos"),
+            Some(guest.as_str()),
+            "the guest's name is gone"
+        );
 
-        assert!(body(response).await.contains("event: reload"));
+        assert_eq!(answer.steps(), [Step::Reload]);
     }
 
     #[tokio::test]
     async fn leaving_takes_the_cookie_back() {
-        let session = claimed(1).await;
+        let mut tab = claimed(1).await;
+        let session = tab.cookie("exos").expect("a name to leave").to_owned();
 
-        let response = request("POST", "/session/end", Some(&session)).await;
-        let cookie = set_cookie(&response).expect("the cookie comes back");
+        let answer = tab.call("POST", "/session/end").await;
+        let cookie = answer.header("set-cookie").expect("the cookie comes back");
 
-        assert!(cookie.contains("Max-Age=0"));
+        assert!(cookie.contains("Max-Age=0"), "{cookie}");
 
-        let after = body(request("GET", "/", Some(&session)).await).await;
-        assert!(after.contains("Login as"), "and it means nobody");
+        // Sent again by a browser that kept it, which is the only way to ask
+        // whether the name still means anybody. The tab above no longer holds
+        // it, because the answer took it back.
+        let mut kept = crate::tests::visitor().with_cookie("exos", &session);
+        let after = kept.get("/").await;
+
+        assert!(after.body().contains("Login as"), "and it means nobody");
     }
 
     /// The rule the bid handler enforces, closed at the other end. Carrying a
@@ -349,17 +363,17 @@ mod tests {
     async fn taking_the_rostrum_gives_up_what_you_bid_on_the_way_in() {
         const LOT: u32 = 3;
 
-        let guest = as_guest().await;
+        let mut guest = as_guest().await;
         let before = exos::data::<Lots>().one(LOT).expect("the lot").price();
 
-        request("POST", &format!("/lots/{LOT}/bid"), Some(&guest)).await;
+        drop(guest.call("POST", &format!("/lots/{LOT}/bid")).await);
         assert_ne!(
             exos::data::<Lots>().one(LOT).expect("the lot").price(),
             before,
             "the guest really was leading it"
         );
 
-        request("POST", "/bidders/3/claim", Some(&guest)).await;
+        drop(guest.call("POST", "/bidders/3/claim").await);
 
         let after = exos::data::<Lots>().one(LOT).expect("the lot");
 
@@ -372,16 +386,18 @@ mod tests {
     /// the other one.
     #[tokio::test]
     async fn the_auctioneer_gets_a_different_room_from_everybody_else() {
-        let staff = claimed(3).await;
-        let html = body(request("GET", "/", Some(&staff)).await).await;
+        let mut staff = claimed(3).await;
+        let page = staff.get("/").await;
+        let html = page.body();
 
         assert!(html.contains("staff"), "the badge on the name");
         assert!(html.contains("The rostrum"));
         assert!(html.contains("Bring the hammer down"));
         assert!(!html.contains("Bid £"), "and no way to bid at all");
 
-        let bidder = claimed(1).await;
-        let html = body(request("GET", "/", Some(&bidder)).await).await;
+        let mut bidder = claimed(1).await;
+        let page = bidder.get("/").await;
+        let html = page.body();
 
         assert!(html.contains("Bid £"));
         assert!(!html.contains("The rostrum"));

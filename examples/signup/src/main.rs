@@ -86,7 +86,9 @@ pub(crate) mod tests {
         body::Body,
         http::{Request, StatusCode},
     };
-    use tower::ServiceExt as _;
+    use exos::ModelFields;
+    use exos_test::Browser;
+    use serde::Serialize;
 
     pub(crate) use super::app;
 
@@ -96,33 +98,12 @@ pub(crate) mod tests {
         drop(app());
     }
 
-    /// The body of a response, whatever it answered.
-    ///
-    /// Unlike the other examples this one does not assert `200` on the way
-    /// past: a refusal is half of what this example is about, and it arrives
-    /// with the status it deserves.
-    async fn body(response: axum::response::Response) -> String {
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("the body is readable");
-
-        String::from_utf8(bytes.to_vec()).expect("the body is UTF-8")
-    }
-
     /// The document served at `uri`.
     pub(crate) async fn get(uri: &str) -> String {
-        let response = app()
-            .oneshot(
-                Request::builder()
-                    .uri(uri)
-                    .body(Body::empty())
-                    .expect("a valid request"),
-            )
-            .await
-            .expect("the router answers");
+        let answer = Browser::new(app()).get(uri).await;
 
-        assert_eq!(response.status(), StatusCode::OK);
-        body(response).await
+        assert_eq!(answer.status(), StatusCode::OK);
+        answer.body().to_owned()
     }
 
     /// What a control is told about one value while it is being edited.
@@ -130,47 +111,35 @@ pub(crate) mod tests {
     /// The pair in the URL is what the binding carries: the model that answers
     /// for the field, and the field. A message or nothing, as text, because a
     /// check is about one value rather than about the form.
+    ///
+    /// Sent rather than posted: the body is one value, which is what the
+    /// binding puts on the wire, rather than a model.
     pub(crate) async fn check(model: &str, field: &str, value: &str) -> String {
-        let response = app()
-            .oneshot(
+        let answer = Browser::new(app())
+            .send(
                 Request::builder()
                     .method("POST")
-                    .header("x-exos", "true")
                     .uri(format!("/_exos/check/{model}/{field}"))
                     .header("content-type", "application/json")
                     .body(Body::from(format!("\"{value}\"")))
                     .expect("a valid request"),
             )
-            .await
-            .expect("the router answers");
+            .await;
 
-        assert_eq!(response.status(), StatusCode::OK);
-        body(response).await
+        assert_eq!(answer.status(), StatusCode::OK);
+        answer.body().to_owned()
     }
 
-    /// The event stream an action answers with, refusal or not.
-    pub(crate) async fn post(uri: &str, payload: &str) -> String {
-        let response = app()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .header("x-exos", "true")
-                    .uri(uri)
-                    .header("content-type", "application/json")
-                    .body(Body::from(payload.to_owned()))
-                    .expect("a valid request"),
-            )
-            .await
-            .expect("the router answers");
+    /// What an action answered, refusal or not, still framed.
+    ///
+    /// This example's tests are about the messages in a refusal rather than
+    /// about which steps carry them, so they read the frames as text. The
+    /// status is not asserted on the way past: a refusal is half of what this
+    /// example is about, and it arrives with the status it deserves.
+    pub(crate) async fn post<T: ModelFields + Serialize>(uri: &str, model: &T) -> String {
+        let answer = Browser::new(app()).post(uri, model).await;
 
-        assert_eq!(
-            response
-                .headers()
-                .get("content-type")
-                .expect("a content type"),
-            "text/event-stream"
-        );
-
-        body(response).await
+        assert!(answer.is_effect(), "an action answers with an effect");
+        answer.body().to_owned()
     }
 }

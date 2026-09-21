@@ -75,7 +75,9 @@ async fn a_removal_reaches_the_other_tab() {
 | `call(method, url)` | an action carrying nothing |
 | `send(request)` | anything else, still as this browser |
 | `next()` | the next step off the live stream |
+| `listen()` | opens the stream where no fragment asked for one |
 | `watching()`, `cookie(name)` | what the tab is watching, and what it holds |
+| `with_cookie(name, value)` | a browser that turns up already holding one |
 
 Two tabs are two browsers, which is how a test checks that what one of them did
 reached the other.

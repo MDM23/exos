@@ -15,7 +15,7 @@ serde.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [dev-dependencies]
-tower = { version = "0.5", default-features = false, features = ["util"] }
+exos-test.workspace = true
 
 [lints]
 workspace = true

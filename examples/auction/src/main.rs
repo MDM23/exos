@@ -74,18 +74,9 @@ fn app() -> Router {
 // -----------------------------------------------------------------------------
 
 #[cfg(test)]
-#[expect(
-    clippy::expect_used,
-    reason = "a failing assertion is the point of a test"
-)]
 mod tests {
-    use axum::{
-        body::Body,
-        http::{Request, header},
-        response::Response,
-    };
     use exos::Id;
-    use tower::ServiceExt as _;
+    use exos_test::Browser;
 
     use super::*;
 
@@ -99,66 +90,38 @@ mod tests {
         drop(app());
     }
 
-    /// One request, with the cookie a browser holding `session` would send.
-    pub(crate) async fn request(method: &str, uri: &str, session: Option<&str>) -> Response {
-        let mut builder = Request::builder().method(method).uri(uri);
-
-        // What the runtime sends on every call it makes, and what exos refuses
-        // an unsafe request without: this stands in for a browser running it.
-        builder = builder.header("x-exos", "true");
-
-        if let Some(session) = session {
-            builder = builder.header(header::COOKIE, format!("exos={session}"));
-        }
-
-        app()
-            .oneshot(builder.body(Body::empty()).expect("a valid request"))
-            .await
-            .expect("the router answers")
+    /// A browser that has never been here.
+    pub(crate) fn visitor() -> Browser {
+        Browser::new(app())
     }
 
-    pub(crate) async fn body(response: Response) -> String {
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("the body is readable");
-
-        String::from_utf8(bytes.to_vec()).expect("the body is UTF-8")
-    }
-
-    /// What the response tells the browser to keep, if anything.
-    pub(crate) fn set_cookie(response: &Response) -> Option<&str> {
-        response
-            .headers()
-            .get(header::SET_COOKIE)?
-            .to_str()
-            .ok()
-            .filter(|cookie| cookie.starts_with("exos="))
-    }
-
-    /// The name out of a `Set-Cookie`, which is what a browser would send back
-    /// and therefore what the next request here carries.
-    fn named(response: &Response) -> String {
-        set_cookie(response)
-            .expect("the response names a session")
-            .trim_start_matches("exos=")
-            .split(';')
-            .next()
-            .expect("a cookie has a value")
-            .to_owned()
+    /// The document served at `uri`, for a test with no browser of its own.
+    pub(crate) async fn get(uri: &str) -> String {
+        visitor().get(uri).await.body().to_owned()
     }
 
     /// A browser that has been in the room and has no account.
-    pub(crate) async fn as_guest() -> String {
-        named(&request("GET", "/", None).await)
+    ///
+    /// It has a name because the room named it, which is what a visit does
+    /// before the stream it will open could carry one.
+    pub(crate) async fn as_guest() -> Browser {
+        let mut guest = visitor();
+        drop(guest.get("/").await);
+
+        guest
     }
 
     /// A browser the room already knows as `account`.
-    pub(crate) async fn claimed(account: u32) -> String {
+    ///
+    /// The name is bound here rather than by signing in, so that a test about
+    /// anything else starts on the far side of that. Which is also what a
+    /// browser arriving with a session an earlier visit left it looks like.
+    pub(crate) async fn claimed(account: u32) -> Browser {
         seeded();
 
         let name = Id::random();
         exos::data::<Accounts>().claim(&name, account).await;
 
-        name.to_string()
+        visitor().with_cookie("exos", &name.to_string())
     }
 }

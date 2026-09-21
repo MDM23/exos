@@ -247,13 +247,13 @@ fn result(lot: &Lot) -> String {
     reason = "a failing assertion is the point of a test"
 )]
 mod tests {
-    use axum::body::BodyDataStream;
-    use tokio_stream::StreamExt as _;
+    use exos::Step;
+    use exos_test::Browser;
 
     use super::*;
     use crate::{
         store::Bidder,
-        tests::{body, claimed, request, seeded},
+        tests::{claimed, seeded},
     };
 
     /// A lot as a browser is served it. In a request, because the token in the
@@ -263,38 +263,10 @@ mod tests {
         exos::with_scope(|| lot(id, Role::Bidder).to_markup().into_string())
     }
 
-    /// One open tab, past its greeting and subscribed to nothing.
-    async fn listening(session: &str) -> BodyDataStream {
-        let mut events = request("GET", "/_exos/live", Some(session))
-            .await
-            .into_body()
-            .into_data_stream();
+    async fn bid_as(bidder: &mut Browser, id: u32) {
+        let answer = bidder.call("POST", &format!("/lots/{id}/bid")).await;
 
-        let greeting = next(&mut events).await;
-        assert!(greeting.contains("event: connection"), "{greeting}");
-
-        events
-    }
-
-    /// The next event, as the browser would read it off the wire.
-    ///
-    /// The ceiling is a backstop so a stream that says nothing fails the test
-    /// rather than hanging it, and never a wait: everything asserted above has
-    /// already been sent.
-    async fn next(events: &mut BodyDataStream) -> String {
-        let chunk = tokio::time::timeout(core::time::Duration::from_secs(5), events.next())
-            .await
-            .expect("the stream says something rather than nothing at all")
-            .expect("the stream is still open")
-            .expect("the body does not fail");
-
-        String::from_utf8(chunk.to_vec()).expect("an event is text")
-    }
-
-    async fn bid_as(session: &str, id: u32) {
-        let response = request("POST", &format!("/lots/{id}/bid"), Some(session)).await;
-
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        assert_eq!(answer.status(), axum::http::StatusCode::OK);
     }
 
     /// Being able to subscribe is the authorization, so the wrapper carries a
@@ -400,26 +372,32 @@ mod tests {
     async fn being_outbid_reaches_the_person_and_nobody_else() {
         const LOT: u32 = 4;
 
-        let ada = claimed(1).await;
-        let grace = claimed(2).await;
+        let mut ada = claimed(1).await;
+        let mut grace = claimed(2).await;
 
-        let mut hers = listening(&ada).await;
-        let mut theirs = listening(&grace).await;
+        // Neither has loaded a page, so neither watches a topic: a stream
+        // opened this way can carry nothing but what is directed at it.
+        ada.listen().await;
+        grace.listen().await;
 
         // 250, and each bid adds ten.
-        bid_as(&ada, LOT).await; // 260, pushing nobody out
-        bid_as(&grace, LOT).await; // 270, and Ada hears about it
-        bid_as(&ada, LOT).await; // 280, and Grace hears about it
+        bid_as(&mut ada, LOT).await; // 260, pushing nobody out
+        bid_as(&mut grace, LOT).await; // 270, and Ada hears about it
+        bid_as(&mut ada, LOT).await; // 280, and Grace hears about it
 
-        let told_ada = next(&mut hers).await;
-        assert!(told_ada.starts_with("event: signals"), "{told_ada}");
-        assert!(told_ada.contains("270"), "{told_ada}");
+        let Step::Signals(told_ada) = ada.next().await else {
+            panic!("being outbid is said in a signal")
+        };
+
+        assert!(told_ada.to_string().contains("270"), "{told_ada}");
 
         // Had the first message reached Grace it would be sitting in front of
         // this one, and it names a different price.
-        let told_grace = next(&mut theirs).await;
-        assert!(told_grace.starts_with("event: signals"), "{told_grace}");
-        assert!(told_grace.contains("280"), "{told_grace}");
+        let Step::Signals(told_grace) = grace.next().await else {
+            panic!("being outbid is said in a signal")
+        };
+
+        assert!(told_grace.to_string().contains("280"), "{told_grace}");
     }
 
     /// The auctioneer runs the sale and does not bid in it.
@@ -432,10 +410,11 @@ mod tests {
     async fn the_auctioneer_does_not_bid_in_their_own_sale() {
         const LOT: u32 = 2;
 
-        let staff = claimed(3).await;
+        let mut staff = claimed(3).await;
         let before = exos::data::<Lots>().one(LOT).expect("the lot").price();
 
-        let refused = body(request("POST", &format!("/lots/{LOT}/bid"), Some(&staff)).await).await;
+        let answer = staff.call("POST", &format!("/lots/{LOT}/bid")).await;
+        let refused = format!("{:?}", answer.steps());
 
         assert!(refused.contains("does not bid"), "{refused}");
         assert!(refused.contains("warn"), "and it reads as a refusal");

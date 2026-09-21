@@ -147,11 +147,11 @@ fn current(path: &str, href: &str) -> Option<&'static str> {
 
 #[cfg(test)]
 mod tests {
-    use crate::tests::{body, request};
+    use crate::tests::get;
 
     #[tokio::test]
     async fn the_document_ships_one_stylesheet_and_one_script() {
-        let html = body(request("GET", "/", None).await).await;
+        let html = get("/").await;
 
         assert!(html.starts_with("<!DOCTYPE html>"));
         assert_eq!(html.matches("rel=\"stylesheet\"").count(), 1);
@@ -162,7 +162,7 @@ mod tests {
     /// catalogue subscribes to nothing at all.
     #[tokio::test]
     async fn the_catalogue_carries_the_slot_and_no_fragments() {
-        let html = body(request("GET", "/catalogue", None).await).await;
+        let html = get("/catalogue").await;
 
         assert!(html.contains("class=\"toast\""));
         assert!(!html.contains("<exos-live"), "and watches nothing");
@@ -170,14 +170,14 @@ mod tests {
 
     #[tokio::test]
     async fn the_sale_room_watches_one_fragment_per_lot() {
-        let html = body(request("GET", "/", None).await).await;
+        let html = get("/").await;
 
         assert_eq!(html.matches("<exos-live").count(), 4);
     }
 
     #[tokio::test]
     async fn the_current_page_is_the_only_one_marked() {
-        let html = body(request("GET", "/catalogue", None).await).await;
+        let html = get("/catalogue").await;
 
         assert_eq!(html.matches("aria-current=\"page\"").count(), 1);
         assert!(html.contains("<a href=\"/catalogue\" aria-current=\"page\">"));

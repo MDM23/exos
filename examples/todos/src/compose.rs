@@ -113,14 +113,14 @@ mod tests {
     /// half-typed title where it is.
     #[tokio::test]
     async fn an_empty_draft_neither_adds_nor_clears() {
-        let stream = post(
+        let answer = post(
             "/todos",
-            &exos::to_wire(&Draft {
+            &Draft {
                 title: String::from("   "),
-            }),
+            },
         )
         .await;
 
-        assert!(stream.is_empty(), "{stream}");
+        assert!(answer.steps().is_empty(), "{:?}", answer.steps());
     }
 }

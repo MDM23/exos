@@ -346,15 +346,15 @@ mod tests {
     /// A gated field is silent until its sibling arms it, on the server.
     #[tokio::test]
     async fn a_gate_is_shut_until_the_field_that_arms_it_is_filled_in() {
-        let stream = post("/register", &exos::to_wire(&draft())).await;
+        let stream = post("/register", &draft()).await;
         assert!(stream.contains("You are registered"), "{stream}");
 
         let stream = post(
             "/register",
-            &exos::to_wire(&Signup {
+            &Signup {
                 invoice: true,
                 ..draft()
-            }),
+            },
         )
         .await;
 
@@ -392,10 +392,10 @@ mod tests {
 
         let stream = post(
             "/register",
-            &exos::to_wire(&Signup {
+            &Signup {
                 code: String::from("nope"),
                 ..Signup::default()
-            }),
+            },
         )
         .await;
 
@@ -417,10 +417,10 @@ mod tests {
 
         let stream = post(
             "/register",
-            &exos::to_wire(&Signup {
+            &Signup {
                 email: String::from("not-an-address"),
                 ..draft()
-            }),
+            },
         )
         .await;
 
@@ -437,10 +437,10 @@ mod tests {
     async fn a_length_is_refused_the_way_the_browser_counts_it() {
         let stream = post(
             "/register",
-            &exos::to_wire(&Signup {
+            &Signup {
                 name: String::from("A"),
                 ..draft()
-            }),
+            },
         )
         .await;
 
@@ -495,10 +495,10 @@ mod tests {
     async fn a_code_is_ruled_on_by_the_server_alone() {
         let stream = post(
             "/register",
-            &exos::to_wire(&Signup {
+            &Signup {
                 code: String::from("nope"),
                 ..draft()
-            }),
+            },
         )
         .await;
 
@@ -506,10 +506,10 @@ mod tests {
 
         let stream = post(
             "/register",
-            &exos::to_wire(&Signup {
+            &Signup {
                 code: String::from("earlybird"),
                 ..draft()
-            }),
+            },
         )
         .await;
 
@@ -526,7 +526,7 @@ mod tests {
 
         let stream = post(
             "/register",
-            &exos::to_wire(&Signup {
+            &Signup {
                 attendees: [
                     Attendee {
                         name: String::from("Grace"),
@@ -538,7 +538,7 @@ mod tests {
                 .into_iter()
                 .collect(),
                 ..draft()
-            }),
+            },
         )
         .await;
 
@@ -574,10 +574,10 @@ mod tests {
     async fn a_form_with_no_rows_is_refused_as_a_whole() {
         let stream = post(
             "/register",
-            &exos::to_wire(&Signup {
+            &Signup {
                 attendees: Rows::default(),
                 ..draft()
-            }),
+            },
         )
         .await;
 
@@ -590,10 +590,10 @@ mod tests {
     async fn a_workshop_nobody_offers_is_refused() {
         let stream = post(
             "/register",
-            &exos::to_wire(&Signup {
+            &Signup {
                 workshops: vec![99],
                 ..draft()
-            }),
+            },
         )
         .await;
 

@@ -26,41 +26,21 @@ async fn main() -> Result<(), std::io::Error> {
 
 /// What the modules' own tests are written against.
 #[cfg(test)]
-#[expect(
-    clippy::expect_used,
-    reason = "a failing assertion is the point of a test"
-)]
 pub(crate) mod tests {
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-        response::Response,
-    };
-    use tower::ServiceExt as _;
+    use axum::http::StatusCode;
+    use exos_test::{Answer, Browser};
 
-    /// The response served at `uri`.
-    async fn respond(uri: &str) -> Response {
-        exos::app()
-            .oneshot(
-                Request::builder()
-                    .uri(uri)
-                    .body(Body::empty())
-                    .expect("a valid request"),
-            )
-            .await
-            .expect("the router answers")
+    /// What `uri` answered, to whoever asked for it.
+    async fn respond(uri: &str) -> Answer {
+        Browser::new(exos::app().into()).get(uri).await
     }
 
     /// The document served at `uri`, which has to be one.
     pub(crate) async fn get(uri: &str) -> String {
-        let response = respond(uri).await;
-        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+        let answer = respond(uri).await;
 
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("the body is readable");
-
-        String::from_utf8(bytes.to_vec()).expect("the body is UTF-8")
+        assert_eq!(answer.status(), StatusCode::OK, "{uri}");
+        answer.body().to_owned()
     }
 
     /// What `uri` answered with.

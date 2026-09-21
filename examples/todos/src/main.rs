@@ -49,16 +49,11 @@ fn app() -> Router {
 /// tested in [`store`] against a local one, which keeps those tests
 /// independent of each other and of the order they run in.
 #[cfg(test)]
-#[expect(
-    clippy::expect_used,
-    reason = "a failing assertion is the point of a test"
-)]
 pub(crate) mod tests {
-    use axum::{
-        body::Body,
-        http::{Request, StatusCode},
-    };
-    use tower::ServiceExt as _;
+    use axum::http::StatusCode;
+    use exos::ModelFields;
+    use exos_test::{Answer, Browser};
+    use serde::Serialize;
 
     pub(crate) use super::app;
 
@@ -67,55 +62,21 @@ pub(crate) mod tests {
         drop(app());
     }
 
-    /// The body of a response that answered `200`.
-    async fn body(response: axum::response::Response) -> String {
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("the body is readable");
-
-        String::from_utf8(bytes.to_vec()).expect("the body is UTF-8")
-    }
-
     /// The document served at `uri`.
     pub(crate) async fn get(uri: &str) -> String {
-        let response = app()
-            .oneshot(
-                Request::builder()
-                    .uri(uri)
-                    .body(Body::empty())
-                    .expect("a valid request"),
-            )
-            .await
-            .expect("the router answers");
+        let answer = Browser::new(app()).get(uri).await;
 
-        body(response).await
+        assert_eq!(answer.status(), StatusCode::OK);
+        answer.body().to_owned()
     }
 
-    /// The event stream an action answers with.
-    pub(crate) async fn post(uri: &str, payload: &str) -> String {
-        let response = app()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .header("x-exos", "true")
-                    .uri(uri)
-                    .header("content-type", "application/json")
-                    .body(Body::from(payload.to_owned()))
-                    .expect("a valid request"),
-            )
-            .await
-            .expect("the router answers");
+    /// What an action answered, for one that needs no tab of its own.
+    pub(crate) async fn post<T: ModelFields + Serialize>(uri: &str, model: &T) -> Answer {
+        let answer = Browser::new(app()).post(uri, model).await;
 
-        assert_eq!(
-            response
-                .headers()
-                .get("content-type")
-                .expect("a content type"),
-            "text/event-stream"
-        );
+        assert_eq!(answer.status(), StatusCode::OK);
+        assert!(answer.is_effect(), "an action answers with an effect");
 
-        body(response).await
+        answer
     }
 }

@@ -118,7 +118,8 @@ mod tests {
         body::Body,
         http::{Request, StatusCode},
     };
-    use tower::ServiceExt as _;
+    use exos::Step;
+    use exos_test::Browser;
 
     use super::*;
 
@@ -130,45 +131,11 @@ mod tests {
         drop(app());
     }
 
-    async fn body(response: axum::response::Response) -> String {
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("the body is readable");
-
-        String::from_utf8(bytes.to_vec()).expect("the body is UTF-8")
-    }
-
     pub(crate) async fn get(uri: &str) -> String {
-        let response = app()
-            .oneshot(
-                Request::builder()
-                    .uri(uri)
-                    .body(Body::empty())
-                    .expect("a valid request"),
-            )
-            .await
-            .expect("the router answers");
+        let answer = Browser::new(app()).get(uri).await;
 
-        assert_eq!(response.status(), StatusCode::OK);
-        body(response).await
-    }
-
-    pub(crate) async fn post(uri: &str, payload: &str) -> String {
-        let response = app()
-            .oneshot(
-                Request::builder()
-                    .method("POST")
-                    .header("x-exos", "true")
-                    .uri(uri)
-                    .header("content-type", "application/json")
-                    .body(Body::from(payload.to_owned()))
-                    .expect("a valid request"),
-            )
-            .await
-            .expect("the router answers");
-
-        assert_eq!(response.status(), StatusCode::OK);
-        body(response).await
+        assert_eq!(answer.status(), StatusCode::OK);
+        answer.body().to_owned()
     }
 
     #[tokio::test]
@@ -198,20 +165,20 @@ mod tests {
     /// what leaves the shape free to change later.
     #[tokio::test]
     async fn a_hand_written_body_does_not_reach_an_action() {
-        let response = app()
-            .oneshot(
+        // Sent rather than posted, because posting the model is what spells a
+        // body right and this body is deliberately spelled by hand.
+        let answer = Browser::new(app())
+            .send(
                 Request::builder()
                     .method("POST")
-                    .header("x-exos", "true")
                     .uri("/tracks/remove")
                     .header("content-type", "application/json")
                     .body(Body::from(r#"{"picked":[2],"note":""}"#))
                     .expect("a valid request"),
             )
-            .await
-            .expect("the router answers");
+            .await;
 
-        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(answer.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
     /// The whole point of the example, end to end: the row goes, the room
@@ -226,10 +193,23 @@ mod tests {
         let before = exos::data::<Room>().snapshot();
         let playing = before.playing().expect("something is on").clone();
 
-        let stream = post(&format!("/tracks/{}/remove", playing.id), "").await;
+        let answer = Browser::new(app())
+            .call("POST", &format!("/tracks/{}/remove", playing.id))
+            .await;
 
-        assert!(stream.contains("event: signals"));
-        assert!(stream.contains("is playing, so it stayed"), "{stream}");
+        assert_eq!(answer.status(), StatusCode::OK);
+
+        let said = answer
+            .steps()
+            .into_iter()
+            .find_map(|step| match step {
+                Step::Signals(value) => Some(value),
+                _ => None,
+            })
+            .expect("the reply writes signals")
+            .to_string();
+
+        assert!(said.contains("is playing, so it stayed"), "{said}");
 
         // The row hid itself on the click, and nothing but this puts it back:
         // a patch re-renders the row but leaves the signals alone, so the reply
@@ -237,8 +217,8 @@ mod tests {
         // example shipped with, and it was invisible until a refusal happened.
         let going = crate::selection::Selection::signals().going;
         assert!(
-            stream.contains(&format!("\"{}\":[]", going.name())),
-            "the row is shown again: {stream}"
+            said.contains(&format!("\"{}\":[]", going.name())),
+            "the row is shown again: {said}"
         );
 
         let after = exos::data::<Room>().snapshot();

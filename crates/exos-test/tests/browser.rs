@@ -59,6 +59,15 @@ async fn elsewhere(Path(id): Path<u32>) -> Effect {
     Effect::navigate(format!("/boards/{id}"))
 }
 
+/// A session replaced, which ends every stream the browser had open so that it
+/// comes back as whoever it is now. The application answers with a reload; what
+/// matters here is that the stream went.
+#[exos::post("/rotate")]
+async fn rotate() -> Effect {
+    drop(exos::session().rotate());
+    Effect::reload()
+}
+
 #[exos::post("/drafts")]
 async fn save(Model(draft): Model<Draft>) -> Result<Effect, (StatusCode, Effect)> {
     if draft.title.trim().is_empty() {
@@ -233,4 +242,33 @@ async fn a_navigation_stops_watching_the_page_it_left() {
     };
 
     assert!(markup.as_str().contains("board 12"), "{markup}");
+}
+
+/// A tab whose stream the server ended opens another, rather than the
+/// subscription that follows being an error.
+///
+/// The tokens it was holding were minted for the session it has left, so they
+/// prove nothing and are dropped: the page arriving again is what brings
+/// tokens the new session owns, which is why the application answers a
+/// rotation with a reload.
+#[tokio::test]
+async fn a_rotation_ends_the_stream_and_the_tab_opens_another() {
+    let mut tab = Browser::new(app());
+    tab.get("/boards/14").await;
+
+    let before = tab.cookie("exos").expect("a session").to_owned();
+
+    assert_eq!(tab.call("POST", "/rotate").await.steps(), [Step::Reload]);
+    assert_ne!(tab.cookie("exos"), Some(before.as_str()));
+
+    // What the reload does, and the tab is watching again on the far side of
+    // it: a publish reaches it, which it could not while its grant was stale.
+    tab.get("/boards/14").await;
+    tab.call("POST", "/boards/14/touch").await;
+
+    let Step::Patch(markup) = tab.next().await else {
+        panic!("a publish arrives as a patch")
+    };
+
+    assert!(markup.as_str().contains("board 14"), "{markup}");
 }
