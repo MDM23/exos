@@ -106,6 +106,31 @@ impl Step {
             Self::Title(text) => ("title", text.clone()),
         }
     }
+
+    /// The step an event name and payload stand for, or `None` for a name
+    /// this vocabulary does not have.
+    ///
+    /// The inverse of the framing above, and kept beside it so the two cannot
+    /// drift: a step added to the enum and framed but not read back is a
+    /// failing round trip rather than something noticed later.
+    ///
+    /// Nothing the server does needs this. It is here for whatever reads the
+    /// wire from outside, which is `exos-test` and anything else that wants to
+    /// assert on what a browser was sent rather than on the bytes carrying it.
+    pub fn from_frame(event: &str, data: &str) -> Option<Self> {
+        Some(match event {
+            "focus" => Self::Focus(data.to_owned()),
+            "navigate" => Self::Navigate(data.to_owned()),
+            "page" => Self::Page(Markup(data.to_owned())),
+            "patch" => Self::Patch(Markup(data.to_owned())),
+            "reload" => Self::Reload,
+            "remove" => Self::Remove(data.to_owned()),
+            "scroll" => Self::Scroll(data.to_owned()),
+            "signals" => Self::Signals(serde_json::from_str(data).ok()?),
+            "title" => Self::Title(data.to_owned()),
+            _ => return None,
+        })
+    }
 }
 
 /// An ordered list of [`Step`]s.
@@ -461,5 +486,36 @@ mod tests {
                 "{step:?} is framed two ways"
             );
         }
+    }
+
+    /// Every step there is, so that adding one to the enum and forgetting to
+    /// read it back fails here rather than in whatever was reading the wire.
+    #[test]
+    fn every_step_survives_being_framed_and_read_back() {
+        for step in [
+            Step::Focus(String::from("#title")),
+            Step::Navigate(String::from("/orders/7")),
+            Step::Page(Markup(String::from("<html>\n<body></body>\n</html>"))),
+            Step::Patch(Markup(String::from("<p id=\"x\">hi</p>"))),
+            Step::Reload,
+            Step::Remove(String::from(".gone")),
+            Step::Scroll(String::from("#queue")),
+            Step::Signals(serde_json::json!({ "picked": [1, 2] })),
+            Step::Title(String::from("Profile - MyApp")),
+        ] {
+            let (event, data) = step.frame();
+
+            assert_eq!(
+                Step::from_frame(event, &data),
+                Some(step.clone()),
+                "{step:?} does not survive the wire"
+            );
+        }
+    }
+
+    /// The client ignores what it has no listener for, and so does this.
+    #[test]
+    fn an_event_outside_the_vocabulary_is_not_a_step() {
+        assert_eq!(Step::from_frame("connection", "node-abc123"), None);
     }
 }

@@ -40,6 +40,7 @@ is what makes it reachable.
 
 ## Digging deeper
 
+- [Testing](testing)
 - [Languages](languages)
 - [Reading the examples](examples)
 - [Glossary](glossary)

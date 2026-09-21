@@ -507,6 +507,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "exos-test"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "exos",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-stream",
+ "tower",
+]
+
+[[package]]
 name = "fancy-regex"
 version = "0.16.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

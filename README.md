@@ -97,6 +97,12 @@ instead of excluding one another.
 - [`exos-build`](crates/exos-build) is the asset pipeline `asset!` calls while
   your crate compiles: bundle CSS, bundle and minify JS, content-hash, embed.
   There is no build script.
+- [`exos-test`](crates/exos-test) is a browser without a browser: it keeps
+  cookies, says the header the runtime says, holds the live stream open and
+  subscribes to the fragments it is served, so a test asserts on what a tab was
+  sent rather than on the bytes carrying it. A dev-dependency, and only for the
+  third rung: a view renders to a string with no server, and a handler is a
+  function that can be called.
 - [`exos-cldr`](crates/exos-cldr) is the slice of CLDR `locales!` reads while it
   expands: cardinal plural rules, writing direction and the symbols a whole
   number is written with, vendored as committed source by a script a maintainer

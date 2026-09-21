@@ -4,6 +4,7 @@ members = [
   "crates/exos-build",
   "crates/exos-cldr",
   "crates/exos-macro",
+  "crates/exos-test",
   "docs/site",
   "examples/auction",
   "examples/playlist",
@@ -29,6 +30,7 @@ exos = { path = "crates/exos", version = "0.1.0" }
 exos-build = { path = "crates/exos-build", version = "0.1.0" }
 exos-cldr = { path = "crates/exos-cldr", version = "0.1.0" }
 exos-macro = { path = "crates/exos-macro", version = "0.1.0" }
+exos-test = { path = "crates/exos-test", version = "0.1.0" }
 futures-core = { version = "0.3", default-features = false }
 getrandom = { version = "0.3", default-features = false }
 hmac = { version = "0.12", default-features = false }
