@@ -76,6 +76,14 @@ fn node() -> Router {
             let broker = Arc::clone(&broker);
 
             async move {
+                // A broker that is slow for one topic, so a test can ask
+                // whether a frame sent after it overtakes it.
+                if frame.key().starts_with("live-slow-") {
+                    for _ in 0..100 {
+                        tokio::task::yield_now().await;
+                    }
+                }
+
                 broker.send(frame)?;
                 Ok(())
             }
@@ -154,6 +162,26 @@ async fn a_send_crosses_as_the_steps_of_its_effect() {
 
     assert!(text.contains("reload"), "{text}");
     assert!(text.contains("focus"), "{text}");
+}
+
+/// Frames reach the broker in the order they were handed over, however long
+/// each takes to send. Racing, the older patch of a topic could arrive last and
+/// stay on every remote tab watching it.
+#[tokio::test]
+async fn a_slow_frame_is_not_overtaken_by_the_next() {
+    let mut sent = bus().await;
+
+    publish(Fragment::new(
+        Topic::new("slow", &(1_u32,)),
+        Markup::default,
+    ));
+    publish(fragment(5));
+
+    assert!(crossed(&mut sent).await.key().starts_with("live-slow-"));
+    assert_eq!(
+        crossed(&mut sent).await.key(),
+        Topic::new("presence", &(5_u32,)).as_str()
+    );
 }
 
 /// A send to nobody is silent locally and has nothing to say to a cluster

@@ -52,10 +52,10 @@
 //! anybody in.
 
 use core::{future::Future, pin::Pin};
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock, PoisonError};
 
 use serde::{Deserialize, Serialize};
-use tokio::runtime::Handle;
+use tokio::{runtime::Handle, sync::oneshot};
 
 /// What an adapter answers with.
 ///
@@ -287,6 +287,9 @@ pub(crate) fn registered() -> bool {
     BUS.get().is_some()
 }
 
+/// What the last frame handed over signals once it has been sent.
+static TAIL: Mutex<Option<oneshot::Receiver<()>>> = Mutex::new(None);
+
 /// Hands `frame` to the bus, where there is one.
 ///
 /// The frame is built here rather than by the caller, so that an application
@@ -306,10 +309,28 @@ pub(crate) fn cross(frame: impl FnOnce() -> Frame) {
     // current handle and still has somewhere to send.
     let handle = Handle::try_current().unwrap_or_else(|_| handle.clone());
 
+    // In the order they were handed over, which is the order a publish holds
+    // its topic in: sends spawned side by side reach the broker in whatever
+    // order the scheduler runs them, and the older patch arriving last stays on
+    // every remote tab. So each waits for the one before it. A predecessor on a
+    // runtime that has gone drops its signal rather than keeping it, which lets
+    // the next one go ahead instead of waiting for good.
+    let (done, previous) = oneshot::channel::<()>();
+    let previous = TAIL
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .replace(previous);
+
     handle.spawn(async move {
+        if let Some(previous) = previous {
+            drop(previous.await);
+        }
+
         if let Err(error) = sending.await {
             eprintln!("exos: a frame did not reach the bus: {error}");
         }
+
+        drop(done);
     });
 }
 
