@@ -352,7 +352,9 @@ pub fn publish(fragment: crate::Fragment<impl Fn() -> crate::Markup>) {
     let order = Order::of(topic);
     let _held = order.wait();
 
-    let steps = vec![Step::Patch(fragment.to_markup()).framed()];
+    // Detached, because a handler that publishes is serving a request, and the
+    // wrapper would carry a grant to that one browser out to every watcher.
+    let steps = vec![Step::Patch(crate::detached(|| fragment.to_markup())).framed()];
 
     dispatch(Kind::Topic, topic, &steps);
 

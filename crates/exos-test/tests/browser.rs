@@ -123,6 +123,27 @@ async fn a_publish_reaches_the_tab_watching_it() {
     assert!(markup.as_str().contains("board 3"), "{markup}");
 }
 
+/// A publish from a handler is made while serving somebody else's request, and
+/// the patch once carried a grant to that browser: every other tab took it,
+/// could not prove it, and was never sent the second publish.
+#[tokio::test]
+async fn a_publish_from_another_browser_keeps_this_one_watching() {
+    let mut publisher = Browser::new(app());
+    let mut tab = Browser::new(app());
+    publisher.get("/boards/15").await;
+    tab.get("/boards/15").await;
+
+    for _ in 0..2 {
+        publisher.call("POST", "/boards/15/touch").await;
+
+        let Step::Patch(markup) = tab.next().await else {
+            panic!("a publish arrives as a patch")
+        };
+
+        assert!(!markup.as_str().contains("data-token"), "{markup}");
+    }
+}
+
 /// And only the tab watching it. Watching nothing is watching nothing in
 /// particular, which is the bug a broadcast makes easy.
 #[tokio::test]

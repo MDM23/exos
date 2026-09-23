@@ -247,7 +247,17 @@ impl Browser {
             }
         };
 
-        self.applied(&step);
+        // The stream grants nothing, the way the runtime takes no token off it:
+        // what it carries was rendered for somebody else's request, or for
+        // none. A page keeps the grants of the fragments it still shows.
+        match &step {
+            Step::Page(markup) => self
+                .fragments
+                .retain(|topic, _| markup.as_str().contains(&format!("data-topic=\"{topic}\""))),
+            Step::Patch(_) => {}
+            _ => self.applied(&step),
+        }
+
         self.sync().await;
 
         step

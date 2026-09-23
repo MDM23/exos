@@ -1413,7 +1413,12 @@
         apply(event, data.join("\n"));
     }
 
-    function apply(step, payload) {
+    // `granting` is false for what the stream carries. A grant is made to the
+    // browser that asked for the markup, and a stream frame was rendered for
+    // somebody else's request, or for none: a publish from a handler carries
+    // the publisher's token, and taking it would unsubscribe every watcher
+    // from the fragment the moment it first updated.
+    function apply(step, payload, granting = true) {
         switch (step) {
             case "focus":
                 // The same deferral a handler's focus gets, so a field this
@@ -1433,13 +1438,14 @@
                 // been overtaken by this document and must not land on it.
                 navigation += 1;
 
-                present(new DOMParser().parseFromString(payload, "text/html"));
+                const page = new DOMParser().parseFromString(payload, "text/html");
+                present(granting ? page : ungranted(page));
                 reseed();
                 autofocus();
                 break;
 
             case "patch":
-                applyPatch(payload);
+                applyPatch(payload, granting);
                 break;
 
             case "reload":
@@ -1493,9 +1499,17 @@
         return el.id ? `[id="${CSS.escape(el.id)}"]` : null;
     }
 
-    function applyPatch(html) {
+    // Markup with every grant taken out, so the elements it lands on keep the
+    // ones they were served with; see `apply`.
+    function ungranted(root) {
+        for (const el of root.querySelectorAll("[data-token]")) el.removeAttribute("data-token");
+        return root;
+    }
+
+    function applyPatch(html, granting = true) {
         const template = document.createElement("template");
         template.innerHTML = html;
+        if (!granting) ungranted(template.content);
 
         for (const incoming of [...template.content.children]) {
             const selector = named(incoming);
@@ -1837,6 +1851,10 @@
     // a reload rather than a repair.
     const DEV = new URL(SCRIPT, location.href).searchParams.has("dev");
 
+    const BACKOFF = 1000;
+    const BACKOFF_LIMIT = 30000;
+
+    let backoff = BACKOFF;
     let connection = null;
     let greeted = false;
     let source = null;
@@ -1859,7 +1877,7 @@
             "focus", "navigate", "page", "patch",
             "reload", "remove", "scroll", "signals", "title",
         ]) {
-            source.addEventListener(step, (ev) => apply(step, ev.data));
+            source.addEventListener(step, (ev) => apply(step, ev.data, false));
         }
 
         // Both the introduction and the cue to subscribe. EventSource
@@ -1868,7 +1886,25 @@
         // the subscription has to be re-sent under it. That makes this the only
         // place a subscription can start from: `open` fires before the greeting
         // arrives, when there is still nothing to subscribe with.
+        // EventSource retries a dropped connection by itself, but gives up for
+        // good on an answer that is not a stream: a proxy's 502 while the
+        // server restarts, or a 500 when identifying the viewer failed. Every
+        // tab open through a deploy would stop updating until reloaded, so a
+        // closed stream is opened again, backing off while the answer stays the
+        // same, and the greeting it earns repairs the gap like any reconnect.
+        const opened = source;
+
+        source.addEventListener("error", () => {
+            if (opened !== source || opened.readyState !== EventSource.CLOSED) return;
+
+            source = null;
+            connection = null;
+            setTimeout(openStream, backoff);
+            backoff = Math.min(backoff * 2, BACKOFF_LIMIT);
+        });
+
         source.addEventListener("connection", (ev) => {
+            backoff = BACKOFF;
             connection = ev.data;
             subscribed = "";
             syncSubscriptions();

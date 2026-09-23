@@ -109,11 +109,20 @@ function transports(window, navigations) {
     const responses = { body: null, status: 204, type: "text/html; charset=utf-8" };
 
     window.EventSource = class EventSource {
+        static CLOSED = 2;
+
         constructor(url) {
             this.url = url;
             this.closed = false;
             this.handlers = new Map();
+            this.readyState = 1;
             streams.push(this);
+        }
+
+        /** Gives up for good, the way a browser does on an answer that is not a stream. */
+        fail() {
+            this.readyState = EventSource.CLOSED;
+            this.handlers.get("error")?.({});
         }
 
         addEventListener(name, handler) {

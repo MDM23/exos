@@ -1185,7 +1185,7 @@ test("a patch that does not restate the grant leaves the subscription alone", as
 // The other half, and the reason this is not simply an attribute the client
 // owns. A rotated session invalidates every outstanding token, the runtime
 // fetches the page back, and the grants it comes back with are the ones that
-// verify: markup that carries a token has to win.
+// verify: markup a request answered with that carries a token has to win.
 test("markup that carries a grant replaces the one on the element", async () => {
     const window = boot(live());
     const [stream] = window.transport.streams;
@@ -1193,7 +1193,7 @@ test("markup that carries a grant replaces the one on the element", async () => 
     stream.emit("connection", "named");
     await settled();
 
-    stream.emit("patch", `<exos-live data-topic="presence-1" data-token="rotated"></exos-live>`);
+    window.exos.applyPatch(`<exos-live data-topic="presence-1" data-token="rotated"></exos-live>`);
     await settled();
 
     // Twice: the attribute change is what schedules the sync, and the request
@@ -1202,6 +1202,25 @@ test("markup that carries a grant replaces the one on the element", async () => 
 
     assert.equal(at(window).dataset.token, "rotated");
     assert.deepEqual(window.transport.requests.at(-1).body.topics, [["presence-1", "rotated"]]);
+});
+
+// What the stream carries was rendered for somebody else's request, so a token
+// in it is somebody else's grant: a handler that publishes hands out its own
+// viewer's. Taking it would unsubscribe this tab on the first update.
+test("markup off the stream never replaces the grant on the element", async () => {
+    const window = boot(live());
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    stream.emit("patch", `<exos-live data-topic="presence-1" data-token="theirs"></exos-live>`);
+    stream.emit("page", served(live().replace("token-for-presence-1", "theirs")));
+    await settled();
+    await settled();
+
+    assert.equal(at(window).dataset.token, "token-for-presence-1");
+    assert.equal(window.transport.requests.length, 1, "so nothing new is claimed");
 });
 
 test("a reconnect subscribes again under the new id", async () => {
@@ -1236,6 +1255,31 @@ test("a connection the server has forgotten is dropped and reopened", async () =
     await settled();
 
     assert.equal(claimed(window).at(-1), "fresh");
+});
+
+// A proxy's 502 during a deploy is an answer that is not a stream, and
+// EventSource gives up on those for good. Every tab open through the deploy
+// would stop updating, so the runtime opens another, and its greeting repairs
+// what was published while nothing was listening.
+test("a stream the browser gave up on is opened again", async () => {
+    const window = boot(`<main>${live()}<p id="count">1</p></main>`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    stream.fail();
+    assert.equal(window.transport.streams.length, 1, "not at once, the server is busy");
+
+    await after(1100);
+    assert.equal(window.transport.streams.length, 2);
+
+    window.transport.responses.body = served(`<main>${live()}<p id="count">2</p></main>`);
+    window.transport.streams[1].emit("connection", "second");
+    await settled();
+
+    assert.deepEqual(claimed(window), ["first", "second"]);
+    assert.equal(window.document.getElementById("count").textContent, "2");
 });
 
 // A claim the server refused is not one it is holding. The comparison that
@@ -1288,14 +1332,14 @@ test("a fragment that leaves the page is one the tab stops watching", async () =
     assert.deepEqual(watching(window), [["presence-1", "token-for-presence-1"]]);
 });
 
-test("a fragment a patch brought with it is one the tab starts watching", async () => {
+test("a fragment an answer brought with it is one the tab starts watching", async () => {
     const window = boot(live("presence-1"));
     const [stream] = window.transport.streams;
 
     stream.emit("connection", "named");
     await settled();
 
-    stream.emit("patch", live("presence-2"));
+    window.exos.applyPatch(live("presence-2"));
     await settled();
 
     assert.deepEqual(watching(window), [
@@ -1450,10 +1494,10 @@ test("the stream carries every step, not only the ones a patch uses", async () =
 
     assert.deepEqual(
         [...stream.handlers.keys()].sort(),
-        // The nine an Effect can be made of, plus the greeting that is not one.
+        // The nine an Effect can be made of, plus the greeting and the failure.
         [
-            "connection", "focus", "navigate", "page", "patch",
-            "reload", "remove", "scroll", "signals", "title",
+            "connection", "error", "focus", "navigate", "page",
+            "patch", "reload", "remove", "scroll", "signals", "title",
         ],
     );
 
