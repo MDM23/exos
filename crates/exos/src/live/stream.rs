@@ -644,7 +644,8 @@ fn identify(id: &str, audiences: HashSet<String>) -> bool {
 /// trade.
 ///
 /// A connection that opened under no name is never matched, whatever `name`
-/// is: see [`Connection::session`].
+/// is. It belongs to no browser in particular, and treating nameless
+/// connections as a group would treat every anonymous visitor as one person.
 ///
 /// # It reaches the browser's tabs on the other nodes too
 ///
