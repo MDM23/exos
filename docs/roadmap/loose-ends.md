@@ -44,6 +44,26 @@ Four rules came out of writing it, and each is pinned by a test.
   way a navigation does. Neither a 404 nor an unsteady network should turn a
   hiccup into a lost document.
 
+## A publish before the subscription is lost
+
+A page renders its fragments at one moment and the tab subscribes to them a
+round trip later, once the runtime has loaded, the stream has greeted it and the
+claim has landed. A publish in between reaches nobody, and the first greeting
+repairs nothing on purpose, so a fragment that changed in that window stays
+wrong until its next publish. Every navigation opens the same window. It is the
+failure the reconnect repair closed, arriving by another door.
+
+The server cannot say the tab missed something without knowing what the tab
+has, so the answer is a design rather than a fix. The shape that looks right is
+live state with a version: a publish stamps its topic, the wrapper carries the
+stamp it was rendered at, a claim says what it holds, and the server answers
+stale where it has published since, which the client repairs the way it repairs
+a reconnect. The same stamp lets a tab drop a patch older than the one it
+already has, which is the order that two nodes publishing one topic cannot
+otherwise promise. What a stamp is across nodes and how long a server remembers
+one are the questions that make this the other entry likely to need a document
+of its own.
+
 ## A refusal could not be heard
 
 **Done**, in [runtime.js](../../crates/exos/js/runtime.js). The client read a
@@ -231,6 +251,19 @@ on each element, which `reapply` reads. Three things came out of writing it.
   that there is something to name as the owner for exactly as long as it is
   true.
 
+## A session changed mid-stream is not kept
+
+The session layer writes the cookie when the response goes out, and an
+[`EffectStream`](../../crates/exos/src/effect/streaming.rs) goes out as soon as
+the handler hands it back, before any of its effects have been computed. A
+`rotate` or an `end` made inside the stream therefore changes a session that
+has already been answered for: signing out from a slow handler leaves the
+browser signed in, with nothing to say so.
+
+Two answers, and choosing is the work. Refusing to change a session once its
+response has gone makes the mistake loud where it is made. Documenting that the
+session is settled before the stream starts is cheaper, and leaves it silent.
+
 ## Nothing disables a busy control
 
 `aria-busy` is advisory. It says work is happening and prevents none of it, so a
@@ -262,6 +295,20 @@ second click was wanted, and a disabled element loses focus, which hands the
 caret back to the body in the middle of somebody's typing. An application that
 wants it today writes `prop("disabled", ...)` over a model field the handler
 clears, which is a few lines and keeps the policy where the policy belongs.
+
+## The session cookie needs a secure context
+
+The cookie is always `Secure`, and a browser keeps one of those only from a
+secure context. `localhost` counts; plain HTTP on any other address does not,
+which is a phone on the same network at `http://192.168.1.20:3000` or a staging
+box without a certificate. There the cookie is dropped: nobody stays signed in,
+and every live fragment fails verification and stops updating, without an error
+anywhere.
+
+A development build dropping `Secure` is the obvious fix and makes a debug
+binary behave differently on a network from the release it becomes. A warning
+when a request arrives over plain HTTP from anywhere but loopback keeps the
+cookie honest and makes the failure visible. Which one is the open question.
 
 ## Publishing scans every connection
 
