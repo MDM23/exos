@@ -141,6 +141,36 @@ test("a navigation starts the page as its own markup declares it", async () => {
     assert.equal(window.exos.signals.draft, "", "the arriving page said it starts empty");
 });
 
+// An ordinary link to a download or an endpoint, which the browser knows what
+// to do with and a morph turns into an empty page.
+test("a link to something that is not a page is left to the browser", async () => {
+    const window = boot(`<p id="here">here</p><a href="/export.csv">export</a>`);
+    window.transport.responses.body = "a,b\n1,2";
+    window.transport.responses.type = "text/csv";
+
+    window.document.querySelector("a").click();
+    await settled();
+
+    assert.equal(window.transport.requests[0].url, "http://localhost/export.csv");
+    assert.equal(window.transport.navigations.length, 1, "the browser is asked to load it");
+    assert.equal(window.document.getElementById("here").textContent, "here");
+});
+
+// Nested under `/admin`, the rest of the origin is the host application's, and
+// a page this runtime did not render is not one to morph in.
+test("a link outside where the application is mounted is not intercepted", async () => {
+    const window = bootUnder("/admin", `<a href="/home">home</a><a href="/admin/next">next</a>`);
+    const [outside, inside] = window.document.querySelectorAll("a");
+
+    outside.click();
+    await settled();
+    assert.equal(window.transport.requests.length, 0);
+
+    inside.click();
+    await settled();
+    assert.equal(window.transport.requests[0].url, "http://localhost/admin/next");
+});
+
 // A page in another language is served as one and has to be read as one. `lang`
 // and `dir` sit on <html>, which a morph of the body cannot reach, so a
 // navigation used to leave the previous language in place: a screen reader in

@@ -1730,6 +1730,11 @@
         if (!link || link.hasAttribute("download") || link.hasAttribute("data-reload")) return;
         if (link.target && link.target !== "_self") return;
         if (link.origin !== location.origin) return;
+
+        // Outside where this application is mounted is the host's page, which
+        // this runtime did not render and has no business morphing in.
+        if (BASE && link.pathname !== BASE && !link.pathname.startsWith(`${BASE}/`)) return;
+
         if (link.hash && link.pathname === location.pathname) return;
 
         ev.preventDefault();
@@ -1783,6 +1788,17 @@
 
         try {
             const response = await fetch(url, { headers: { "X-Exos-Navigate": "true" } });
+            const type = response.headers?.get("content-type") ?? "text/html";
+
+            // A file or an endpoint behind an ordinary link is not a page, and
+            // parsed as one it morphs the body into nothing. The browser knows
+            // what to do with it, so it is asked to.
+            if (!type.includes("text/html")) {
+                response.body?.cancel();
+                if (generation === navigation) location.assign(url);
+                return;
+            }
+
             const html = await response.text();
 
             // Superseded while this was in flight. Nothing to undo: this
