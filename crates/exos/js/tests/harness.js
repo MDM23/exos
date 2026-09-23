@@ -106,7 +106,15 @@ function transports(window, navigations) {
     // `type` is what decides how the runtime reads the body, and it is the
     // whole subject of any test about a refusal that still has something to
     // say, so it is settable rather than derived from the status.
-    const responses = { body: null, status: 204, type: "text/html; charset=utf-8" };
+    //
+    // `held` is a promise every answer waits for, so a test can keep a request
+    // in flight while the page goes on changing.
+    const responses = {
+        body: null,
+        held: Promise.resolve(),
+        status: 204,
+        type: "text/html; charset=utf-8",
+    };
 
     window.EventSource = class EventSource {
         static CLOSED = 2;
@@ -150,7 +158,7 @@ function transports(window, navigations) {
         const text =
             responses.body ?? `<!DOCTYPE html>${window.document.documentElement.outerHTML}`;
 
-        return Promise.resolve({
+        return responses.held.then(() => ({
             ok: responses.status < 400,
             status: responses.status,
             statusText: "",
@@ -166,7 +174,7 @@ function transports(window, navigations) {
             // `cancel` is here because a real body has one: a reply the runtime
             // has decided not to read is let go rather than left open.
             body: { getReader: () => reader(window, text), cancel: () => Promise.resolve() },
-        });
+        }));
     };
 
     return { navigations, requests, responses, streams };

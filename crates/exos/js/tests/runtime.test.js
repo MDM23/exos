@@ -1257,6 +1257,35 @@ test("a connection the server has forgotten is dropped and reopened", async () =
     assert.equal(claimed(window).at(-1), "fresh");
 });
 
+// The server takes whichever claim arrives last, so two in flight could land
+// the older set over the newer one while the tab believes it said the newer.
+test("a claim waits for the one in flight and then names the page as it is", async () => {
+    const window = boot(live("presence-1"));
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "named");
+    await settled();
+
+    let release;
+    window.transport.responses.held = new Promise((resolve) => (release = resolve));
+
+    window.document.body.insertAdjacentHTML("beforeend", live("presence-2"));
+    await settled();
+    window.document.body.insertAdjacentHTML("beforeend", live("presence-3"));
+    await settled();
+
+    assert.equal(claimed(window).length, 2, "the second change waits for the first claim");
+
+    release();
+    await settled();
+
+    assert.equal(claimed(window).length, 3);
+    assert.deepEqual(
+        watching(window).map(([topic]) => topic),
+        ["presence-1", "presence-2", "presence-3"],
+    );
+});
+
 // A proxy's 502 during a deploy is an answer that is not a stream, and
 // EventSource gives up on those for good. Every tab open through the deploy
 // would stop updating, so the runtime opens another, and its greeting repairs

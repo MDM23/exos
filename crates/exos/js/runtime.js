@@ -1854,7 +1854,9 @@
     const BACKOFF = 1000;
     const BACKOFF_LIMIT = 30000;
 
+    let again = false;
     let backoff = BACKOFF;
+    let claiming = false;
     let connection = null;
     let greeted = false;
     let source = null;
@@ -2014,7 +2016,18 @@
         // it would be pure chatter.
         const encoded = JSON.stringify(topics);
         if (encoded === subscribed) return;
+
+        // One claim in flight at a time. The server takes whichever arrives
+        // last, so two racing could leave it holding the older set while the
+        // tab believes it said the newer one. A change meanwhile is sent once
+        // this answers, read off the page as it is by then.
+        if (claiming) {
+            again = true;
+            return;
+        }
+
         subscribed = encoded;
+        claiming = true;
 
         try {
             const response = await fetch(`${BASE}/_exos/subscribe`, {
@@ -2043,6 +2056,13 @@
         } catch (error) {
             console.error("[exos] could not subscribe:", error);
             subscribed = "";
+        } finally {
+            claiming = false;
+
+            if (again) {
+                again = false;
+                syncSubscriptions();
+            }
         }
     }
 
