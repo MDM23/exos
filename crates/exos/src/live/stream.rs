@@ -140,9 +140,11 @@ struct Connection {
     audiences: HashSet<String>,
     /// What this connection is called on a bus.
     ///
-    /// The reduction of its id, held beside it so that a frame naming one
-    /// connection is matched the way every other frame is: against a set of
-    /// keys rather than against a bearer name.
+    /// The reduction of its id and of the browser it opened under, held beside
+    /// it so that a frame naming one connection is matched the way every other
+    /// frame is: against a set of keys rather than against a bearer name. The
+    /// browser is in it so that a subscription forwarded from somebody else's
+    /// cookie addresses nothing; see [`subscribe`].
     key: String,
     sender: broadcast::Sender<Event>,
     /// What the browser this stream opened under is called on a bus, so that a
@@ -555,6 +557,17 @@ fn reduction(of: &str, value: &impl Hash) -> String {
     Topic::new(of, value).as_str().to_owned()
 }
 
+/// What a browser is called on a bus: the reduction of the name in its cookie.
+fn browser(name: &Id) -> String {
+    reduction("session", name)
+}
+
+/// What one connection is called on a bus, as held by the `browser` it opened
+/// under.
+fn addressed(id: &str, browser: Option<&str>) -> String {
+    reduction("connection", &(id, browser))
+}
+
 /// Registers a connection under a fresh id, with the receiver its response
 /// drains.
 ///
@@ -570,6 +583,7 @@ fn reduction(of: &str, value: &impl Hash) -> String {
 /// and buys the only moment in which a revocation can see it.
 fn open(session: Option<&Id>) -> (String, broadcast::Receiver<Event>) {
     let id = mint();
+    let session = session.map(browser);
     let (sender, receiver) = broadcast::channel(CAPACITY);
 
     connections()
@@ -579,9 +593,9 @@ fn open(session: Option<&Id>) -> (String, broadcast::Receiver<Event>) {
             id.clone(),
             Connection {
                 audiences: HashSet::new(),
-                key: reduction("connection", &id),
+                key: addressed(&id, session.as_deref()),
                 sender,
-                session: session.map(|name| reduction("session", name)),
+                session,
                 topics: HashSet::new(),
             },
         );
@@ -660,7 +674,7 @@ fn identify(id: &str, audiences: HashSet<String>) -> bool {
 ///
 /// If the registry lock was poisoned; see [`connection_count`].
 pub fn disconnect(name: &Id) -> usize {
-    let key = reduction("session", name);
+    let key = browser(name);
     let ended = revoke(&key);
 
     bus::cross(|| Frame::revocation(key));
@@ -733,7 +747,8 @@ struct Subscription {
 /// The three answers, and the middle one is the whole of why a connection id
 /// carries the node that minted it:
 ///
-/// * held here, so applied here, which is every request in a single process
+/// * held here, so applied here, which is every request in a single process,
+///   unless another browser is asking, which is a `410`
 /// * minted here and gone, so `410`, and the browser opens a fresh stream
 /// * minted elsewhere, so forwarded, and `204` because it is on its way
 ///
@@ -751,11 +766,22 @@ async fn subscribe(Json(request): Json<Subscription>) -> StatusCode {
         .map(|(topic, _)| topic)
         .collect();
 
+    let asking = crate::session().id().as_ref().map(browser);
+
     let Ok(mut registry) = connections().lock() else {
         return StatusCode::INTERNAL_SERVER_ERROR;
     };
 
     if let Some(connection) = registry.get_mut(&request.connection) {
+        // Only the browser a stream opened under decides what it watches.
+        // Anybody else holding the id could otherwise empty it, and the tab
+        // would sit on a page nothing is sent to. The browser itself lands here
+        // once, when its first live fragment named it after the stream had
+        // opened anonymously, and reopening is the answer to that as well.
+        if connection.session != asking {
+            return StatusCode::GONE;
+        }
+
         connection.topics = proved.into_iter().collect();
 
         return StatusCode::NO_CONTENT;
@@ -771,7 +797,9 @@ async fn subscribe(Json(request): Json<Subscription>) -> StatusCode {
         return StatusCode::GONE;
     }
 
-    bus::cross(|| Frame::subscription(reduction("connection", &request.connection), proved));
+    // Addressed as held by this browser, so a forward from somebody else's
+    // cookie names no connection anywhere.
+    bus::cross(|| Frame::subscription(addressed(&request.connection, asking.as_deref()), proved));
 
     StatusCode::NO_CONTENT
 }
@@ -983,14 +1011,17 @@ mod tests {
     /// Opens a real stream through the router and reads what it says first,
     /// which is the wire format the client parses rather than a stand-in for
     /// it. The body is handed back because dropping it closes the connection.
-    async fn greeted() -> (String, Body) {
+    ///
+    /// Opened as the browser `name` names, or as one carrying no cookie.
+    async fn greeted(name: Option<&Id>) -> (String, Body) {
+        let mut request = Request::builder().uri(STREAM);
+
+        if let Some(name) = name {
+            request = request.header(header::COOKIE, format!("exos={name}"));
+        }
+
         let response = served()
-            .oneshot(
-                Request::builder()
-                    .uri(STREAM)
-                    .body(Body::empty())
-                    .expect("a valid request"),
-            )
+            .oneshot(request.body(Body::empty()).expect("a valid request"))
             .await
             .expect("the router answers");
 
@@ -1021,7 +1052,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_stream_names_the_connection_before_anything_else() {
-        let (id, _body) = greeted().await;
+        let (id, _body) = greeted(None).await;
         let (prefix, random) = id.split_once('-').expect("the node, then the name");
 
         assert_eq!(prefix, node(), "the node that minted it");
@@ -1051,10 +1082,10 @@ mod tests {
     /// server handed out, so a client cannot name a connection it was not given.
     #[tokio::test]
     async fn the_id_the_server_gave_is_the_one_that_subscribes() {
-        let (id, _body) = greeted().await;
-
         let topic = Topic::new("presence", &(1_u32,));
         let (name, watching) = browser(&[&topic]);
+
+        let (id, _body) = greeted(Some(&name)).await;
 
         assert_eq!(
             subscribing(&name, &id, &watching).await,
@@ -1073,20 +1104,19 @@ mod tests {
 
     #[tokio::test]
     async fn two_streams_are_never_named_the_same() {
-        let (first, _first) = greeted().await;
-        let (second, _second) = greeted().await;
+        let (first, _first) = greeted(None).await;
+        let (second, _second) = greeted(None).await;
 
         assert_ne!(first, second);
     }
 
     #[tokio::test]
     async fn subscribing_keeps_only_the_topics_it_can_prove() {
-        let (id, _receiver) = opened(None, HashSet::new());
-
         let real = Topic::new("presence", &(42_u32,));
         let forged = Topic::new("presence", &(43_u32,));
 
         let (name, mut watching) = browser(&[&real]);
+        let (id, _receiver) = opened(Some(&name), HashSet::new());
         watching.push((forged.as_str().to_owned(), String::from("0000000000000000")));
 
         assert_eq!(
@@ -1109,11 +1139,11 @@ mod tests {
     /// profile, subscribes to nothing at all.
     #[tokio::test]
     async fn a_topic_somebody_else_was_served_is_dropped() {
-        let (id, _receiver) = opened(None, HashSet::new());
-
         let topic = Topic::new("presence", &(44_u32,));
         let (_theirs, stolen) = browser(&[&topic]);
         let (mine, _nothing) = browser(&[]);
+
+        let (id, _receiver) = opened(Some(&mine), HashSet::new());
 
         assert_eq!(
             subscribing(&mine, &id, &stolen).await,
@@ -1127,6 +1157,37 @@ mod tests {
                 .expect("the connection is open")
                 .topics
                 .contains(topic.as_str())
+        );
+    }
+
+    /// The id alone decides nothing. Anybody else holding it could otherwise
+    /// empty what a tab watches, and it would sit on a page nothing is sent to.
+    #[tokio::test]
+    async fn another_browser_cannot_say_what_a_connection_watches() {
+        let topic = Topic::new("presence", &(45_u32,));
+        let (owner, watching) = browser(&[&topic]);
+        let (id, _receiver) = opened(Some(&owner), HashSet::new());
+
+        assert_eq!(
+            subscribing(&owner, &id, &watching).await,
+            StatusCode::NO_CONTENT
+        );
+
+        let (somebody, nothing) = browser(&[]);
+
+        assert_eq!(
+            subscribing(&somebody, &id, &nothing).await,
+            StatusCode::GONE
+        );
+
+        let registry = connections().lock().expect("the lock is not poisoned");
+        assert!(
+            registry
+                .get(&id)
+                .expect("the connection is open")
+                .topics
+                .contains(topic.as_str()),
+            "and it still watches what its own browser said"
         );
     }
 
@@ -1168,13 +1229,12 @@ mod tests {
     /// and nothing arriving from a client reaches the second.
     #[tokio::test]
     async fn a_client_cannot_talk_its_way_into_an_audience() {
-        let (id, _receiver) = opened(None, HashSet::new());
-
         // The exact string the server would have written had it decided this
         // connection was viewer 3, handed back as a topic with a real token.
         let claimed = identity::key(&Viewer(3));
         let topic = Topic::from_raw(&claimed);
         let (name, watching) = browser(&[&topic]);
+        let (id, _receiver) = opened(Some(&name), HashSet::new());
 
         assert_eq!(
             subscribing(&name, &id, &watching).await,
@@ -1214,7 +1274,7 @@ mod tests {
     /// the page back.
     #[tokio::test]
     async fn a_tab_that_lags_past_the_capacity_is_told_to_start_again() {
-        let (id, body) = greeted().await;
+        let (id, body) = greeted(None).await;
 
         let sender = connections()
             .lock()
@@ -1379,11 +1439,10 @@ mod tests {
     /// key does.
     #[tokio::test]
     async fn a_topic_is_not_a_way_into_an_audience() {
-        let (id, mut receiver) = opened(None, HashSet::new());
-
         let claimed = identity::key(&Viewer(10));
         let topic = Topic::from_raw(&claimed);
         let (name, watching) = browser(&[&topic]);
+        let (id, mut receiver) = opened(Some(&name), HashSet::new());
 
         assert_eq!(
             subscribing(&name, &id, &watching).await,
@@ -1410,11 +1469,11 @@ mod tests {
     /// delivery from elsewhere reaches exactly what a local publish would.
     #[tokio::test]
     async fn a_frame_reaches_the_connection_watching_its_key() {
-        let (id, mut watching) = opened(None, HashSet::new());
-        let (_id, mut elsewhere) = opened(None, HashSet::new());
-
         let topic = Topic::new("presence", &(20_u32,));
         let (name, proof) = browser(&[&topic]);
+
+        let (id, mut watching) = opened(Some(&name), HashSet::new());
+        let (_id, mut elsewhere) = opened(None, HashSet::new());
 
         assert_eq!(
             subscribing(&name, &id, &proof).await,
@@ -1434,11 +1493,11 @@ mod tests {
     #[tokio::test]
     async fn a_frame_reaches_the_set_its_kind_names_and_no_other() {
         let key = identity::key(&Viewer(21));
-        let (_id, mut person) = opened(None, identity::Audiences::of(&Viewer(21)).into_keys());
-        let (id, mut tab) = opened(None, HashSet::new());
-
         let topic = Topic::from_raw(&key);
         let (name, proof) = browser(&[&topic]);
+
+        let (_id, mut person) = opened(None, identity::Audiences::of(&Viewer(21)).into_keys());
+        let (id, mut tab) = opened(Some(&name), HashSet::new());
 
         assert_eq!(
             subscribing(&name, &id, &proof).await,
@@ -1468,7 +1527,7 @@ mod tests {
         let topic = Topic::new("presence", &(22_u32,));
         let watching = vec![topic.as_str().to_owned()];
 
-        crate::deliver(Frame::subscription(reduction("connection", &id), watching));
+        crate::deliver(Frame::subscription(addressed(&id, None), watching));
 
         publish(crate::Fragment::new(topic.clone(), Markup::default));
 
@@ -1477,10 +1536,7 @@ mod tests {
 
         // Replaced wholesale rather than added to, which is the rule the
         // endpoint follows and therefore the rule a forward has to keep.
-        crate::deliver(Frame::subscription(
-            reduction("connection", &id),
-            Vec::new(),
-        ));
+        crate::deliver(Frame::subscription(addressed(&id, None), Vec::new()));
 
         publish(crate::Fragment::new(topic, Markup::default));
         assert_eq!(received(&mut tab), 0);
@@ -1617,7 +1673,7 @@ mod tests {
     /// an identity that is empty, rather than a refusal or a warning.
     #[tokio::test]
     async fn a_stream_opens_with_no_resolver_configured() {
-        let (id, _body) = greeted().await;
+        let (id, _body) = greeted(None).await;
 
         let registry = connections().lock().expect("the lock is not poisoned");
 

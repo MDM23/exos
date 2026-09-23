@@ -358,7 +358,13 @@ async fn a_subscription_for_another_node_is_forwarded_rather_than_refused() {
     let frame = crossed(&mut sent).await;
 
     assert_eq!(frame.kind(), Kind::Connection);
-    assert_eq!(frame.key(), Topic::new("connection", &elsewhere).as_str());
+    // Addressed as held by the browser asking, so a forward from anybody else
+    // names no connection on the node that has it.
+    let browser = Topic::new("session", &name);
+    assert_eq!(
+        frame.key(),
+        Topic::new("connection", &(elsewhere, Some(browser.as_str()))).as_str()
+    );
 
     // The names, proved here and crossing without their tokens: the node with
     // the cookie is the node that can check one, and it did.
