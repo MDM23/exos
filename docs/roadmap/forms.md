@@ -3,8 +3,9 @@
 Rules written once, checked on both sides, and the one round trip that carries
 what only the server knows.
 
-Status: stages 0, 1, 2, 3, 5, 6 and the gate half of 4 are built, aggregation
-included. What is left is patterns (1a) and `required_when`.
+Status: stages 0, 1, 1a, 2, 3, 5, 6 and the gate half of 4 are built,
+aggregation included. What is left is `required_when`, which is waiting for
+something that wants one rather than for anybody to write it.
 
 [`examples/signup`](../../examples/signup) is the form written by hand against
 the surface that existed before any of this, so what the stages are worth is
@@ -171,7 +172,8 @@ usable rather than a second mechanism beside it.
 
 ## Stage 1a: patterns, and the subset that makes them safe
 
-A custom pattern is the one shape rule whose two halves are written in different
+**Done**, as [`pattern!`](../../crates/exos-macro/src/pattern.rs). A custom
+pattern is the one shape rule whose two halves are written in different
 languages, so it is the one that can quietly disagree. It is still worth having,
 and the subset that makes it safe is a real boundary rather than a hope.
 
@@ -229,7 +231,49 @@ format", which is the error message everybody hates.
 That leaves the named rules (`email`, `url`, `digits`) worth shipping anyway, as
 two hand-written halves each. They are what most forms actually reach for, they
 say what they mean at the call site, and their messages are better than a
-pattern's can ever be.
+pattern's can ever be. `email` was stage 1's and is built; the other two are
+not, and are now a smaller decision than they were. `digits` is two lines of
+this stage wearing a name, and `url` is a design rather than a rule: which
+schemes count is an application's question and every answer is wrong somewhere.
+
+### What it found
+
+**The subset is one gate rather than a list.** The four differences above were
+drawn as four things to close, and three of them close together: everything
+this must refuse that is spelled at all is spelled `(?`. Lookaround, inline
+flags and named groups all arrive through that door, so the rule is that a group
+is `(` or `(?:` and nothing else, with one message. Backreferences needed
+nothing: `regex-lite` has no backtracking and refuses them itself, which is
+the engine choice paying for a second time.
+
+**The lowering runs one way, and that decides which dialect is normative.** A
+pattern is written the way JavaScript reads it, because that is the engine which
+cannot be swapped, and the copy the server keeps is derived: `.` written out as
+the class the browser reads it as. So a pattern is two sources rather than one,
+generated from one declaration, which is the same shape [`Presence`](
+../../crates/exos/src/valid.rs) has for every other rule.
+
+**And it found two divergences this stage had not named.** A `]` that closes
+nothing is a literal to one engine and an error to the other; a character class
+inside a character class is Rust's, and `[[:alpha:]]` is a POSIX class the
+browser reads as the six characters it is spelled with. Both are refused where
+they are written. Neither would have failed a test: they are patterns that
+compile on both sides and mean different things, which is the whole failure mode
+this stage exists for.
+
+**The browser is told to count code points**, with the `u` flag, which is
+[stage 1's UTF-16 finding](#what-it-found) arrived at from the other end. A
+length had to be counted the way the browser counts because Rust can count that
+way and JavaScript cannot count the other. A pattern is the reverse: JavaScript
+can be told to match by code point, so it is, and the two agree again. The rule
+under both is to move whichever side can move.
+
+**The name is what the example proved.** `VAT` in
+[`examples/signup`](../../examples/signup) is one arm in the application's
+`complaints`, saying what a VAT id is; without the name it would have been the
+"that does not look right" every form already says. It also demonstrates the one
+thing somebody reaches for and does not get, since both cases are written out
+where an `i` flag would have been.
 
 ## Stage 2: the same rule in the browser
 

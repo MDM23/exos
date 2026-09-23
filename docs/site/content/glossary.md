@@ -179,8 +179,9 @@ again before the handler body runs.
 | `required_with = sibling` | The same, whenever a sibling is |
 | `length = 2..=40` | Counted in UTF-16 code units, so both sides agree |
 | `email` | Shaped like an address |
+| `matches = PATTERN` | Shaped like a `pattern!` says, checked by both engines |
 | `checked_by = function` | The one rule with no browser half, asked over a round trip and again at submit |
-| `Violation` | `Required`, `TooShort { least }`, `TooLong { most }`, `Malformed` |
+| `Violation` | `Required`, `TooShort { least }`, `TooLong { most }`, `Malformed`, `Unmatched { pattern }` |
 | `App::complaints(say)` | How this application words a violation; the default is English |
 | `Refusal<M>` | A handler's own refusal, in the shape a declared rule produces |
 | `Refusal::add(field, message)` | Says what is wrong with one field |
@@ -188,6 +189,7 @@ again before the handler body runs.
 | `Refusal::is_empty()` | Whether anything is |
 | `Presence` | Implement it and `required` can be asked about your type: `is_present`, `present` |
 | `Length` | The same for `length`: `measure`, `length` |
+| `pattern!(NAME = r"...")` | A shape both engines read the same way, named so its failure can say why |
 
 ## Effects
 

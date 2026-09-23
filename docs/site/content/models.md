@@ -220,6 +220,40 @@ Nothing speaks until a field has been edited, because a form that is red before
 it is read is worse than no validation. A message from the server shows
 whenever there is one, since the server only speaks after a submit.
 
+**A shape of your own is a `pattern!`.** It is the one rule whose two halves
+are written in different languages, so it is declared once, by name, and both
+halves are read from that declaration:
+
+```rust
+exos::pattern!(POSTCODE = r"[0-9]{5}");
+
+#[valid(required, matches = POSTCODE)]
+postcode: String,
+```
+
+Three things about it are decided for you. It is written in JavaScript's
+dialect, because that is the engine that cannot be swapped, and the server's
+copy is lowered from it: a `.` becomes the class JavaScript reads it as, so one
+pattern means one thing. The subset both engines agree on is enforced where you
+write it, so lookaround, backreferences, named groups and flags are a compile
+error rather than a value the browser accepted and the server did not. And it
+matches the whole value, the way HTML's own `pattern` attribute does, so the
+anchors are ours to write.
+
+It is named because a failure has to say something. The name is what the
+violation carries:
+
+```rust
+(_, Violation::Unmatched { pattern: "POSTCODE" }) => {
+    String::from("A postcode is five digits.")
+}
+```
+
+Without that, every pattern on the form would share "that does not look
+right", which is the error message everybody hates. Flags are the one thing
+somebody reaches for and does not get: `i` is ASCII folding in one engine and
+Unicode folding in the other, so both cases are written out.
+
 **A rule about one value that needs the server is `checked_by`.** Whether this
 code exists is a question about the application's data rather than about the
 value's shape, so it names a function instead of describing a shape:

@@ -12,6 +12,7 @@ mod live;
 mod locales;
 mod messages;
 mod model;
+mod pattern;
 mod profile;
 mod route;
 mod valid;
@@ -156,6 +157,34 @@ method_attribute!(put, "PUT");
 #[proc_macro_attribute]
 pub fn model(_attribute: TokenStream, item: TokenStream) -> TokenStream {
     model::expand(item.into()).into()
+}
+
+/// Declares a shape a field can be checked against.
+///
+/// ```ignore
+/// exos::pattern!(POSTCODE = r"[0-9]{5}");
+///
+/// #[valid(required, matches = POSTCODE)]
+/// postcode: String,
+/// ```
+///
+/// It is written in JavaScript's dialect, because that is the engine which
+/// cannot be swapped, and the subset it may use is what both engines read the
+/// same way: no lookaround, no backreferences, no named groups and no flags.
+/// Anything outside it is an error here rather than a value the browser
+/// accepted and the server did not, and a `.` is lowered to the class
+/// JavaScript reads it as, so one pattern means one thing on both sides.
+///
+/// A pattern matches the whole value, the way HTML's own `pattern` attribute
+/// does, so the anchors are written for you.
+///
+/// It is named because its failure has to say something. The name is what
+/// `Violation::Unmatched` carries, which gives an application's `complaints`
+/// one arm per pattern rather than one sentence for every wrong format there
+/// is.
+#[proc_macro]
+pub fn pattern(input: TokenStream) -> TokenStream {
+    pattern::expand(input.into()).into()
 }
 
 /// Marks a fragment that keeps itself up to date.

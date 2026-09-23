@@ -40,6 +40,7 @@ minifier = { version = "0.4", default-features = false }
 png = { version = "0.18", default-features = false }
 proc-macro2 = { version = "1", default-features = false }
 quote = { version = "1", default-features = false }
+regex-lite = { version = "0.1", default-features = false, features = ["std", "string"] }
 rstml = { version = "0.13", default-features = false }
 serde = { version = "1", default-features = false, features = ["derive", "std"] }
 serde_json = { version = "1", default-features = false, features = ["std"] }

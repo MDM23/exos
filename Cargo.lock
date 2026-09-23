@@ -455,6 +455,7 @@ dependencies = [
  "getrandom 0.3.4",
  "hmac",
  "inventory",
+ "regex-lite",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -501,6 +502,7 @@ dependencies = [
  "exos-cldr",
  "proc-macro2",
  "quote",
+ "regex-lite",
  "rstml",
  "syn 3.0.3",
 ]
@@ -1299,6 +1301,12 @@ dependencies = [
  "memchr",
  "regex-syntax",
 ]
+
+[[package]]
+name = "regex-lite"
+version = "0.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cab834c73d247e67f4fae452806d17d3c7501756d98c8808d7c9c7aa7d18f973"
 
 [[package]]
 name = "regex-syntax"

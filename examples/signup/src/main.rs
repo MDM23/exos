@@ -66,6 +66,11 @@ fn app() -> Router {
             ("company", Violation::Required) => String::from("An invoice needs a company."),
             ("email", Violation::Malformed) => String::from("That is not an email address."),
             ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
+            // The pattern's name is what makes this sayable. Without it every
+            // pattern on the form shares one sentence about the format.
+            (_, Violation::Unmatched { pattern: "VAT" }) => {
+                String::from("A VAT id is a country code and up to twelve more characters.")
+            }
             ("workshops", Violation::Required) => String::from("Pick at least one workshop."),
             (_, Violation::Required) => String::from("This is needed."),
             (_, Violation::TooShort { least }) => format!("At least {least} characters."),

@@ -83,19 +83,22 @@ pub use crate::{
     scope::{Scope, detached, scope, with_scope},
     session::{Id, Session, session},
     signal::{Bound, Field, Placement, Signal, signal},
-    valid::{CheckEntry, Errors, Length, Presence, Refusal, Validate, Violation},
+    valid::{CheckEntry, Errors, Length, Pattern, Presence, Refusal, Validate, Violation},
 };
 
 // Named by the `#[model]` expansion, which has to reach them from anywhere.
 #[doc(hidden)]
 pub use crate::{
     message::{HOLE, project},
-    valid::{all_valid, any_dirty, asked, chain, complaint, email_js, is_email, model_refusal},
+    valid::{
+        all_valid, any_dirty, asked, chain, complaint, email_js, is_email, matches_js,
+        model_refusal,
+    },
 };
 
 #[doc(inline)]
 pub use exos_macro::{
-    Enumerable, asset, delete, get, live, locales, messages, model, patch, post, put, view,
+    Enumerable, asset, delete, get, live, locales, messages, model, patch, pattern, post, put, view,
 };
 
 // What keeps `LocaleSet` implementable by `locales!` alone, which has to be

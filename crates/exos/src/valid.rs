@@ -39,6 +39,27 @@
 //! to watch, and it is what buys the gate out of being a second concept only
 //! forms would have.
 //!
+//! # A shape of the application's own
+//!
+//! [`pattern!`](crate::pattern) declares one, and it is the one rule whose two
+//! halves are written in different languages. What is written is JavaScript's
+//! dialect and the server's copy is lowered from it, inside a subset the two
+//! engines read the same way; everything outside that subset is a compile
+//! error at the declaration rather than a value one side accepted and the
+//! other did not.
+//!
+//! ```ignore
+//! exos::pattern!(POSTCODE = r"[0-9]{5}");
+//!
+//! #[valid(required, matches = POSTCODE)]
+//! postcode: String,
+//! ```
+//!
+//! A pattern is named so that its failure can say why. The name is what
+//! [`Violation::Unmatched`] carries, which is one arm per pattern in an
+//! application's own wording rather than one sentence for every wrong format
+//! there is.
+//!
 //! # A rule the server alone can answer
 //!
 //! `checked_by` names a function, and it is the one rule with no browser half:
@@ -88,6 +109,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::post,
 };
+use regex_lite::Regex;
 use serde::{Serialize, Serializer, de::DeserializeOwned};
 use serde_json::Value;
 
@@ -114,6 +136,15 @@ pub enum Violation {
     },
     /// The right length and the wrong shape.
     Malformed,
+    /// Not what the named [`Pattern`] describes.
+    ///
+    /// The name is what lets an application say why: "a postcode is five
+    /// digits" rather than the "wrong format" every form says instead.
+    Unmatched {
+        /// What it was checked against, as [`pattern!`](crate::pattern) named
+        /// it.
+        pattern: &'static str,
+    },
 }
 
 /// Where a message about the model itself is kept in its record.
@@ -532,7 +563,9 @@ fn default_complaint(violation: Violation) -> String {
         Violation::Required => String::from("This is needed."),
         Violation::TooShort { least } => format!("At least {least} characters."),
         Violation::TooLong { most } => format!("At most {most} characters."),
-        Violation::Malformed => String::from("That does not look right."),
+        Violation::Malformed | Violation::Unmatched { .. } => {
+            String::from("That does not look right.")
+        }
     }
 }
 
@@ -662,6 +695,80 @@ pub fn email_js(value: &Js<String>) -> Js<bool> {
     ))
 }
 
+/// A shape written down once and read by both engines.
+///
+/// Declared with [`pattern!`](crate::pattern), which is where the subset that
+/// keeps the two from disagreeing is enforced, and named there because a
+/// failure has to say something better than "wrong format":
+///
+/// ```ignore
+/// exos::pattern!(POSTCODE = r"[0-9]{5}");
+///
+/// #[valid(required, matches = POSTCODE)]
+/// postcode: String,
+/// ```
+///
+/// Two spellings are kept rather than one. What the browser reads is what was
+/// written, and what the server reads is the same thing with JavaScript's `.`
+/// written out, because that is the one construct the two dialects disagree
+/// about inside the subset.
+#[derive(Debug)]
+pub struct Pattern {
+    name: &'static str,
+    source: &'static str,
+    js: &'static str,
+    compiled: OnceLock<Regex>,
+}
+
+impl Pattern {
+    /// Describes a pattern, for the [`pattern!`](crate::pattern) expansion.
+    ///
+    /// There is no reason to call this yourself: the sources are the macro's
+    /// output, already anchored and already checked, and a pair written by
+    /// hand is the drift the macro exists to prevent.
+    #[doc(hidden)]
+    pub const fn new(name: &'static str, source: &'static str, js: &'static str) -> Self {
+        Self {
+            name,
+            source,
+            js,
+            compiled: OnceLock::new(),
+        }
+    }
+
+    /// What it is called, which is what its [`Violation`] carries.
+    pub const fn name(&self) -> &'static str {
+        self.name
+    }
+
+    /// Whether a value is the shape this describes.
+    ///
+    /// # Panics
+    ///
+    /// Never: the source was compiled once already, at the declaration, which
+    /// is what makes a pattern nothing understands a compile error rather than
+    /// a field nobody can fill in.
+    pub fn is_match(&self, value: &str) -> bool {
+        self.compiled
+            .get_or_init(|| Regex::new(self.source).expect("the declaration compiled this"))
+            .is_match(value)
+    }
+}
+
+/// The same question, as an expression.
+///
+/// The `u` flag so that the browser counts code points the way the server
+/// does, and a `RegExp` built from a string rather than a literal so that
+/// nothing in the pattern has to be escaped twice.
+#[doc(hidden)]
+pub fn matches_js(pattern: &Pattern, value: &Js<String>) -> Js<bool> {
+    Js::raw(format!(
+        "new RegExp({}, \"u\").test({})",
+        crate::quote_js(pattern.js),
+        value.source()
+    ))
+}
+
 // -----------------------------------------------------------------------------
 //                                     TESTS
 // -----------------------------------------------------------------------------
@@ -720,6 +827,32 @@ mod tests {
         assert!(!is_email("ada@@example.com"));
         assert!(!is_email("ada@.com"));
         assert!(!is_email("ada"));
+    }
+
+    /// What `pattern!` emits, checked from the end that runs: the sources are
+    /// anchored, so a value with something either side of the shape is not the
+    /// shape.
+    #[test]
+    fn a_pattern_is_the_whole_value_or_it_is_not_a_match() {
+        let postcode = Pattern::new("POSTCODE", "^(?:[0-9]{5})$", "^(?:[0-9]{5})$");
+
+        assert!(postcode.is_match("12345"));
+        assert!(!postcode.is_match("1234"));
+        assert!(!postcode.is_match(" 12345"));
+        assert!(!postcode.is_match("12345 and then some"));
+    }
+
+    /// And the browser's copy is the source it was written with rather than
+    /// the one the server reads, because the lowering runs one way only.
+    #[test]
+    fn a_pattern_hands_the_browser_what_was_written() {
+        let any = Pattern::new("ANY", "^(?:[^\\n\\r\\x{2028}\\x{2029}])$", "^(?:.)$");
+        let value = Js::<String>::raw("$.s1");
+
+        assert_eq!(
+            matches_js(&any, &value).source(),
+            "new RegExp(\"^(?:.)$\", \"u\").test($.s1)"
+        );
     }
 
     #[test]

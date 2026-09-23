@@ -40,6 +40,11 @@ pub(crate) enum Rule {
     },
     /// Shaped like an address.
     Email,
+    /// Shaped like the named pattern says.
+    Matches {
+        /// The pattern it is checked against.
+        pattern: Path,
+    },
     /// Whatever the named function says, which is the one rule with no browser
     /// half and therefore the one that costs a request.
     CheckedBy {
@@ -112,6 +117,16 @@ fn rule(meta: &Meta) -> syn::Result<Rule> {
                 })
         }
 
+        Meta::NameValue(pair) if pair.path.is_ident("matches") => match &pair.value {
+            Expr::Path(pattern) => Ok(Rule::Matches {
+                pattern: pattern.path.clone(),
+            }),
+            other => Err(syn::Error::new_spanned(
+                other,
+                "a shape names one pattern, as in `matches = POSTCODE`",
+            )),
+        },
+
         Meta::NameValue(pair) if pair.path.is_ident("checked_by") => match &pair.value {
             Expr::Path(ask) => Ok(Rule::CheckedBy {
                 ask: ask.path.clone(),
@@ -137,7 +152,7 @@ fn rule(meta: &Meta) -> syn::Result<Rule> {
         other => Err(syn::Error::new_spanned(
             other,
             "unknown rule; this macro knows `required`, `required_with = other`, \
-             `email`, `length = a..=b` and `checked_by = function`",
+             `email`, `length = a..=b`, `matches = PATTERN` and `checked_by = function`",
         )),
     }
 }
@@ -388,6 +403,19 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
             )
         }],
 
+        // The pattern is read here rather than baked in, so the browser's copy
+        // and the server's are two readings of one declaration.
+        Rule::Matches { pattern } => vec![quote! {
+            (
+                <#ty as ::exos::Presence>::present(__signal.get())
+                    .and(!::exos::matches_js(&#pattern, &__signal.get())),
+                ::exos::complaint(
+                    #label,
+                    ::exos::Violation::Unmatched { pattern: #pattern.name() },
+                ),
+            )
+        }],
+
         // The one rule the browser cannot ask. What it does instead is send
         // the value, which the control does off its own binding.
         Rule::CheckedBy { .. } => Vec::new(),
@@ -444,6 +472,18 @@ pub(crate) fn check(declared: &[Rules]) -> TokenStream {
                     && !::exos::is_email(&self.#field)
                 {
                     __errors.add(#key, #label, ::exos::Violation::Malformed);
+                }
+            },
+
+            Rule::Matches { pattern } => quote! {
+                if ::exos::Presence::is_present(&self.#field)
+                    && !#pattern.is_match(&self.#field)
+                {
+                    __errors.add(
+                        #key,
+                        #label,
+                        ::exos::Violation::Unmatched { pattern: #pattern.name() },
+                    );
                 }
             },
 

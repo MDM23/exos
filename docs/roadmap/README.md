@@ -10,7 +10,7 @@ to [docs/spec](../spec).
 | [async fragments](async-fragments.md) | nothing | all five stages, and it changes code that exists rather than adding beside it |
 | [dimensions](dimensions.md) | nothing | all four stages; [localization](localization.md) is the first thing that wants it |
 | [directed effects](directed-effects.md) | stages 1 to 3: a connection knows who it is, `send` reaches every tab an audience has open | stage 4, what a toast *is*, which is two open questions rather than a chore |
-| [forms](forms.md) | stages 0 to 3, 5, 6, and the gate half of 4 | patterns (1a) and `required_when` |
+| [forms](forms.md) | stages 0 to 3, 5, 6, and the gate half of 4 | `required_when`, which waits for a form that wants one |
 | [localization](localization.md) | stages 1, 2 and the count half of 3: locales, messages, a count the browser picks its own sentence for | the rest of stage 3, stage 4 (waits on [dimensions](dimensions.md)), stage 5, dates and times |
 | [loose ends](loose-ends.md) | ten of the thirteen entries | three: disabling a busy control, the publish index, and precompiled expressions |
 | [more than one instance](more-than-one-instance.md) | stages 1 to 4: a cluster with no sticky sessions, where signing out means the same thing everywhere | stage 5, the broker doing the filtering, which waits for a volume nothing has reached |

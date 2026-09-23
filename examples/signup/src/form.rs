@@ -16,6 +16,16 @@ use crate::{
     workshops::picker,
 };
 
+exos::pattern!(
+    /// What a VAT id is shaped like: a country and then that country's own
+    /// numbering.
+    ///
+    /// Both cases are written out because the subset has no flags: `i` is
+    /// ASCII folding in one engine and Unicode folding in the other, which is
+    /// a rule that means two things and is exactly what a pattern must not be.
+    VAT = r"[A-Za-z]{2}[A-Za-z0-9]{2,12}"
+);
+
 /// Everything the form holds.
 ///
 /// The rules a value can be judged on alone are declared here and checked by
@@ -35,8 +45,8 @@ pub(crate) struct Signup {
     /// Who the invoice is made out to, needed only when one is asked for.
     #[valid(required_with = invoice)]
     pub(crate) company: String,
-    /// The tax id it needs, on the same terms.
-    #[valid(required_with = invoice)]
+    /// The tax id it needs, on the same terms, and in the shape one has.
+    #[valid(required_with = invoice, matches = VAT)]
     pub(crate) vat: String,
     /// A code only the server can rule on, answered while it is typed.
     #[valid(checked_by = coupon)]
@@ -380,6 +390,37 @@ mod tests {
             "{company}"
         );
         assert!(company.contains("An invoice needs a company."), "{company}");
+    }
+
+    /// A pattern is the one rule whose halves are written in two languages,
+    /// so what it is worth is that both of them come from the one
+    /// declaration: the server refuses a VAT id that is not one, and the
+    /// control carries the same shape to say so while it is typed.
+    #[tokio::test]
+    async fn a_pattern_judges_the_same_value_on_both_sides() {
+        let stream = post(
+            "/register",
+            &Signup {
+                invoice: true,
+                company: String::from("Difference Engines"),
+                vat: String::from("nonsense!"),
+                ..draft()
+            },
+        )
+        .await;
+
+        assert!(stream.contains("A VAT id is a country code"), "{stream}");
+
+        let html = get("/").await;
+
+        let vat = html
+            .split_once(r#"id="vat""#)
+            .and_then(|(_, rest)| rest.split_once('>'))
+            .map(|(tag, _)| tag)
+            .expect("the VAT field is on the page");
+
+        assert!(vat.contains("[A-Za-z]{2}[A-Za-z0-9]{2,12}"), "{vat}");
+        assert!(vat.contains("A VAT id is a country code"), "{vat}");
     }
 
     /// Nothing calls the validator, so a body that breaks a declared rule
