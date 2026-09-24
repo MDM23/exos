@@ -973,7 +973,17 @@
     // model reused with a second meaning opens on the first one's value. Only
     // the names the new document actually declares are touched, so anything it
     // does not mention keeps what it has.
+    //
+    // Whether a field was edited is the exception, because no document ever
+    // declares it. Kept, it outlives the value this resets, and a form the
+    // viewer comes back to opens with its rules judging an empty field nobody
+    // has typed into. Cleared first, so those rules are already quiet by the
+    // time the values they read are written.
     function reseed() {
+        for (const key of store.keys()) {
+            if (key.startsWith(dirtyKey(""))) write(key, false);
+        }
+
         for (const el of document.querySelectorAll("[data-signals-root]")) {
             declare(el, "data-signals-root", (name) => name, true);
         }

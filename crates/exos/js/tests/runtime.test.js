@@ -348,6 +348,24 @@ test("an invalid control marks itself in the attribute the language has", async 
     assert.equal(window.document.getElementById("field").hasAttribute("aria-invalid"), false);
 });
 
+// The bug: nothing declares whether a field was edited, so a navigation reset
+// the value and kept the flag. Coming back to a form gave an empty field its
+// rules were already allowed to judge, and it was red before anybody typed.
+test("a navigation starts a field as nobody having edited it", async () => {
+    const page = `<!DOCTYPE html><html><head><title>form</title></head><body>${validated()}</body></html>`;
+    const window = boot(validated());
+
+    await type(window, "");
+    assert.equal(window.document.getElementById("field").getAttribute("aria-invalid"), "true");
+
+    window.fetch = async () => ({ text: async () => page, url: "http://localhost/form" });
+    await window.exos.navigate("http://localhost/form", true);
+    await settled();
+
+    assert.deepEqual({ ...window.exos.signals.errors }, {});
+    assert.equal(window.document.getElementById("field").hasAttribute("aria-invalid"), false);
+});
+
 // One slot per field, whichever side decided what is in it. Editing recomputes
 // it, which is what takes a stale verdict away: the client cannot answer a rule
 // it does not own, and a message about a value that is no longer there is
