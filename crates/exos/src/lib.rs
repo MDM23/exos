@@ -101,10 +101,10 @@ pub use exos_macro::{
     Enumerable, asset, delete, get, live, locales, messages, model, patch, pattern, post, put, view,
 };
 
-// What keeps `LocaleSet` implementable by `locales!` alone, which has to be
-// able to name it.
+// What keeps `LocaleSet` implementable by `locales!` alone, and what it
+// registers the set with, which it has to be able to name.
 #[doc(hidden)]
-pub use crate::locale::Sealed;
+pub use crate::locale::{Languages, Sealed};
 
 // Re-exported so the macros can name them without the user taking a direct
 // dependency, and so nobody has to keep versions in step with ours.

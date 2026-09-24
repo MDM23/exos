@@ -68,6 +68,7 @@
 //! code it can point at.
 
 use core::sync::atomic::{AtomicBool, Ordering};
+use std::sync::OnceLock;
 
 use axum::{
     extract::Request,
@@ -76,7 +77,7 @@ use axum::{
     response::Response,
 };
 
-use crate::{Attributes, IntoAttributes};
+use crate::{Attributes, IntoAttributes, scope::Setting};
 
 mod negotiate;
 
@@ -204,13 +205,20 @@ impl PluralCategory {
 /// that overrides the locale still wins, because its own value is looked at
 /// first.
 ///
+/// Inside a live fragment it answers with the language the fragment renders
+/// in, which is part of its topic rather than read out of the request. That is
+/// what lets a message be written in a fragment at all: a publish renders once
+/// per language, and each render is addressed to the tabs reading that one.
+///
 /// # Panics
 ///
-/// If there is no request, or if the caller is inside a live fragment, exactly
-/// as [`scope`](crate::scope) does and for the same reasons. A fragment renders
-/// again from whatever publishes it, so a language it read out of the request
-/// would be the language of whoever happened to trigger the publish.
+/// If there is no request, exactly as [`scope`](crate::scope) does and for the
+/// same reason.
 pub fn locale<L: LocaleSet>() -> L {
+    if let Setting::Fragment(Some(index)) = crate::scope::setting() {
+        return L::ALL[index];
+    }
+
     let scope = crate::scope();
 
     // The application's own answer first, because it is the only one that knows
@@ -309,6 +317,120 @@ fn varies(headers: &HeaderMap) -> bool {
 
             name == "*" || name.eq_ignore_ascii_case("accept-language")
         })
+}
+
+// -----------------------------------------------------------------------------
+//                                 THE REGISTRY
+// -----------------------------------------------------------------------------
+
+/// The declared languages, as exos reaches them without naming their type.
+///
+/// Submitted by [`locales!`](crate::locales), which is the one place that can
+/// name `crate::Locale`. A language is its position in `Locale::ALL`, which is
+/// what a fragment's frame carries and what a publish walks.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug)]
+pub struct Languages {
+    tags: &'static [&'static str],
+    fallback: usize,
+    current: fn() -> usize,
+    number: fn(usize, usize) -> String,
+}
+
+impl Languages {
+    /// Describes the set, for `locales!`.
+    ///
+    /// `current` resolves the request being served and `number` writes a count
+    /// the way the language at an index does, both through the generated type.
+    pub const fn new(
+        tags: &'static [&'static str],
+        fallback: usize,
+        current: fn() -> usize,
+        number: fn(usize, usize) -> String,
+    ) -> Self {
+        Self {
+            tags,
+            fallback,
+            current,
+            number,
+        }
+    }
+
+    /// Every declared tag, in the order they were declared.
+    pub(crate) const fn tags(&self) -> &'static [&'static str] {
+        self.tags
+    }
+
+    /// Where the fallback is in [`tags`](Self::tags).
+    pub(crate) const fn fallback(&self) -> usize {
+        self.fallback
+    }
+}
+
+inventory::collect!(Languages);
+
+/// The application's languages, where it declared any.
+///
+/// # Panics
+///
+/// If two `locales!` are linked into one binary, since "the language a page is
+/// in" would then have two answers.
+pub(crate) fn languages() -> Option<&'static Languages> {
+    static ONE: OnceLock<Option<&'static Languages>> = OnceLock::new();
+
+    *ONE.get_or_init(|| {
+        let mut declared = inventory::iter::<Languages>.into_iter();
+        let first = declared.next();
+
+        assert!(
+            declared.next().is_none(),
+            "`exos::locales!` is declared twice in this binary; an application has one set \
+             of languages"
+        );
+
+        first
+    })
+}
+
+/// One of the declared languages, for what exos writes itself.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Language {
+    languages: &'static Languages,
+    index: usize,
+}
+
+impl Language {
+    /// Where it is in the declaration.
+    pub(crate) const fn index(self) -> usize {
+        self.index
+    }
+
+    /// The tag it was declared with.
+    pub(crate) fn tag(self) -> &'static str {
+        self.languages.tags[self.index]
+    }
+
+    /// `count` written the way this language writes a whole number.
+    pub(crate) fn number(self, count: usize) -> String {
+        (self.languages.number)(self.index, count)
+    }
+}
+
+/// The language whatever is rendering right now is in.
+///
+/// Inside a fragment that is the frame's, and asking marks the render as
+/// worded. In a request it is what [`locale`] resolves, and anywhere else it is
+/// the fallback. `None` for an application that declared no languages.
+pub(crate) fn current() -> Option<Language> {
+    let languages = languages()?;
+
+    let index = match crate::scope::setting() {
+        Setting::Fragment(index) => index.unwrap_or(languages.fallback),
+        Setting::Request => (languages.current)(),
+        Setting::Outside => languages.fallback,
+    };
+
+    Some(Language { languages, index })
 }
 
 // -----------------------------------------------------------------------------
@@ -561,8 +683,8 @@ mod tests {
         let _ = locale::<Tongue>();
     }
 
-    /// Until the locale is part of a topic, a fragment reading it would render
-    /// in the language of whoever triggered the publish.
+    /// A set `locales!` did not register gives a fragment no language to
+    /// answer with, and the request is out of reach there as always.
     #[test]
     #[should_panic(expected = "a live fragment cannot read the request scope")]
     fn a_live_fragment_cannot_reach_it() {

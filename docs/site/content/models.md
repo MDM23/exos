@@ -343,22 +343,22 @@ view! {
 }
 ```
 
-**exos ships no message text**, because an application's languages are its own
-and belong in [`messages!`](languages#messages) where the compiler holds them
-to every locale. A violation is a value, and one function turns one into a
-sentence:
+A violation is a value, and exos says each one in general terms, in German or
+English, whichever [language](languages) the page is rendered in, and in
+English for any other. Where you can say it better, say so, and leave the rest
+to exos:
 
 ```rust
 exos::app().complaints(|field, violation| match (field, violation) {
-    ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
-    (_, Violation::Required) => String::from("This is needed."),
-    _ => String::from("That does not look right."),
+    ("vat", Violation::Required) => Some(String::from("An invoice needs a VAT id.")),
+    _ => None,
 })
 ```
 
 The field arrives under the name it is declared with, which never leaves the
-server, so an application can answer per field where the general sentence is
-not good enough.
+server, so you can answer per field. In an application with more than one
+language, each answer is a [`messages!`](languages#messages) call, which is
+also how you give a language exos does not speak its own sentences.
 
 One thing to watch. `required_with` gates a rule on another field being filled
 in, and nothing holds that gate and whatever `show`s the section together. A

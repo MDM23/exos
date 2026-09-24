@@ -3,7 +3,8 @@
 Messages defined in Rust, rendered wherever the fact they need is known.
 
 Status: [stage 1](#stage-1-the-locale), [stage 2](#stage-2-messages), the count
-half of [stage 3](#stage-3-projecting-a-message) and [stage
+half of [stage 3](#stage-3-projecting-a-message), [stage
+4](#stage-4-fragments-and-rendering-outside-a-request) and [stage
 5](#stage-5-dates-times-and-relative-time) are built.
 `exos::locales!` declares the set and generates each language's plural
 categories, out of the CLDR table [exos-cldr](../../crates/exos-cldr) vendors as
@@ -27,10 +28,13 @@ needs
 from elsewhere, which is a place for an application to say who a request is,
 and that place is built.
 
-Stage 4, which is live fragments, waits on [dimensions](dimensions.md). That
-document exists because of this one: a locale threaded through every fragment
-signature by hand is the version of stage 4 that can be built today, and it is
-enough worse than the version with dimensions that it is worth waiting for.
+Stage 4, which is live fragments, waited on a general design for what a
+fragment varies over besides its arguments. Locale turned out to be the only
+thing that wanted one, so the design was dropped and the language became the
+single built-in term of a topic instead. What made that possible is also what
+lets exos word its own validation messages: `locales!` registers the declared
+set with the framework, so code that cannot name `crate::Locale` can still ask
+which language it is rendering in.
 
 ## What it is for
 
@@ -65,12 +69,11 @@ Everything below follows from one asymmetry.
 | cost of putting it in a topic | a fan-out over the locales in use | a fragment per viewer |
 | so text is decided | on the server, or projected per locale | in the browser, always |
 
-A locale is a legitimate topic dimension, and is in fact the one
-[dimensions](dimensions.md) was written for. Two readers in two languages are
-looking at two different renders of one fact, there are as many renders as
-there are languages in use, and [`Topic::new`](../../crates/exos/src/live.rs)
-hashes what a fragment varies over already, so per-locale topics cost a hash
-rather than a mechanism.
+A locale belongs in a topic. Two readers in two languages are looking at two
+different renders of one fact, there are as many renders as there are
+languages, and a [`Topic`](../../crates/exos/src/live.rs) already names what a
+fragment varies over, so a per-locale topic costs a suffix rather than a
+mechanism.
 
 A time zone is not. It is per viewer in practice, so putting it in a topic
 means a fragment nobody shares, which is the topic model doing no work at all.
@@ -185,13 +188,15 @@ In order, first hit wins:
 
 `exos::locale()` answers with a `Locale` and never an `Option`, because step 3
 always succeeds. Outside a request it panics exactly as `exos::scope()` does.
-Inside a live fragment it answers once `Locale` is a declared
-[dimension](dimensions.md) and panics until then, which is stage 4.
+Inside a live fragment it answers with the language the fragment renders in,
+which is stage 4.
 
 The locale set is the application's type and exos has never seen it, so
 `locale` is generic over `LocaleSet`, the trait `locales!` implements alongside
-the enum. That is the whole of what the framework knows about a language: the
-declared set, the fallback, a tag and a direction. A call site writes
+the enum. That is almost the whole of what the framework knows about a
+language: the declared set, the fallback, a tag and a direction. The rest is
+what `locales!` registers for the code that cannot be generic over the set,
+which is stage 4. A call site writes
 `exos::locale::<Locale>()`, or nothing at all where the type is already known,
 which is most places:
 
@@ -597,48 +602,108 @@ rather than per message. `msg` is the helper the runtime gained; `plural` and
 
 ## Stage 4: fragments, and rendering outside a request
 
-**Depends on [dimensions](dimensions.md)**, and is the reason that document was
-written.
-
-A live fragment renders through `detached` and cannot read the request scope,
-so a message cannot reach the locale there. Being a topic dimension is how it
-reaches it, and `locales!` registers `Locale` as one by itself:
+**Built.** A live fragment renders through `detached` and cannot read the
+request scope, so before this a message could not reach the locale there. The
+language is now the one thing the mask carries, and nothing has to be declared
+for it: `locales!` registers the set with the framework by itself.
 
 ```rust
-exos::locales! { … }                // registers the topic dimension
+exos::locales! { … }                // registers the set
 
 #[exos::live]
-fn lot(id: LotId) -> Markup { … }   // signature unchanged
+fn lot(id: LotId) -> Markup { … }   // signature unchanged, messages work inside
 ```
 
 Automatic rather than a second declaration, because the failure mode decides
-it. An application that declares its languages and then forgets to declare the
-dimension delivers German markup to an English reader, silently, which is the
-class of bug the topic invariant exists to make impossible. What it costs is a
-live fragment with no words in it rendering once per watched language instead
-of once, and that is waste rather than wrongness.
+it. An application that declared its languages and then forgot a second
+declaration would deliver German markup to an English reader, silently, which
+is the class of bug the topic invariant exists to make impossible.
 
-`exos::locale()` then answers inside the body, the value is hashed into the
-topic alongside `id`, and `exos::scope()` still panics there, so the invariant
-reads the same as it always did with one more term in it.
+`exos::locale()` answers inside the body, the tag is appended to the topic
+(`live-lot-8eb6…-de`), and `exos::scope()` still panics there. The invariant
+reads the same as it always did with one more term in it: **a topic is a
+fragment's name, its arguments and its language, and its content is a function
+of exactly those.** An application without `locales!` has no language to
+append, and its topics are what they were.
 
-The version without dimensions is a `locale: Locale` parameter on every live
-fragment in the application. It works, and it is what stage 4 said before the
-dimension design existed, but it puts a fact about the viewer into the argument
+The alternative was a `locale: Locale` parameter on every live fragment in the
+application. It works, but it puts a fact about the viewer into the argument
 list of every fragment that renders a word, and an application will get one of
 them wrong.
-
-Three consequences worth being explicit about.
-
-**A publish fans out.** One raise renders the fragment once per locale being
-watched, and each render reaches the tabs subscribed to that topic. The cost is
-real and it is proportional to languages in use rather than to viewers, which
-is the distinction that makes it acceptable.
 
 **A patch cannot arrive in the wrong language.** The locale is in the address,
 so a page rendered in German subscribes to the German topic. A mismatch between
 what a page was rendered as and what a publisher computes delivers nothing at
 all, which is visible, rather than the wrong words, which is not.
+
+### A publish fans out
+
+A publish knows the fragment and its arguments, and renders it once per
+declared language, the fallback first. Each patch goes out as its render
+finishes.
+
+**A render that never asked is reused.** The frame records whether anything
+read the language, whether a message, a complaint, or a nested fragment putting
+its own topic in the markup. If nothing did, the markup is the same in every
+language, and it is sent to every language's topic without rendering again. So
+a fragment without words costs one render however many languages there are, and
+the waste the first draft of this design accepted is gone.
+
+**One lock for all of a fragment's languages.** The lock is keyed by the
+fragment's topic before the language is appended. A reused render goes out to
+every language, so every language has to be ordered against the read it came
+from; a lock per language would let a stale reuse overtake a newer render.
+
+**Every declared language, not the watched ones.** The first draft rendered only
+the combinations somebody was watching, which a single node can see and a
+cluster cannot: the tabs watching German may all be on another node. So a
+publish renders every declared language, which is correct everywhere and costs
+the renders of the languages nobody is reading. Narrowing it is an [open
+question](#open-questions), and the fan-out is written so that the answer is a
+different list of languages handed to it and nothing else.
+
+### Why not render per subscriber
+
+The question that led here was whether live fragments and directed effects
+should be one mechanism, with the server rendering per subscriber. The answer
+was no, for three reasons, kept here so the question is not reopened without
+new information.
+
+**The topic is the memoization key.** `publish` renders once and clones the
+framed event to every matching connection. Render per subscriber and a lot with
+ten thousand watchers renders ten thousand times, inside the ordering lock that
+is held across the render on purpose. The fix is to memoize by whatever actually
+affects the render, which is the topic. So the merged model does not remove
+topics, it re-derives them as a cache key, and the key is no longer verifiable:
+a fragment's arguments and language are provably its whole input, and a render
+that may read the viewer has no such proof.
+
+**Per-subscriber rendering needs per-subscriber context, out of band.**
+`identify` runs once per connection when the stream opens, which is what makes
+it affordable to be async and fallible. Rendering per subscriber means either
+the framework holds session contents, which [sessions and
+identity](../spec/sessions-and-identity.md#no-store-at-all) argued its way out
+of after building one, or it re-resolves per subscriber per publish, which is a
+database call per viewer per price change.
+
+**State and events do not merge whatever the addressing does.** A patch is
+idempotent state replacement, repaired by the next publish and by the reconnect
+path. A directed effect has no fragment to re-render from and is correctly lost
+if the tab was closed. One mechanism carrying both needs a flag saying which
+kind it is, which is two concepts wearing one name.
+
+A viewer id stays what it was, an ordinary argument: `inbox_count(user)` keeps
+working, and the auction's `lot(id, role)` keeps its role in the signature,
+where the call site can see it.
+
+### What else comes of the registry
+
+The same registration is what lets exos word a validation message itself.
+`Violation` is a value, and exos says each one in German or English, whichever
+the page is rendered in, and in English with the language's own digits for any
+other. `App::complaints` is an override that answers `Option<String>`: an
+application says the ones it can say better, per field, per pattern or in a
+language exos does not speak, and leaves the rest to exos.
 
 **Out-of-band renders name the locale.** A directed effect carrying text is
 built by a sender who is not inside the recipient's request, so the recipient's
@@ -651,10 +716,9 @@ open question below.
 
 **Built, and independent of stage 4.** What it needs is the locale on the
 document, which is stage 1, and the projection table, which is the built half
-of stage 3. Nothing here asks the server for a zone, so nothing here waits on
-dimensions: a fragment arrives carrying the instant and the binding writes it
-where it lands. A message inside a live fragment still waits on stage 4, but
-that is stage 4's dependency arriving unchanged rather than a new one.
+of stage 3. Nothing here asks the server for a zone, so nothing here waited on
+stage 4: a fragment arrives carrying the instant and the binding writes it
+where it lands.
 
 A message that crosses a date *and* a count is the exception, and it waits on
 stage 3's unbuilt half: two client dimensions need a key per combination and a
@@ -788,6 +852,41 @@ stage says must not happen. The parameter takes `impl Into<When>` instead, so
 the rest. Which of the three reads it stays the declaration's and is imposed
 over whatever arrived, since a sentence says "due on" or "posted" whoever calls
 it.
+
+## Text from other crates
+
+**Not built, and waits for the first crate that needs it.** exos's own
+complaints are the one case today, and a general mechanism with one user is the
+kind of design stage 4 just removed.
+
+What complaints do is a pattern any crate could follow. The text is a value
+rather than a string (`Violation::TooShort { least }`), the crate that owns the
+value says it in the languages it knows, and the application overrides any of
+it. The general form is one hook keyed by the value's type:
+
+```rust
+pub trait Localizable: Copy + Send + Sync + 'static { … }   // built-in text per tag
+
+exos::app()
+    .localize(|violation: Violation| match violation { … })  // what complaints becomes
+    .localize(|hint: acme::Hint| Some(acme_hint(hint)))      // a plugin, in the app's locales
+```
+
+The closure answers `Option<String>`, and `None` falls through to the crate's
+own sentence. An override can call a `messages!` function, so the compiler
+holds it to every locale the application declared, which is how an application
+adds Finnish to a plugin that ships English. A crate reads the language being
+rendered through the same registry exos's complaints read it through, so it
+never names `crate::Locale`.
+
+Two limits, both inherent:
+
+- **A crate's built-in text is a runtime table.** Nothing holds it to the
+  application's locales, so a language it does not have renders in English. A
+  debug build could list the gaps at startup, for the languages the application
+  has not overridden.
+- **It is server-rendered text only.** A sentence the browser picks for itself,
+  a projected count, still has to come from `messages!` in the application.
 
 ## Where the data comes from
 
@@ -924,10 +1023,10 @@ nothing else catches, and a hand check does not survive the next rustc.
   has no way to ship, and the pressure will be to add a fallback that silently
   renders English. Refusing that is the decision; it should be refused on
   purpose rather than by omission.
-- **A publish renders once per locale in use**, and a page that is served in
-  eight languages has eight of every live topic. That cost belongs to
-  [dimensions](dimensions.md), which is where it is paid and bounded, but it
-  arrives here because localization is what asks for it first.
+- **A publish renders once per declared language** when the fragment has words
+  in it, and an application declaring eight languages has eight of every such
+  topic. A fragment without words renders once. The renders of languages nobody
+  is reading are the price of a fan-out that is correct across a cluster.
 - **Message text lives in Rust source**, so a translator cannot touch it until
   the export exists.
 - **A vendored table nobody reviews by eye.** The fixture is the only thing
@@ -942,6 +1041,14 @@ nothing else catches, and a hand check does not survive the next rustc.
 
 ## Open questions
 
+- **Whether a publish can skip the languages nobody reads.** Every node knows
+  which languages its own tabs watch, since the language is in the topic they
+  claimed, and none knows the others'. Sharing that set over the
+  [bus](more-than-one-instance.md) would let a publish render only what is read
+  somewhere. The fan-out takes its list of languages from one place, so the
+  change is confined to what that place answers; what it costs is a frame per
+  change in what a node watches, and keeping the set honest when a node goes
+  away without saying so.
 - **What the explicit-locale call form is called.** A trait method on `Locale`
   reads well at the call site (`locale.items_selected(3)`) and costs an import;
   a second free function (`items_selected_in(locale, 3)`) costs a name. The

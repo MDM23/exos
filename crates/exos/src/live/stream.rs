@@ -328,6 +328,19 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
 /// two nodes publishing the same topic arrive at a third in whatever order the
 /// broker gives.
 ///
+/// # In every language
+///
+/// A fragment is addressed per language, so a publish renders one patch for
+/// each language the application declared, all under the one lock: a render
+/// that is reused for another language has to be ordered against that
+/// language's publishers too. A render that never asked for its language is the
+/// same markup in every one of them and is reused rather than repeated, so a
+/// fragment without words costs one render however many languages there are.
+///
+/// Every declared language rather than the ones being watched, because this
+/// node cannot see what the tabs on another one watch. Narrowing it to those
+/// is a matter of what [`in_every_language`] is handed.
+///
 /// # What it costs
 ///
 /// A publish waits for whoever is publishing the same topic and for nobody
@@ -354,17 +367,55 @@ pub fn publish(fragment: crate::Fragment<impl Fn() -> crate::Markup>) {
     let order = Order::of(topic);
     let _held = order.wait();
 
-    // Detached, because a handler that publishes is serving a request, and the
-    // wrapper would carry a grant to that one browser out to every watcher.
-    let steps = vec![Step::Patch(crate::detached(|| fragment.to_markup())).framed()];
+    let (tags, first) = crate::locale::languages().map_or((&[][..], 0), |languages| {
+        (languages.tags(), languages.fallback())
+    });
 
-    dispatch(Kind::Topic, topic, &steps);
+    in_every_language(&fragment, tags, first, |topic, markup| {
+        // No token, because a handler that publishes is serving a request, and
+        // a grant to that one browser would go out to every watcher.
+        let steps = vec![Step::Patch(super::wrap(topic, None, markup)).framed()];
 
-    // Local first, and the frame carries the rendered patch rather than a
-    // request to render one: a topic is a hash of a name and its arguments, so
-    // no node can invoke the function from it. Rendering once for the whole
-    // cluster is the only shape available and is also the cheaper one.
-    bus::cross(|| Frame::delivery(Kind::Topic, topic, steps));
+        dispatch(Kind::Topic, topic.as_str(), &steps);
+
+        // Local first, and the frame carries the rendered patch rather than a
+        // request to render one: a topic is a hash of a name and its
+        // arguments, so no node can invoke the function from it. Rendering
+        // once for the whole cluster is the only shape available and is also
+        // the cheaper one.
+        bus::cross(|| Frame::delivery(Kind::Topic, topic.as_str(), steps));
+    });
+}
+
+/// Renders `fragment` in each of `tags`, the one at `first` first, and hands
+/// every language's topic its markup as soon as it exists.
+///
+/// No tags is an application without languages, and one render under the
+/// fragment's own topic.
+fn in_every_language(
+    fragment: &crate::Fragment<impl Fn() -> crate::Markup>,
+    tags: &[&str],
+    first: usize,
+    mut send: impl FnMut(&crate::Topic, &crate::Markup),
+) {
+    let Some(&tag) = tags.get(first) else {
+        let (markup, _) = crate::scope::in_language(None, || fragment.markup());
+        return send(fragment.topic(), &markup);
+    };
+
+    let (markup, worded) = crate::scope::in_language(Some(first), || fragment.markup());
+    send(&fragment.topic().in_language(Some(tag)), &markup);
+
+    for (index, &tag) in tags.iter().enumerate().filter(|&(index, _)| index != first) {
+        let topic = fragment.topic().in_language(Some(tag));
+
+        if worded {
+            let (markup, _) = crate::scope::in_language(Some(index), || fragment.markup());
+            send(&topic, &markup);
+        } else {
+            send(&topic, &markup);
+        }
+    }
 }
 
 /// Replaces what the connection `key` names is watching.
@@ -1414,6 +1465,75 @@ mod tests {
             "and the fragment's own render is what produced the markup"
         );
         assert!(free(&mine), "and the topic is let go of after");
+    }
+
+    /// Every language a publish renders, as the topic it went to and the
+    /// markup it carried.
+    fn fanned(
+        fragment: &crate::Fragment<impl Fn() -> Markup>,
+        tags: &[&str],
+    ) -> Vec<(String, String)> {
+        let mut sent = Vec::new();
+
+        in_every_language(fragment, tags, 1, |topic, markup| {
+            sent.push((topic.as_str().to_owned(), markup.as_str().to_owned()));
+        });
+
+        sent
+    }
+
+    /// A render that asks for its language is repeated per language, the
+    /// fallback first, and each goes to the topic of the language it was in.
+    #[tokio::test]
+    async fn a_fragment_with_words_renders_once_per_language() {
+        let renders = Cell::new(0_usize);
+        let fragment = crate::Fragment::new(Topic::new("worded", &()), || {
+            renders.set(renders.get() + 1);
+            Markup(format!("{:?}", crate::scope::setting()))
+        });
+        let base = fragment.topic().as_str().to_owned();
+
+        assert_eq!(
+            fanned(&fragment, &["de", "en"]),
+            [
+                (format!("{base}-en"), String::from("Fragment(Some(1))")),
+                (format!("{base}-de"), String::from("Fragment(Some(0))")),
+            ]
+        );
+        assert_eq!(renders.get(), 2);
+    }
+
+    /// One that never asks is the same in every language, so its one render
+    /// goes to all of them.
+    #[tokio::test]
+    async fn a_fragment_without_words_renders_once_for_every_language() {
+        let renders = Cell::new(0_usize);
+        let fragment = crate::Fragment::new(Topic::new("wordless", &()), || {
+            renders.set(renders.get() + 1);
+            Markup(String::from("<hr>"))
+        });
+        let base = fragment.topic().as_str().to_owned();
+
+        assert_eq!(
+            fanned(&fragment, &["de", "en"]),
+            [
+                (format!("{base}-en"), String::from("<hr>")),
+                (format!("{base}-de"), String::from("<hr>")),
+            ]
+        );
+        assert_eq!(renders.get(), 1);
+    }
+
+    /// An application without languages publishes the way it always did.
+    #[tokio::test]
+    async fn without_languages_a_publish_is_one_render_under_the_topic_itself() {
+        let fragment =
+            crate::Fragment::new(Topic::new("plain", &()), || Markup(String::from("<hr>")));
+
+        assert_eq!(
+            fanned(&fragment, &[]),
+            [(fragment.topic().as_str().to_owned(), String::from("<hr>"))]
+        );
     }
 
     /// A topic is remembered for as long as somebody is publishing it and no

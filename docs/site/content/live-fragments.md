@@ -63,6 +63,12 @@ If content depends on the viewer, either make the viewer part of the topic
 (`inbox_count(user_id)`), or answer with an `Effect`, which reaches only the
 requester.
 
+The one exception is the viewer's [language](languages), and it is not really
+an exception: it is part of every topic already. A fragment rendered for a
+German page is addressed in German, so its messages work inside it, and a
+publish renders it once per language you declared. A fragment with no words in
+it is rendered once and sent to every language.
+
 ## Authorization is structural
 
 The rendered wrapper carries a token only the server can produce:

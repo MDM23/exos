@@ -1,7 +1,7 @@
 //! Expansion of `locales!`.
 
 use exos_cldr::{Direction, Entry};
-use proc_macro2::{Ident, Span, TokenStream};
+use proc_macro2::{Ident, Literal, Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{
     Attribute, LitStr, Token,
@@ -82,20 +82,21 @@ impl Declaration {
     fn emit(&self) -> syn::Result<TokenStream> {
         self.check()?;
 
-        let fallback = &self
+        let fallback_index = self
             .locales
             .iter()
-            .find(|locale| locale.fallback)
+            .position(|locale| locale.fallback)
             .ok_or_else(|| {
                 syn::Error::new(
                     Span::call_site(),
                     "one locale has to carry `#[fallback]`, since resolving a locale always \
                      answers with one rather than with an option",
                 )
-            })?
-            .variant;
+            })?;
+        let fallback = &self.locales[fallback_index].variant;
 
         let variants: Vec<&Ident> = self.locales.iter().map(|locale| &locale.variant).collect();
+        let indices = (0..self.locales.len()).map(Literal::usize_unsuffixed);
         let tags: Vec<&LitStr> = self.locales.iter().map(|locale| &locale.tag).collect();
         let modules: Vec<Ident> = self.locales.iter().map(Declared::module).collect();
 
@@ -244,6 +245,25 @@ impl Declaration {
             }
 
             impl ::exos::Sealed for Locale {}
+
+            // What exos reaches the set through where it cannot be generic
+            // over it: a live fragment's language, a publish walking every
+            // language, and the complaints exos words itself.
+            const _: () = {
+                fn current() -> usize {
+                    match ::exos::locale::<Locale>() {
+                        #(Locale::#variants => #indices,)*
+                    }
+                }
+
+                fn number(index: usize, count: usize) -> ::std::string::String {
+                    Locale::ALL[index].number(count)
+                }
+
+                ::exos::inventory::submit! {
+                    ::exos::Languages::new(&[#(#tags),*], #fallback_index, current, number)
+                }
+            };
 
             // How `messages!` reaches a language's categories. An arm names a
             // variant, the module beside this one is named after a tag, and
@@ -521,6 +541,20 @@ mod tests {
 
         assert!(expanded.contains("impl :: exos :: LocaleSet for Locale"));
         assert!(expanded.contains("impl :: exos :: Sealed for Locale"));
+    }
+
+    /// A live fragment's language and exos's own complaints both go through the
+    /// registry, and a set that never submitted itself would render every
+    /// fragment in no language at all.
+    #[test]
+    fn the_set_registers_itself_with_the_framework() {
+        let expanded = expand_ok(r#"De = "de", #[fallback] En = "en","#);
+
+        assert!(expanded.contains("inventory :: submit !"), "{expanded}");
+        assert!(
+            expanded.contains(r#"Languages :: new (& ["de" , "en"] , 1usize"#),
+            "{expanded}"
+        );
     }
 
     /// The categories are the language's own, so German gets two and Arabic

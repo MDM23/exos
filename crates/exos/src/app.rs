@@ -146,25 +146,25 @@ impl App {
         self
     }
 
-    /// Says how this application words a refusal.
+    /// Says how this application words a refusal, where exos's own sentence is
+    /// not good enough.
     ///
     /// The field arrives under the name it is declared with, which never leaves
-    /// the server, so an application can answer per field where the general
-    /// sentence is not good enough:
+    /// the server, so an application can answer per field. `None` leaves the
+    /// violation to exos, which says it in the language being rendered:
     ///
     /// ```no_run
     /// # use exos::Violation;
     /// let app = exos::app().complaints(|field, violation| match (field, violation) {
-    ///     ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
-    ///     (_, Violation::Required) => String::from("This is needed."),
-    ///     _ => String::from("That does not look right."),
+    ///     ("vat", Violation::Required) => Some(String::from("An invoice needs a VAT id.")),
+    ///     _ => None,
     /// });
     /// ```
     ///
     /// Said once. A second one is ignored rather than racing the first.
     pub fn complaints(
         self,
-        say: impl Fn(&str, Violation) -> String + Send + Sync + 'static,
+        say: impl Fn(&str, Violation) -> Option<String> + Send + Sync + 'static,
     ) -> Self {
         crate::valid::set_complaints(say);
         self

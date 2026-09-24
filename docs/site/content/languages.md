@@ -31,9 +31,13 @@ In order, first hit wins:
 3. The fallback, which is why this answers with a `Locale` rather than an
    `Option`. There is no such thing as a request in no language.
 
-The rules the scope has are the rules this has: outside a request it panics,
-and inside a live fragment it panics, because a fragment renders again from
-whatever publishes it and its arguments are its whole input.
+Outside a request it panics, as the scope does. Inside a live fragment it
+answers with the language the fragment renders in, which is part of the
+fragment's topic rather than read from the request: a page in German subscribes
+to the German render, and a publish renders the fragment once for each language
+you declared. A fragment with no words in it is rendered once and sent to all
+of them. Nothing about this is declared per fragment; see [live
+fragments](live-fragments#the-invariant).
 
 Step 1 is the override, and it belongs where you already resolve who is
 reading:

@@ -9,7 +9,7 @@ use axum::{
     body::Body,
     http::{Request, Response, header},
 };
-use exos::{Page, view};
+use exos::{Markup, Page, Violation, view};
 use tower::ServiceExt as _;
 
 exos::locales! {
@@ -199,4 +199,87 @@ fn a_locale_set_answers_the_framework_and_the_application_alike() {
         exos::LocaleSet::direction(Locale::Ar),
         Locale::Ar.direction()
     );
+}
+
+// ---- live fragments ---------------------------------------------------------
+
+exos::messages! {
+    /// A word, which is all it takes for a fragment to depend on a language.
+    hello {
+        Ar = "مرحبا",
+        De = "Hallo",
+        En = "Hello",
+    }
+}
+
+#[exos::live]
+fn greeting() -> Markup {
+    view! { <p>{ hello() }</p> }
+}
+
+/// Rendered in the reader's language and addressed in it, so a page in German
+/// subscribes to the German render and no publish can patch it in another.
+#[test]
+fn a_fragment_is_rendered_and_addressed_in_the_reader_s_language() {
+    let html = exos::with_scope(|| {
+        exos::scope().set(Locale::De);
+        greeting().to_markup().into_string()
+    });
+
+    let topic = format!("data-topic=\"{}-de\"", greeting().topic().as_str());
+
+    assert!(html.contains("<p>Hallo</p>"), "{html}");
+    assert!(html.contains(&topic), "{html}");
+}
+
+/// The language is the one thing a fragment gains. The request is still out of
+/// reach, or two readers would receive each other's markup.
+#[test]
+#[should_panic(expected = "a live fragment cannot read the request scope")]
+fn a_fragment_still_cannot_read_the_request() {
+    #[exos::live]
+    fn nosy() -> Markup {
+        drop(exos::scope());
+        Markup::default()
+    }
+
+    exos::with_scope(|| drop(nosy().to_markup()));
+}
+
+// ---- what exos says ---------------------------------------------------------
+
+/// exos words a violation in the page's language, and an application only says
+/// the ones it can say better. Whatever it leaves out, exos still says.
+#[test]
+fn a_violation_is_said_in_the_reader_s_language() {
+    drop(
+        exos::app().complaints(|field, violation| match (field, violation) {
+            ("vat", Violation::Required) => {
+                Some(String::from("Eine Rechnung braucht eine USt-IdNr."))
+            }
+            _ => None,
+        }),
+    );
+
+    exos::with_scope(|| {
+        exos::scope().set(Locale::De);
+
+        assert_eq!(
+            exos::complaint("vat", Violation::Required),
+            "Eine Rechnung braucht eine USt-IdNr."
+        );
+        assert_eq!(
+            exos::complaint("name", Violation::Required),
+            "Das ist erforderlich."
+        );
+
+        // A language exos does not speak gets English, written with its own
+        // digits.
+        exos::scope().set(Locale::Ar);
+
+        assert_eq!(
+            exos::complaint("name", Violation::TooShort { least: 3 }),
+            format!("At least {} characters.", Locale::Ar.number(3_usize))
+        );
+    });
 }

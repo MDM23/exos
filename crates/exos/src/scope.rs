@@ -35,10 +35,13 @@
 //! fragment reading the request would produce different HTML in the two places
 //! and break the topic invariant. The macro renders through [`detached`], which
 //! makes [`scope`] panic inside a fragment always, during a request as much as
-//! outside one. A fragment's arguments are its whole input, and this is what
-//! says so.
+//! outside one. A fragment's arguments and its language are its whole input,
+//! and this is what says so: the mask carries the language, and nothing else.
 
-use core::any::{Any, TypeId};
+use core::{
+    any::{Any, TypeId},
+    sync::atomic::{AtomicBool, Ordering},
+};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
@@ -56,7 +59,29 @@ type Store = RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>;
 #[derive(Clone)]
 enum State {
     Request(Arc<Store>),
-    Masked,
+    Masked(Frame),
+}
+
+/// What a fragment renders inside: its language, and whether it asked.
+///
+/// Shared by a fragment and every fragment nested in it, since the outer markup
+/// carries the inner one and is in whatever language the inner one is.
+#[derive(Clone)]
+struct Frame {
+    language: Option<usize>,
+    worded: Arc<AtomicBool>,
+}
+
+/// Where rendering is happening, as far as its language is concerned.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Setting {
+    /// Serving a request, whose language is resolved from it.
+    Request,
+    /// Inside a live fragment, in the language its frame names, where the
+    /// application declared any.
+    Fragment(Option<usize>),
+    /// Neither, which is a background job.
+    Outside,
 }
 
 tokio::task_local! {
@@ -135,7 +160,7 @@ impl core::fmt::Debug for Scope {
 pub fn scope() -> Scope {
     match STATE.try_with(Clone::clone) {
         Ok(State::Request(store)) => Scope(store),
-        Ok(State::Masked) => panic!(
+        Ok(State::Masked(_)) => panic!(
             "a live fragment cannot read the request scope; its arguments are \
              its whole input, because it renders again from whatever publishes \
              it"
@@ -158,7 +183,7 @@ pub fn scope() -> Scope {
 pub(crate) fn current() -> Option<Scope> {
     match STATE.try_with(Clone::clone) {
         Ok(State::Request(store)) => Some(Scope(store)),
-        Ok(State::Masked) | Err(_) => None,
+        Ok(State::Masked(_)) | Err(_) => None,
     }
 }
 
@@ -179,13 +204,57 @@ pub fn with_scope<R>(body: impl FnOnce() -> R) -> R {
     STATE.sync_scope(State::Request(Arc::default()), body)
 }
 
+/// Where this is running, and inside a fragment, the language it renders in.
+///
+/// Reading a fragment's language is what makes its markup depend on one, so
+/// asking marks the frame as worded; [`in_language`] reports it.
+pub(crate) fn setting() -> Setting {
+    match STATE.try_with(Clone::clone) {
+        Ok(State::Request(_)) => Setting::Request,
+        Ok(State::Masked(frame)) => {
+            frame.worded.store(true, Ordering::Relaxed);
+            Setting::Fragment(frame.language)
+        }
+        Err(_) => Setting::Outside,
+    }
+}
+
 /// Renders with no request scope, whatever the caller had.
 ///
 /// This is the fragment mask. It is called by `#[exos::live]` and there is no
 /// reason to call it yourself.
+///
+/// The language survives it: a fragment rendered in a request is in the
+/// request's, and one nested in another fragment is in that one's.
 #[doc(hidden)]
 pub fn detached<R>(render: impl FnOnce() -> R) -> R {
-    STATE.sync_scope(State::Masked, render)
+    let frame = match STATE.try_with(Clone::clone) {
+        Ok(State::Masked(frame)) => frame,
+        Ok(State::Request(_)) | Err(_) => Frame {
+            language: crate::locale::current().map(|language| language.index()),
+            worded: Arc::default(),
+        },
+    };
+
+    STATE.sync_scope(State::Masked(frame), render)
+}
+
+/// Renders masked, in `language` rather than in the caller's, and says whether
+/// the render asked which language that was.
+///
+/// What [`publish`](crate::publish) renders each language with. Markup that
+/// never asked is the same in every language.
+pub(crate) fn in_language<R>(language: Option<usize>, render: impl FnOnce() -> R) -> (R, bool) {
+    let worded = Arc::<AtomicBool>::default();
+
+    let frame = Frame {
+        language,
+        worded: Arc::clone(&worded),
+    };
+
+    let rendered = STATE.sync_scope(State::Masked(frame), render);
+
+    (rendered, worded.load(Ordering::Relaxed))
 }
 
 /// Gives every request a scope of its own.

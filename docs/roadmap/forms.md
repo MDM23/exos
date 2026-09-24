@@ -145,6 +145,11 @@ own, and [localization](localization.md) exists so that a string in a page is a
 (`Required`, `TooShort { least }`) and the application turns it into text in one
 function it writes, once, with the same macro as everything else it says.
 
+That changed with [localization](localization.md#what-else-comes-of-the-registry)
+stage 4. exos now says every violation itself, in German or English, and
+`complaints` became an override that answers `Option<String>`: the application
+writes only the sentences it can say better.
+
 ### What it found
 
 **A rule is not a trait object with two evaluators.** This stage drew a
@@ -862,7 +867,7 @@ happens to be the one that knows.
   too many" needs a count that only the browser has. The crossing
   [localization](localization.md) owed has landed for exactly that shape, and
   taking it up is now this document's rather than that one's:
-  [`complaints`](../../crates/exos/src/valid.rs) hands back a `String`, so a
+  [`complaints`](../../crates/exos/src/valid.rs) hands back text, so a
   violation that wants a projected sentence needs a way to say so, and the
   count it would be about is a length the rule has already measured.
 - **What a form does with a rule it cannot show.** A violation on a field with

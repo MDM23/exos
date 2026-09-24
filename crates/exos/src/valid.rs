@@ -79,13 +79,14 @@
 //! function whatever the browser was told. Neither asks about a value that is
 //! absent or that broke a shape rule first.
 //!
-//! # exos ships no text
+//! # Whose words
 //!
-//! A [`Violation`] is a value, not a sentence, because an application's
-//! languages are its own and [`messages!`](crate::messages) is where its text
-//! lives. [`App::complaints`](crate::App::complaints) is the one function that
-//! turns one into the other, and the default is English so that `cargo run`
-//! says something sensible.
+//! A [`Violation`] is a value, not a sentence. exos says each one in German or
+//! in English, whichever the page is rendered in, and in English for any other
+//! language. [`App::complaints`](crate::App::complaints) is where an
+//! application says it better: per field, per pattern, or in a language exos
+//! does not speak, through [`messages!`](crate::messages) like the rest of its
+//! text. Whatever it leaves out, exos still says.
 //!
 //! A message from `checked_by` is the application's outright, the way
 //! [`Refusal::add`]'s is: a rule exos does not know cannot have a [`Violation`]
@@ -499,8 +500,9 @@ where
 //                                  THE TEXT
 // -----------------------------------------------------------------------------
 
-/// Turns a violation into something a person reads.
-type Complaints = Box<dyn Fn(&str, Violation) -> String + Send + Sync>;
+/// Turns a violation into something a person reads, where the application has
+/// something better to say than exos does.
+type Complaints = Box<dyn Fn(&str, Violation) -> Option<String> + Send + Sync>;
 
 static COMPLAINTS: OnceLock<Complaints> = OnceLock::new();
 
@@ -508,7 +510,9 @@ static COMPLAINTS: OnceLock<Complaints> = OnceLock::new();
 /// [`App::complaints`](crate::App::complaints).
 ///
 /// A second call is ignored rather than racing the first.
-pub(crate) fn set_complaints(say: impl Fn(&str, Violation) -> String + Send + Sync + 'static) {
+pub(crate) fn set_complaints(
+    say: impl Fn(&str, Violation) -> Option<String> + Send + Sync + 'static,
+) {
     drop(COMPLAINTS.set(Box::new(say)));
 }
 
@@ -547,23 +551,48 @@ pub fn chain(rules: Vec<(Js<bool>, String)>) -> Option<Js<String>> {
 
 /// What to say about one violation.
 fn complain(field: &str, violation: Violation) -> String {
-    match COMPLAINTS.get() {
-        Some(say) => say(field, violation),
-        None => default_complaint(violation),
-    }
+    COMPLAINTS
+        .get()
+        .and_then(|say| say(field, violation))
+        .unwrap_or_else(|| builtin(violation))
 }
 
-/// English, for an application that has not said otherwise.
+/// What exos says where the application said nothing, in the language being
+/// rendered.
 ///
-/// Deliberately not a warning on stderr the way an unconfigured key is. A key
-/// left unset is a security hole; text left unset is a page in one language,
-/// which is exactly right until it is not.
-fn default_complaint(violation: Violation) -> String {
-    match violation {
-        Violation::Required => String::from("This is needed."),
-        Violation::TooShort { least } => format!("At least {least} characters."),
-        Violation::TooLong { most } => format!("At most {most} characters."),
-        Violation::Malformed | Violation::Unmatched { .. } => {
+/// German and English. Any other language gets English, with its own digits,
+/// until somebody who speaks it adds an arm. Deliberately not a warning on
+/// stderr the way an unconfigured key is: a key left unset is a security
+/// hole, and a sentence in the wrong language is a page to fix.
+fn builtin(violation: Violation) -> String {
+    let language = crate::locale::current();
+
+    let number = |count: usize| {
+        language.map_or_else(|| count.to_string(), |language| language.number(count))
+    };
+
+    let german = language.is_some_and(|language| {
+        let tag = language.tag();
+        let primary = tag.split('-').next().unwrap_or(tag);
+
+        primary.eq_ignore_ascii_case("de")
+    });
+
+    match (german, violation) {
+        (true, Violation::Required) => String::from("Das ist erforderlich."),
+        (true, Violation::TooShort { least }) => format!("Mindestens {} Zeichen.", number(least)),
+        (true, Violation::TooLong { most }) => format!("Höchstens {} Zeichen.", number(most)),
+        (true, Violation::Malformed | Violation::Unmatched { .. }) => {
+            String::from("Das sieht nicht richtig aus.")
+        }
+        (false, Violation::Required) => String::from("This is needed."),
+        (false, Violation::TooShort { least: 1 }) => String::from("At least 1 character."),
+        (false, Violation::TooShort { least }) => {
+            format!("At least {} characters.", number(least))
+        }
+        (false, Violation::TooLong { most: 1 }) => String::from("At most 1 character."),
+        (false, Violation::TooLong { most }) => format!("At most {} characters.", number(most)),
+        (false, Violation::Malformed | Violation::Unmatched { .. }) => {
             String::from("That does not look right.")
         }
     }
@@ -864,6 +893,18 @@ mod tests {
 
         assert_eq!(errors.get("s1"), Some("This is needed."));
         assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn one_is_a_character_rather_than_characters() {
+        assert_eq!(
+            complaint("name", Violation::TooShort { least: 1 }),
+            "At least 1 character."
+        );
+        assert_eq!(
+            complaint("name", Violation::TooLong { most: 2 }),
+            "At most 2 characters."
+        );
     }
 
     /// The parts of a `#[model]` expansion a refusal reads, written out so

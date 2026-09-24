@@ -36,8 +36,16 @@
 //!
 //! The invariant is enforced rather than asked for. A fragment body renders
 //! through [`detached`](crate::detached), so [`scope`](crate::scope) panics
-//! inside one whether or not a request is being served: a fragment's arguments
-//! are its whole input.
+//! inside one whether or not a request is being served.
+//!
+//! # Its language
+//!
+//! The one thing a fragment may read besides its arguments is the language it
+//! renders in, which [`locale`](crate::locale) answers inside one. It is
+//! part of the topic rather than read from the request: a page in German
+//! subscribes to the German render, and [`publish`] renders once per declared
+//! language. So a topic is a fragment's name, its arguments and its language,
+//! and its content is a function of exactly those.
 
 use core::{
     fmt,
@@ -106,6 +114,20 @@ impl Topic {
         arguments.hash(&mut hasher);
 
         Self(format!("live-{name}-{:016x}", hasher.finish()))
+    }
+
+    /// This topic, as it is addressed in one language.
+    ///
+    /// The tag is appended rather than hashed in, so the id says which
+    /// language a tab is watching as plainly as it says which fragment.
+    /// `None` is an application that declared no languages, whose topics stay
+    /// what they were.
+    #[must_use]
+    pub(crate) fn in_language(&self, tag: Option<&str>) -> Self {
+        match tag {
+            Some(tag) => Self(format!("{}-{tag}", self.0)),
+            None => self.clone(),
+        }
     }
 
     /// Wraps an id that arrived over the wire, so its token can be checked.
@@ -273,23 +295,35 @@ impl<R: Fn() -> Markup> Fragment<R> {
     /// [`Topic::token`]. The client keeps a grant a patch does not restate,
     /// so what a publish sends is the content and the name, and the
     /// subscription stays the one the page was served with.
+    ///
+    /// The topic is the one for the language this renders in, so a page in
+    /// German subscribes to the German render and cannot be patched in any
+    /// other.
     pub fn to_markup(&self) -> Markup {
-        let mut out = String::from("<exos-live style=\"display:contents\" data-topic=\"");
-        escape_into(self.topic.as_str(), &mut out);
-        out.push('"');
+        let tag = crate::locale::current().map(|language| language.tag());
+        let topic = self.topic.in_language(tag);
 
-        if let Some(token) = self.topic.token() {
-            out.push_str(" data-token=\"");
-            escape_into(&token, &mut out);
-            out.push('"');
-        }
-
-        out.push('>');
-        out.push_str(self.markup().as_str());
-        out.push_str("</exos-live>");
-
-        Markup(out)
+        wrap(&topic, topic.token().as_deref(), &self.markup())
     }
+}
+
+/// Puts `markup` in the wrapper that subscribes to `topic`.
+pub(crate) fn wrap(topic: &Topic, token: Option<&str>, markup: &Markup) -> Markup {
+    let mut out = String::from("<exos-live style=\"display:contents\" data-topic=\"");
+    escape_into(topic.as_str(), &mut out);
+    out.push('"');
+
+    if let Some(token) = token {
+        out.push_str(" data-token=\"");
+        escape_into(token, &mut out);
+        out.push('"');
+    }
+
+    out.push('>');
+    out.push_str(markup.as_str());
+    out.push_str("</exos-live>");
+
+    Markup(out)
 }
 
 /// The topic and nothing else, since a render has nothing to print and running

@@ -57,25 +57,27 @@ fn app() -> Router {
     exos::app()
         .provide(Programme::seed())
         .provide(Registrations::default())
-        // exos ships no text, because an application's languages are its own.
-        // A violation is a value and this is the one function that turns one
-        // into a sentence; in an application with more than one language every
-        // arm here would be a `messages!` call instead of a literal.
-        .complaints(|field, violation| match (field, violation) {
-            ("attendees", Violation::Required) => String::from("Add at least one attendee."),
-            ("company", Violation::Required) => String::from("An invoice needs a company."),
-            ("email", Violation::Malformed) => String::from("That is not an email address."),
-            ("vat", Violation::Required) => String::from("An invoice needs a VAT id."),
-            // The pattern's name is what makes this sayable. Without it every
-            // pattern on the form shares one sentence about the format.
-            (_, Violation::Unmatched { pattern: "VAT" }) => {
-                String::from("A VAT id is a country code and up to twelve more characters.")
-            }
-            ("workshops", Violation::Required) => String::from("Pick at least one workshop."),
-            (_, Violation::Required) => String::from("This is needed."),
-            (_, Violation::TooShort { least }) => format!("At least {least} characters."),
-            (_, Violation::TooLong { most }) => format!("At most {most} characters."),
-            (_, _) => String::from("That does not look right."),
+        // exos says every violation in general terms, and this is where the
+        // form says the ones it can say better. Whatever is left out, exos
+        // still says; in an application with more than one language every arm
+        // here would be a `messages!` call instead of a literal.
+        .complaints(|field, violation| {
+            let said = match (field, violation) {
+                ("attendees", Violation::Required) => "Add at least one attendee.",
+                ("company", Violation::Required) => "An invoice needs a company.",
+                ("email", Violation::Malformed) => "That is not an email address.",
+                ("vat", Violation::Required) => "An invoice needs a VAT id.",
+                // The pattern's name is what makes this sayable. Without it
+                // every pattern on the form shares one sentence about the
+                // format.
+                (_, Violation::Unmatched { pattern: "VAT" }) => {
+                    "A VAT id is a country code and up to twelve more characters."
+                }
+                ("workshops", Violation::Required) => "Pick at least one workshop.",
+                _ => return None,
+            };
+
+            Some(String::from(said))
         })
         .into()
 }

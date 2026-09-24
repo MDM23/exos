@@ -105,8 +105,8 @@ does not await should not be written as though it might.
 `publish` becomes async, and what it awaits is the fragment's own render rather
 than a closure the caller wrapped: a `Fragment` already carries the render, so
 what changes is what it carries, from `Fn() -> Markup` to something a fan-out
-can call once per watched combination and await each time. The call site keeps
-its shape and gains a keyword, `publish(lot(7)).await`.
+can call once per language and await each time. The call site keeps its shape
+and gains a keyword, `publish(lot(7)).await`.
 
 The consequence to state plainly: **`publish` stops being callable from a
 synchronous context.** Today it can be called from anywhere, including a plain
@@ -117,7 +117,7 @@ about what else people would want to publish from rather than an obstacle here.
 ## Stage 5: load once, render many
 
 Optional, and only worth it if the measurement says so. The fan-out calls the
-render once per watched combination, so an async fragment that queries does it
+render once per language, so an async fragment with words that queries does it
 per locale. Splitting the fragment into an async load and a synchronous render
 would do the query once and the markup many times:
 
@@ -127,15 +127,15 @@ fn lot(id: LotId, lot: &Lot) -> Markup { view! { … } }
 ```
 
 It costs a second function and an attribute argument, which is why it is a
-stage rather than the design. The open question [dimensions](dimensions.md)
-leaves about reading once and rendering many is the same question, and async is
-what makes it worth asking.
+stage rather than the design. A publish that renders once per language has the
+same question about reading once and rendering many, and async is what makes it
+worth asking.
 
 ## What does not change
 
 - **The topic invariant.** Awaiting does not let a render read anything it
   could not read before: the mask still blocks the request scope, so a
-  fragment's arguments and dimensions are still its whole input.
+  fragment's arguments and language are still its whole input.
 - **`exos::scope()` still panics inside a fragment**, and stage 1 is what keeps
   that true across a yield rather than by luck.
 - **The ordering guarantee**, restated per topic, which is where it always
@@ -152,7 +152,7 @@ what makes it worth asking.
   returns. That is worth asserting precisely because it is currently true for a
   reason that is about to change.
 - **N+1 becomes easy.** A fragment per row, each awaiting a query, republished
-  on every change, multiplied by watched dimensions. Nothing prevents it and
+  on every change, multiplied by declared languages. Nothing prevents it and
   nothing should. It is the cost of the capability, and it is the reason stage 5
   exists.
 - **Failure has no policy.** A fragment returns `Markup`, so an error has to be

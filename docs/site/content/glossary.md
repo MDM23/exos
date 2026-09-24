@@ -182,7 +182,7 @@ again before the handler body runs.
 | `matches = PATTERN` | Shaped like a `pattern!` says, checked by both engines |
 | `checked_by = function` | The one rule with no browser half, asked over a round trip and again at submit |
 | `Violation` | `Required`, `TooShort { least }`, `TooLong { most }`, `Malformed`, `Unmatched { pattern }` |
-| `App::complaints(say)` | How this application words a violation; the default is English |
+| `App::complaints(say)` | The violations this application words itself; `None` leaves one to exos, which speaks German and English |
 | `Refusal<M>` | A handler's own refusal, in the shape a declared rule produces |
 | `Refusal::add(field, message)` | Says what is wrong with one field |
 | `Refusal::say(message)` | Says what is wrong with the submission |
