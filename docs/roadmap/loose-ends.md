@@ -303,20 +303,6 @@ caret back to the body in the middle of somebody's typing. An application that
 wants it today writes `prop("disabled", ...)` over a model field the handler
 clears, which is a few lines and keeps the policy where the policy belongs.
 
-## The session cookie needs a secure context
-
-The cookie is always `Secure`, and a browser keeps one of those only from a
-secure context. `localhost` counts; plain HTTP on any other address does not,
-which is a phone on the same network at `http://192.168.1.20:3000` or a staging
-box without a certificate. There the cookie is dropped: nobody stays signed in,
-and every live fragment fails verification and stops updating, without an error
-anywhere.
-
-A development build dropping `Secure` is the obvious fix and makes a debug
-binary behave differently on a network from the release it becomes. A warning
-when a request arrives over plain HTTP from anywhere but loopback keeps the
-cookie honest and makes the failure visible. Which one is the open question.
-
 ## Publishing scans every connection
 
 `publish` takes a `Mutex` over the whole registry and walks it. At presence
@@ -471,7 +457,7 @@ likely to need a document of its own.
 
 ## Not in here
 
-Four things are deliberately absent, because they are designs rather than
+Five things are deliberately absent, because they are designs rather than
 chores and each has somewhere better to live.
 
 - **Sessions, identity and CSRF**, in [sessions and
@@ -489,6 +475,9 @@ chores and each has somewhere better to live.
   instance](more-than-one-instance.md), built as far as a cluster that needs no
   sticky sessions. What is left there is the broker doing the filtering, which
   waits for a volume nothing has reached.
+- **The secure cookie over plain HTTP**, in [trusted
+  proxies](trusted-proxies.md). It started here as a choice between two
+  settings and turned out to need the peer address, which exos has never seen.
 
 Form validation is absent for the same reason, and now has [forms](forms.md) to
 be absent into. The `Effect` shape was always right for it; what was missing is
