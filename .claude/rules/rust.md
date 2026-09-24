@@ -128,6 +128,13 @@ tests` item itself.
   return a named type the caller can name too.
 - The caller decides where data lives. Do not allocate or clone on their
   behalf; hand back borrows or iterators and let them collect.
+- No `data-*` attribute a template has to type by hand. Every attribute the
+  runtime reads gets a typed helper, and where it only makes sense on one kind
+  of element it is a builder method on the helper that already writes that
+  element, so autocompletion offers it exactly where it applies:
+  `order::link(id).keep_scroll()` rather than `data-keep-scroll` or a free
+  `keep_scroll()`. The raw attribute stays documented in the glossary for
+  hand-written HTML.
 - Derive eagerly: `Clone`, `Copy`, `Debug`, `Default`, `Eq`, `Hash`, `Ord`,
   `PartialEq`, `PartialOrd`, wherever the semantics hold. Every public type
   implements `Debug`.

@@ -56,6 +56,8 @@ impl IntoAttributes for Class {
 pub struct Link {
     url: String,
     section: bool,
+    keep_scroll: bool,
+    reload: bool,
 }
 
 impl Link {
@@ -66,6 +68,8 @@ impl Link {
         Self {
             url: url.into(),
             section: false,
+            keep_scroll: false,
+            reload: false,
         }
     }
 
@@ -92,6 +96,32 @@ impl Link {
         self.section = true;
         self
     }
+
+    /// Keeps the reader where they had scrolled to, where a navigation would
+    /// start the page it lands on at the top.
+    ///
+    /// For a URL that is mostly the page being read, such as a detail panel
+    /// opened beside a list:
+    ///
+    /// ```rust
+    /// # use exos::{Link, Markup, view};
+    /// # fn orders() -> Markup {
+    /// view! { <a {Link::to(exos::url("/orders/7")).keep_scroll()}>"Order 7"</a> }
+    /// # }
+    /// ```
+    pub fn keep_scroll(mut self) -> Self {
+        self.keep_scroll = true;
+        self
+    }
+
+    /// Loads the URL as a whole document rather than navigating client-side.
+    ///
+    /// For a page that needs a fresh document, such as one that loads scripts
+    /// of its own.
+    pub fn reload(mut self) -> Self {
+        self.reload = true;
+        self
+    }
 }
 
 impl IntoAttributes for Link {
@@ -101,6 +131,14 @@ impl IntoAttributes for Link {
 
         if let Some(current) = current {
             attributes.set("aria-current", current);
+        }
+
+        if self.keep_scroll {
+            attributes.set("data-keep-scroll", "");
+        }
+
+        if self.reload {
+            attributes.set("data-reload", "");
         }
     }
 }
@@ -350,6 +388,17 @@ mod tests {
 
     /// Outside a request there is no page to be on, so a link is an `href` and
     /// nothing else. Which one is marked is `base`'s to say and tested there.
+    #[test]
+    fn a_link_says_how_it_navigates_in_the_attributes_the_runtime_reads() {
+        let mut attributes = Attributes::new();
+        Link::to("/orders/7").keep_scroll().write(&mut attributes);
+        assert_eq!(attributes.render(), " href=\"/orders/7\" data-keep-scroll");
+
+        let mut attributes = Attributes::new();
+        Link::to("/export").reload().write(&mut attributes);
+        assert_eq!(attributes.render(), " href=\"/export\" data-reload");
+    }
+
     #[test]
     fn a_link_is_the_url_it_was_given() {
         let mut attributes = Attributes::new();

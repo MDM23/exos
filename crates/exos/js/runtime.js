@@ -1747,11 +1747,41 @@
 
         if (link.hash && link.pathname === location.pathname) return;
 
+        // A detail panel opened beside a list lands on a new URL that is
+        // mostly the page being read, so the link can say the reader stays
+        // where they were rather than being thrown back to the top.
         ev.preventDefault();
-        navigate(link.href, true);
+        navigate(link.href, true, link.hasAttribute("data-keep-scroll") ? null : 0);
     });
 
-    window.addEventListener("popstate", () => navigate(location.href, false));
+    // Where the reader was, kept on the history entry it belongs to. The
+    // browser restores a position against the page still on screen, before
+    // the one it belongs to has been fetched, so a morph puts it back itself.
+    // Written as the reader scrolls rather than on the way out, because by the
+    // time `popstate` fires the entry being left is no longer the one
+    // `replaceState` writes to. On the entry, so a reload finds it as well.
+    history.scrollRestoration = "manual";
+
+    let scrolling;
+
+    function remember() {
+        clearTimeout(scrolling);
+        history.replaceState({ ...history.state, scroll: window.scrollY }, "");
+    }
+
+    window.addEventListener(
+        "scroll",
+        () => {
+            clearTimeout(scrolling);
+            scrolling = setTimeout(remember, 150);
+        },
+        { passive: true },
+    );
+
+    window.addEventListener("popstate", () => {
+        clearTimeout(scrolling);
+        navigate(location.href, false, history.state?.scroll ?? 0);
+    });
 
     // What a whole document arriving replaces, wherever one arrives: a
     // navigation, a page an action handed over, and a repair after a
@@ -1791,7 +1821,8 @@
     // navigating twice to the same URL is a thing people do.
     let navigation = 0;
 
-    async function navigate(url, push) {
+    // `scroll` is where to put the reader, or `null` to leave them.
+    async function navigate(url, push, scroll = 0) {
         const generation = ++navigation;
 
         announce("busy", { kind: "navigate", url });
@@ -1815,11 +1846,13 @@
             // navigation never touched the document.
             if (generation !== navigation) return;
 
+            // The page being left, while it is still the one on screen.
+            if (push) remember();
             present(new DOMParser().parseFromString(html, "text/html"));
             reseed();
             autofocus();
             if (push) history.pushState(null, "", response.url || url);
-            window.scrollTo(0, 0);
+            if (scroll !== null) window.scrollTo(0, scroll);
         } catch (error) {
             // A newer navigation is the tab's answer to this one having
             // failed, and loading the URL it has moved on from would be worse
@@ -2157,6 +2190,9 @@
     };
 
     bindTree(document.documentElement);
+
+    // A reload lands on the entry it left, and on where the reader was in it.
+    if (history.state?.scroll) window.scrollTo(0, history.state.scroll);
 
     // The observer only fires on changes, so a page that arrives with live
     // fragments already in it would never announce them and would receive

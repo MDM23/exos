@@ -455,6 +455,30 @@ Listed here because it is well understood, not because it is small. It touches
 the macro, the recorder and the runtime at once, and it is the entry most
 likely to need a document of its own.
 
+## A navigation renders what the tab already has
+
+A detail panel is best a route: `/orders/7` is the list with the panel beside
+it, so a reload keeps it, a link shares it and the back button closes it. The
+morph already inserts only the panel, and `data-keep-scroll` keeps the list
+where the reader had scrolled it. What is left is the server's half: it still
+renders the whole list, queries and all, to have it thrown away by a morph that
+changes nothing.
+
+Three ways out were weighed and none is right yet.
+
+- **Skip live fragments the tab holds.** A fragment on screen is fresh by
+  definition, so a navigation could list the topics it has and `#[live]` could
+  leave those unrendered. It fits, but it only reaches a region that is a live
+  fragment, and a list shaped per reader by filters, sorting and a search is
+  not one.
+- **A handler that renders less when asked.** A header says what the tab shows
+  and the route answers with the panel alone. Two paths per route, which drift.
+- **Regions cached by a key.** The application promises a region is unchanged
+  while its key is, and freshness then rests on invalidation, which is the part
+  that goes wrong.
+
+Nothing has been slow because of it yet. Wait for a page that is.
+
 ## Not in here
 
 Five things are deliberately absent, because they are designs rather than

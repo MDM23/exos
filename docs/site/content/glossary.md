@@ -45,6 +45,7 @@ test writes `exos::app()` in the helper that serves it.
 | `name::link(..)` | The whole anchor: that URL, and `aria-current` where it is the page being read |
 | `Link::to(url)` | The same for a URL that is not a route's |
 | `Link::section()` | Marks it while a page below it is being read, for a nav bar's link to a section |
+| `Link::keep_scroll()`, `Link::reload()` | Keeps the scroll position across the navigation, or loads the page as a whole document instead |
 | `name::get(..)`, `name::post(..)`, … | Records a call to it, with the payload type checked |
 | `Page` | A whole document, answering `no-cache, private` |
 | `Markup` | A fragment, as a response and as the type every template produces |
@@ -356,7 +357,8 @@ your own uses.
 | `data-sortable`, `data-sort-item`, `data-drag-handle` | The [sortable plugin](bindings), which talks to the server once, on drop |
 | `data-exos-progress`, `data-exos-progress-delay` | Turns the bar off, or waits longer before it appears |
 | `--exos-progress-color`, `-height`, `-shadow`, `-z-index`, `-duration`, `-fade` | What it looks like |
-| `data-reload` | Opts a link out of client-side navigation |
+| `data-keep-scroll` | Keeps the scroll position across a link's navigation; written by `Link::keep_scroll()` |
+| `data-reload` | Opts a link out of client-side navigation; written by `Link::reload()` |
 
 The element a call came from carries `aria-busy` for the duration, which is
 what says where the work is happening.

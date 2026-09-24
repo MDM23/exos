@@ -156,6 +156,42 @@ test("a link to something that is not a page is left to the browser", async () =
     assert.equal(window.document.getElementById("here").textContent, "here");
 });
 
+test("a link that keeps the scroll stays where a navigation would reset it", async () => {
+    const window = boot(`<a href="/orders/7" data-keep-scroll>open</a><a href="/orders">list</a>`);
+    const scrolls = [];
+    window.scrollTo = (x, y) => scrolls.push([x, y]);
+    const [inPlace, plain] = window.document.querySelectorAll("a");
+
+    inPlace.click();
+    await settled();
+    assert.equal(window.transport.requests.length, 1, "it is still a navigation");
+    assert.deepEqual(scrolls, []);
+
+    plain.click();
+    await settled();
+    assert.deepEqual(scrolls, [[0, 0]]);
+});
+
+// The bug: a navigation put the reader at the top whichever way they came, so
+// going back to a long list lost the place they had scrolled it to.
+test("going back puts the reader where they were on that page", async () => {
+    const window = boot(`<a href="/orders/7">open</a>`);
+    const scrolls = [];
+    window.scrollTo = (x, y) => scrolls.push([x, y]);
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 300 });
+
+    window.document.querySelector("a").click();
+    await settled();
+    assert.deepEqual(scrolls, [[0, 0]], "a new page starts at the top");
+
+    window.history.back();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await settled();
+
+    assert.equal(window.location.pathname, "/");
+    assert.deepEqual(scrolls.at(-1), [0, 300]);
+});
+
 // Nested under `/admin`, the rest of the origin is the host application's, and
 // a page this runtime did not render is not one to morph in.
 test("a link outside where the application is mounted is not intercepted", async () => {

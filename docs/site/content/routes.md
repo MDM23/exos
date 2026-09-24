@@ -105,6 +105,15 @@ be wrong. Below means below the separator, so `/users` does not take in
 `/users-archive`, and the root is nobody's section: every page is below `/`, so
 a link to it is marked on `/` alone whether or not `section` was said.
 
+**How it navigates is said on the link too.** `keep_scroll` leaves the reader
+where they had scrolled to, for a URL that is mostly the page being read, such
+as a [panel beside a list](dialogs). `reload` loads the page as a whole
+document instead of navigating client-side:
+
+```rust
+view! { <a {order::link(row.id).keep_scroll()}>{ &row.name }</a> }
+```
+
 For anything that is not a route, `exos::url` joins a path to the base:
 
 ```rust
