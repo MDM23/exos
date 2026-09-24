@@ -31,6 +31,7 @@
 use core::{
     fmt::{self, Display},
     str::FromStr,
+    time::Duration,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -97,6 +98,24 @@ impl From<SystemTime> for Instant {
         };
 
         Self(millis)
+    }
+}
+
+impl From<Instant> for SystemTime {
+    /// The way out to a date crate, all of which convert from [`SystemTime`].
+    ///
+    /// # Panics
+    ///
+    /// If the platform's clock cannot hold the instant, which on Unix it
+    /// always can.
+    fn from(at: Instant) -> Self {
+        let since = Duration::from_millis(at.0.unsigned_abs());
+
+        if at.0 < 0 {
+            UNIX_EPOCH - since
+        } else {
+            UNIX_EPOCH + since
+        }
     }
 }
 
@@ -519,6 +538,15 @@ mod tests {
         let at: Instant = "2026-08-19T09:00:00.123789Z".parse().expect("valid");
 
         assert_eq!(at.to_string(), "2026-08-19T09:00:00.123Z");
+    }
+
+    #[test]
+    fn an_instant_survives_the_trip_through_the_system_clock() {
+        for millis in [-1_000, 0, 1_787_130_000_000] {
+            let at = Instant::from_millis(millis);
+
+            assert_eq!(Instant::from(SystemTime::from(at)), at);
+        }
     }
 
     #[test]
