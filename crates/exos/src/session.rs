@@ -38,8 +38,8 @@
 //! a table it can index, join and expire is worth more than anything reachable
 //! through a trait exos invented.
 //!
-//! Nothing here can fail, which is the argument that the line is in the right
-//! place.
+//! Nothing here can fail at runtime, which is the argument that the line is in
+//! the right place. The one panic is a mistake in the code, below.
 //!
 //! # What is in the cookie
 //!
@@ -69,12 +69,15 @@
 //! ask, because the subscription in its wrapper is bound to the browser it was
 //! served to, so a page with one on it names whoever looks at it.
 //!
-//! One edge worth knowing: a session started *during* a stream cannot set a
-//! cookie, because those headers went out when the stream opened. Streams
-//! should read the id and never start one, and the same holds for a live
-//! fragment rendered into an [`EffectStream`](crate::EffectStream): the name it
-//! starts never reaches the browser, so the token it binds to that name can
-//! never be presented.
+//! # Settled when the response goes out
+//!
+//! The cookie is written with the headers, and an
+//! [`EffectStream`](crate::EffectStream) sends those before any of its effects
+//! are computed. A change made after that point would never reach the browser,
+//! so signing out from inside a stream would leave the browser signed in
+//! without a word. Starting, rotating or ending a session once its response
+//! has gone therefore panics, through whatever handle was moved into the
+//! stream. Change it in the handler, and read it from the stream.
 //!
 //! # A name that changes takes this browser's streams with it
 //!
@@ -206,9 +209,11 @@ impl Session {
     /// anonymous shopping cart wants, and it is the wrong call at a sign-in,
     /// where [`rotate`](Self::rotate) is.
     pub fn start(&self) -> Id {
-        let mut inner = self.inner();
+        if let Some(id) = self.id() {
+            return id;
+        }
 
-        inner.id.get_or_insert_with(Id::random).clone()
+        self.changing().id.get_or_insert_with(Id::random).clone()
     }
 
     /// A new name for the session, whatever it was called before.
@@ -276,11 +281,7 @@ impl Session {
     /// registry. Nothing waits for them, so this returns as quickly on a
     /// cluster as it does alone.
     pub fn rotate(&self) -> Id {
-        let id = Id::random();
-
-        self.inner().id = Some(id.clone());
-
-        id
+        self.changing().id.insert(Id::random()).clone()
     }
 
     /// Takes the cookie back, so the next request is anonymous.
@@ -294,7 +295,7 @@ impl Session {
     /// most: without it, the tabs somebody did not sign out of would go on
     /// holding a signed-in connection until they were closed.
     pub fn end(&self) {
-        self.inner().id = None;
+        self.changing().id = None;
     }
 
     fn inner(&self) -> MutexGuard<'_, Inner> {
@@ -302,6 +303,30 @@ impl Session {
             .0
             .lock()
             .expect("the session lock is never held across a panic")
+    }
+
+    /// The lock, for a change the browser will be told about.
+    ///
+    /// # Panics
+    ///
+    /// Once the response has taken its cookie. A handle moved into an
+    /// [`EffectStream`](crate::EffectStream) outlives the headers, and a
+    /// sign-out made there would leave the browser signed in without a word.
+    /// The guard is dropped first, so the lock is not poisoned for the handles
+    /// that did nothing wrong.
+    fn changing(&self) -> MutexGuard<'_, Inner> {
+        let inner = self.inner();
+
+        if inner.answered {
+            drop(inner);
+            panic!(
+                "the session changed after its response went out, so the \
+                 browser would never hear of it; start, rotate or end it in \
+                 the handler, before returning a stream"
+            );
+        }
+
+        inner
     }
 }
 
@@ -360,6 +385,10 @@ struct State(Mutex<Inner>);
 
 #[derive(Debug, Default)]
 struct Inner {
+    /// Whether the response has taken its cookie, after which no change would
+    /// reach the browser.
+    answered: bool,
+
     /// The name the browser sent, whether or not it still names anything.
     ///
     /// Kept apart from `id` because the pair is what the response is decided
@@ -396,6 +425,7 @@ pub(crate) async fn layer(request: Request, next: Next) -> Response {
 
     let scope = crate::scope();
     scope.set(State(Mutex::new(Inner {
+        answered: false,
         cookie: arriving.clone(),
         id: arriving,
     })));
@@ -405,6 +435,7 @@ pub(crate) async fn layer(request: Request, next: Next) -> Response {
         .expect("it was set on the line above; nothing else writes this type");
 
     let mut response = next.run(request).await;
+    let cookie = settle(&state);
 
     // A name that arrived and is no longer the name leaves this browser's
     // streams identified as somebody who no longer exists, and a stream cannot
@@ -415,7 +446,7 @@ pub(crate) async fn layer(request: Request, next: Next) -> Response {
         let _ = crate::live::disconnect(&previous);
     }
 
-    if let Some(cookie) = pending(&state) {
+    if let Some(cookie) = cookie {
         response.headers_mut().append(header::SET_COOKIE, cookie);
     }
 
@@ -440,12 +471,17 @@ fn superseded(state: &State) -> Option<Id> {
     (inner.id.as_ref() != Some(&previous)).then_some(previous)
 }
 
-/// What the browser has to be told, if anything.
-fn pending(state: &State) -> Option<HeaderValue> {
-    let inner = state
+/// What the browser has to be told, if anything, and the last word on it.
+///
+/// One lock for both, so no change can land between the header being decided
+/// and the session refusing any more.
+fn settle(state: &State) -> Option<HeaderValue> {
+    let mut inner = state
         .0
         .lock()
         .expect("the session lock is never held across a panic");
+
+    inner.answered = true;
 
     match (inner.id.as_ref(), inner.cookie.as_ref()) {
         // Ended, so the browser should stop sending it.
@@ -502,13 +538,14 @@ mod tests {
     /// either side of a handler, which is what lets one test name one rule.
     fn serving(cookie: Option<Id>) -> Session {
         Session(Arc::new(State(Mutex::new(Inner {
+            answered: false,
             cookie: cookie.clone(),
             id: cookie,
         }))))
     }
 
     fn owed(session: &Session) -> Option<String> {
-        pending(&session.0).map(|header| header.to_str().expect("a cookie is text").to_owned())
+        settle(&session.0).map(|header| header.to_str().expect("a cookie is text").to_owned())
     }
 
     fn headers(cookie: &str) -> HeaderMap {
@@ -682,6 +719,46 @@ mod tests {
         session.end();
 
         assert!(owed(&session).is_none());
+    }
+
+    // ---- after the response has gone ----------------------------------------
+
+    /// A handle moved into a stream outlives the headers. Signing out there
+    /// would leave the browser signed in, so it refuses instead.
+    #[test]
+    fn nothing_changes_once_the_response_has_gone() {
+        let changes: [fn(&Session); 3] = [
+            |session| drop(session.rotate()),
+            Session::end,
+            |session| drop(session.start()),
+        ];
+
+        for change in changes {
+            let session = serving(None);
+            drop(owed(&session));
+
+            let refused = std::panic::catch_unwind(|| change(&session))
+                .expect_err("a change nobody would hear of is refused");
+
+            assert!(
+                refused
+                    .downcast_ref::<&str>()
+                    .is_some_and(|message| message.contains("after its response went out")),
+            );
+            assert!(session.id().is_none(), "and the lock is still usable");
+        }
+    }
+
+    /// Reading, or starting a session that already has a name, changes nothing
+    /// and is therefore still allowed.
+    #[test]
+    fn a_settled_session_can_still_be_read() {
+        let arrived = Id::random();
+        let session = serving(Some(arrived.clone()));
+        drop(owed(&session));
+
+        assert_eq!(session.id().as_ref(), Some(&arrived));
+        assert_eq!(session.start(), arrived);
     }
 
     // ---- what a rotation supersedes -----------------------------------------

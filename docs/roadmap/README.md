@@ -11,7 +11,7 @@ to [docs/spec](../spec).
 | [directed effects](directed-effects.md) | stages 1 to 3: a connection knows who it is, `send` reaches every tab an audience has open | stage 4, what a toast *is*, which is two open questions rather than a chore |
 | [forms](forms.md) | stages 0 to 3, 5, 6, and the gate half of 4 | `required_when`, which waits for a form that wants one |
 | [localization](localization.md) | stages 1, 2, 4, 5 and the count half of 3: locales, messages, a count the browser picks its own sentence for, live fragments in the reader's language, dates and times | the rest of stage 3, text from other crates (waits for one that needs it) |
-| [loose ends](loose-ends.md) | ten of the sixteen entries | six: the publish before a subscription, a session changed mid-stream, disabling a busy control, the secure cookie, the publish index, and precompiled expressions |
+| [loose ends](loose-ends.md) | eleven of the sixteen entries | five: the publish before a subscription, disabling a busy control, the secure cookie, the publish index, and precompiled expressions |
 | [more than one instance](more-than-one-instance.md) | stages 1 to 4: a cluster with no sticky sessions, where signing out means the same thing everywhere | stage 5, the broker doing the filtering, which waits for a volume nothing has reached |
 | [observability](observability.md) | nothing; the crate emits no span, metric or log line | all five stages, and one field that has to be decided before the bus grows a second version |
 
