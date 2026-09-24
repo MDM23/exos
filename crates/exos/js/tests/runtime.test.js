@@ -117,6 +117,56 @@ test("a declaration never overwrites a value the page is already holding", async
     assert.equal(window.exos.readIn(window.document.querySelector(".hit"), "open"), true);
 });
 
+const asking = (inside = "") =>
+    `<div id="row" data-signals='{"asking":false}'>` +
+    `<dialog id="ask" data-modal="asking">${inside}</dialog></div>`;
+
+test("a modal follows its signal, and closing it says so to the signal", async () => {
+    const window = boot(asking());
+    const row = window.document.getElementById("row");
+    const dialog = window.document.getElementById("ask");
+
+    window.exos.setIn(row, "asking", true);
+    await settled();
+    assert.ok(dialog.open);
+
+    dialog.close();
+    await settled();
+    assert.equal(window.exos.readIn(row, "asking"), false, "Escape reached the signal");
+});
+
+// The bug this guards: the server never renders `open`, so a morph took the
+// attribute away and hid the dialog without closing it, leaving the page
+// behind it inert with nothing on top.
+test("a patch landing on an open modal leaves it open", async () => {
+    const window = boot(asking());
+    window.exos.setIn(window.document.getElementById("row"), "asking", true);
+    await settled();
+
+    window.exos.applyPatch(asking("<p>three invoices depend on it</p>"));
+    await settled();
+
+    const dialog = window.document.getElementById("ask");
+    assert.ok(dialog.open);
+    assert.equal(dialog.textContent, "three invoices depend on it");
+});
+
+test("a modal a handler sends opens as it arrives and goes once closed", async () => {
+    const window = boot(`<main></main>`);
+    const sent = `<dialog id="confirm" data-modal=""><p>Sure?</p></dialog>`;
+
+    window.exos.applyPatch(sent);
+    await settled();
+    assert.ok(window.document.getElementById("confirm").open);
+
+    window.document.getElementById("confirm").close();
+    assert.equal(window.document.getElementById("confirm"), null);
+
+    window.exos.applyPatch(sent);
+    await settled();
+    assert.ok(window.document.getElementById("confirm").open, "the next one arrives fresh");
+});
+
 test("a navigation starts the page as its own markup declares it", async () => {
     const page = (draft) =>
         `<!DOCTYPE html><html><head><title>next</title></head><body>` +

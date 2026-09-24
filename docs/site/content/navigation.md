@@ -37,6 +37,7 @@ is what makes it reachable.
 - [Calling the server](calling-the-server)
 - [Effects](effects)
 - [Live fragments](live-fragments)
+- [Dialogs and panels](dialogs)
 
 ## Digging deeper
 

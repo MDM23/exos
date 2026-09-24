@@ -303,6 +303,26 @@ pub fn show(condition: impl crate::IntoJs<bool>) -> Attr {
     Attr::new("data-show", condition.into_js().into_source())
 }
 
+/// Shows a `<dialog>` as a modal while `open` holds true.
+///
+/// Closing it any way the browser offers, Escape, a `method="dialog"` form or
+/// a click outside under `closedby="any"`, writes `false` back. A modal opened
+/// from inside another one goes on top of it, and closing it returns to the
+/// one below.
+pub fn modal(open: &Signal<bool>) -> Attr {
+    Attr::new("data-modal", open.name())
+}
+
+/// Shows a `<dialog>` as a modal the moment it arrives, and removes it once it
+/// is closed.
+///
+/// For a dialog a handler sends rather than one the page keeps: a patch whose
+/// element matches nothing on the page is appended to the body, so the
+/// handler needs no slot to send it into.
+pub fn modal_now() -> Attr {
+    Attr::new("data-modal", String::new())
+}
+
 /// One class toggle. Repeat the block for more.
 pub fn class(name: &'static str, condition: impl crate::IntoJs<bool>) -> Class {
     Class(name, condition.into_js())
@@ -410,6 +430,24 @@ mod tests {
         Link::to("/files").section().write(&mut attributes);
 
         assert_eq!(attributes.render(), " href=\"/files\"");
+    }
+
+    /// The runtime tells the two apart by whether there is a signal to write
+    /// back to, and removes the dialog on close where there is none.
+    #[test]
+    fn a_modal_names_its_signal_and_one_sent_names_none() {
+        let asking = signal(false);
+
+        let mut attributes = Attributes::new();
+        modal(&asking).write(&mut attributes);
+        assert_eq!(
+            attributes.render(),
+            format!(" data-modal=\"{}\"", asking.name())
+        );
+
+        let mut attributes = Attributes::new();
+        modal_now().write(&mut attributes);
+        assert_eq!(attributes.render(), " data-modal");
     }
 
     #[test]

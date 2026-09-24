@@ -912,6 +912,17 @@
             for (const [name, on] of Object.entries(values)) el.classList.toggle(name, !!on);
         },
 
+        // data-modal="asking" shows a <dialog> as a modal while the signal
+        // holds true, over whichever one is already up, and an empty value
+        // shows it as it arrives. The browser brings the rest: the page
+        // behind it inert, the focus kept inside and handed back after.
+        "data-modal": (el, name) => () => {
+            const open = name ? Boolean(read(resolve(el, name))) : true;
+
+            if (open && !el.open) el.showModal();
+            else if (!open && el.open) el.close();
+        },
+
         // data-prop="{value: $.query}", for what are properties rather than
         // attributes: value, checked, indeterminate.
         "data-prop": (el, source) => () => {
@@ -1177,6 +1188,24 @@
             evaluate(el.getAttribute(attribute), el, ev, true);
         });
     }
+
+    // Escape, a `method="dialog"` form and a click outside under
+    // `closedby="any"` all end in `close`, which does not bubble, hence the
+    // capture. A bound modal says so to its signal; one that opened as it
+    // arrived has said what it came to say and goes, so the next one sent
+    // with its id arrives fresh rather than morphing onto a closed one.
+    document.addEventListener(
+        "close",
+        (ev) => {
+            const el = ev.target;
+            if (!el.hasAttribute?.("data-modal")) return;
+
+            const name = el.getAttribute("data-modal");
+            if (name) write(resolve(el, name), false);
+            else el.remove();
+        },
+        true,
+    );
 
     // -------------------------------------------------------------------------
     //                                 REQUESTS
@@ -1625,6 +1654,11 @@
             // carry a token is a fresh grant and won above, which is what
             // makes a rotated session pick the new one up.
             if (name === "data-token") continue;
+
+            // A modal's `open` is the binding's, and taking the attribute away
+            // hides the dialog without closing it, which leaves the page
+            // behind it inert with nothing on top.
+            if (name === "open" && from.hasAttribute("data-modal")) continue;
 
             if (!to.hasAttribute(name)) from.removeAttribute(name);
         }

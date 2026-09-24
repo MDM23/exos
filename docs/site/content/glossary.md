@@ -78,6 +78,8 @@ repeating one is the style rather than a mistake. See
 | `attr(name, value)` | Sets one attribute |
 | `prop(name, value)` | Sets one property, for `value`, `checked` and friends |
 | `bind(&signal)` | Two-way binding for a form control, over a signal or a model field |
+| `modal(&signal)` | Shows a `<dialog>` as a modal while the signal holds true; closing it writes false. See [dialogs and panels](dialogs) |
+| `modal_now()` | Shows a `<dialog>` a handler sent as a modal on arrival, and removes it once closed |
 | `preserve()` | Keeps an element out of every morph |
 | `Attr::new(name, value)` | The escape hatch for an attribute nothing above writes |
 

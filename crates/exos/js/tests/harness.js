@@ -65,6 +65,17 @@ function booted(body, base, plugins, query = "") {
     // One jsdom provides only to refuse.
     window.scrollTo = () => {};
 
+    // jsdom has the element and none of its behaviour. The runtime relies on
+    // `open` and on the `close` event, so those are what this keeps.
+    window.HTMLDialogElement.prototype.showModal = function () {
+        this.setAttribute("open", "");
+    };
+    window.HTMLDialogElement.prototype.close = function () {
+        if (!this.open) return;
+        this.removeAttribute("open");
+        this.dispatchEvent(new window.Event("close"));
+    };
+
     // Node's rather than jsdom's, so that the bytes the transport below encodes
     // and the runtime decodes come from one realm.
     window.TextDecoder = TextDecoder;
