@@ -182,7 +182,8 @@ impl Effect {
         Self::none().and_title(text)
     }
 
-    /// Reloads the document.
+    /// Fetches the page the browser is on again and morphs it in, the way a
+    /// navigation does, keeping the scroll and whatever the morph keeps.
     pub fn reload() -> Self {
         Self::none().push(Step::Reload)
     }

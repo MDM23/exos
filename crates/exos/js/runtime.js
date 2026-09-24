@@ -1487,8 +1487,10 @@
                 applyPatch(payload, granting);
                 break;
 
+            // The page it is on, fetched and morphed like any navigation, so
+            // what the reader holds survives and the scroll stays where it is.
             case "reload":
-                location.reload();
+                navigate(location.href, false, null);
                 break;
 
             case "remove":
@@ -1885,7 +1887,12 @@
             present(new DOMParser().parseFromString(html, "text/html"));
             reseed();
             autofocus();
+            // Without a push the entry is the one on screen, and a redirect,
+            // a reload after signing in answered from somewhere else, still
+            // has to leave the address bar saying where the page came from.
             if (push) history.pushState(null, "", response.url || url);
+            else if (response.url && response.url !== location.href)
+                history.replaceState(history.state, "", response.url);
             if (scroll !== null) window.scrollTo(0, scroll);
         } catch (error) {
             // A newer navigation is the tab's answer to this one having

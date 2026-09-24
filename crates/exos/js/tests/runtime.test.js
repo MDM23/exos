@@ -954,6 +954,82 @@ test("html arriving with a failure is left where it is", async () => {
     assert.equal(window.document.getElementById("slot").textContent, "before");
 });
 
+/**
+ * An action answering with a reload, and the page it is on answering the fetch
+ * that follows as `page`, served from `url`. The harness answers every request
+ * alike, and this is the one exchange that needs two different answers.
+ */
+async function reloaded(window, page, url = "http://localhost/") {
+    const reply = new window.TextEncoder().encode("event: reload\ndata: reload\n\n");
+    const requests = [];
+
+    window.fetch = async (to, options = {}) => {
+        requests.push({ url: to, method: options.method ?? "GET" });
+
+        if (options.method === "POST") {
+            let read = false;
+
+            return {
+                ok: true,
+                status: 200,
+                headers: { get: () => "text/event-stream" },
+                body: {
+                    getReader: () => ({
+                        read: async () => {
+                            if (read) return { done: true };
+                            read = true;
+                            return { done: false, value: reply };
+                        },
+                    }),
+                },
+            };
+        }
+
+        return { url, headers: { get: () => "text/html" }, text: async () => page };
+    };
+
+    await posted(window);
+    await settled();
+
+    return requests;
+}
+
+// A reload was `location.reload()`, which threw away everything the morph
+// exists to keep and put the reader back at the top of a page that had only
+// lost a row.
+test("a reload fetches the page it is on and morphs it in", async () => {
+    const window = boot(`<p id="kept">before</p>`);
+    const scrolls = [];
+    window.scrollTo = (x, y) => scrolls.push([x, y]);
+    const kept = window.document.getElementById("kept");
+
+    const requests = await reloaded(
+        window,
+        `<!DOCTYPE html><html><body><p id="kept">after</p></body></html>`,
+    );
+
+    assert.deepEqual(requests.at(-1), { url: "http://localhost/", method: "GET" });
+    assert.equal(window.document.getElementById("kept"), kept, "morphed rather than rebuilt");
+    assert.equal(kept.textContent, "after");
+    assert.deepEqual(scrolls, [], "the reader stays where they were");
+    assert.equal(window.transport.navigations.length, 0, "the document was not left");
+});
+
+// Signing in answers with a reload of the sign-in form, which the server
+// redirects to wherever a session goes instead.
+test("a reload answered from somewhere else says so in the address bar", async () => {
+    const window = boot(`<p>sign in</p>`);
+
+    await reloaded(
+        window,
+        `<!DOCTYPE html><html><body><p>home</p></body></html>`,
+        "http://localhost/home",
+    );
+
+    assert.equal(window.location.pathname, "/home");
+    assert.equal(window.history.length, 1, "replaced rather than pushed");
+});
+
 // aria-busy is written by the request path rather than by a binding, so it was
 // in nothing `reapply` puts back and the attribute sync took it off an element
 // whose own request was still in flight: the spinner went, the button looked
