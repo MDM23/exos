@@ -271,6 +271,7 @@ pub struct Bound<T> {
     group: Option<&'static str>,
     arms: &'static str,
     check: &'static str,
+    revise: &'static str,
 }
 
 impl<T> Bound<T> {
@@ -288,6 +289,7 @@ impl<T> Bound<T> {
             group: None,
             arms: "",
             check: "",
+            revise: "",
         }
     }
 
@@ -311,6 +313,7 @@ impl<T> Bound<T> {
             group: Some(group),
             arms: "",
             check: "",
+            revise: "",
         }
     }
 
@@ -348,6 +351,18 @@ impl<T> Bound<T> {
     /// tells the control there is no round trip to make.
     pub const fn check(&self) -> &'static str {
         self.check
+    }
+
+    /// Says which form a change to this field revises, where it revises one.
+    #[doc(hidden)]
+    pub const fn revising(mut self, form: &'static str) -> Self {
+        self.revise = form;
+        self
+    }
+
+    /// That form, as the binding carries it, or empty.
+    pub const fn revise(&self) -> &'static str {
+        self.revise
     }
 
     /// The rows field this is one row's copy of, where it is one.

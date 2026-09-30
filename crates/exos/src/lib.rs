@@ -31,6 +31,7 @@ mod csrf;
 mod discover;
 mod effect;
 mod fnv;
+mod form;
 mod hex;
 mod identity;
 mod instant;
@@ -62,6 +63,7 @@ pub use crate::{
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry},
     effect::{Effect, EffectStream, Step},
+    form::{Form, FormKey, ReviseEntry},
     identity::{Audience, Audiences, Resolution},
     instant::{Instant, NotAnInstant, When},
     js::{
@@ -98,7 +100,8 @@ pub use crate::{
 
 #[doc(inline)]
 pub use exos_macro::{
-    Enumerable, asset, delete, get, live, locales, messages, model, patch, pattern, post, put, view,
+    Enumerable, asset, delete, form, get, live, locales, messages, model, patch, pattern, post,
+    put, view,
 };
 
 // What keeps `LocaleSet` implementable by `locales!` alone, and what it

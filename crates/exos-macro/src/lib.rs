@@ -156,7 +156,33 @@ method_attribute!(put, "PUT");
 /// client sends.
 #[proc_macro_attribute]
 pub fn model(_attribute: TokenStream, item: TokenStream) -> TokenStream {
-    model::expand(item.into()).into()
+    model::expand(item.into(), false).into()
+}
+
+/// Marks a model that renders itself.
+///
+/// ```ignore
+/// #[exos::form]
+/// #[derive(Default, Deserialize, Serialize)]
+/// struct TeamForm {
+///     #[revises]
+///     tenant: String,
+///     sport: String,
+/// }
+///
+/// impl exos::Form for TeamForm { /* ... */ }
+/// ```
+///
+/// Everything [`model`](macro@model) generates, except that the handle is
+/// built by `self.signals(key)` inside `Form::render` rather than by
+/// `signals()` anywhere, so a form has one template. The handle names the
+/// element it is spread on, and a control bound to a `#[revises]` field posts
+/// the form when it changes and morphs in what `render` answers. A form without
+/// an `impl Form` does not compile, and neither does `#[revises]` on a plain
+/// model.
+#[proc_macro_attribute]
+pub fn form(_attribute: TokenStream, item: TokenStream) -> TokenStream {
+    model::expand(item.into(), true).into()
 }
 
 /// Declares a shape a field can be checked against.

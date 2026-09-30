@@ -113,13 +113,7 @@ where
 
     async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
         let bytes = Bytes::from_request(request, state).await?;
-        let wire: Value = serde_json::from_slice(&bytes)?;
-
-        let Value::Object(wire) = wire else {
-            return Err(ModelRejection::NotAnObject);
-        };
-
-        let model: T = serde_json::from_value(Value::Object(inward::<T>(wire)))?;
+        let model: T = read(&bytes)?;
 
         // Checked here rather than in the handler, so that there is no call
         // site to forget and a body runs only against a value whose shape
@@ -141,6 +135,18 @@ where
             })
         }
     }
+}
+
+/// A body in the wire form, as the model it names, judged by nothing.
+///
+/// What [`Model`] reads before it validates, and all a revision reads: a form
+/// half filled in is the normal state of one being revised.
+pub(crate) fn read<T: ModelFields + DeserializeOwned>(bytes: &[u8]) -> Result<T, ModelRejection> {
+    let Value::Object(wire) = serde_json::from_slice(bytes)? else {
+        return Err(ModelRejection::NotAnObject);
+    };
+
+    Ok(serde_json::from_value(Value::Object(inward::<T>(wire)))?)
 }
 
 /// Renames the wire keys back to the field names serde is expecting.
@@ -189,11 +195,15 @@ fn outward<T: ModelFields>(fields: &Map<String, Value>) -> Map<String, Value> {
 /// afterwards, so the model's own `Serialize` stays whatever it is for every
 /// other use it has.
 pub fn to_wire<T: ModelFields + Serialize>(value: &T) -> String {
-    let Ok(Value::Object(fields)) = serde_json::to_value(value) else {
-        return String::from("{}");
-    };
+    Value::Object(wire(value)).to_string()
+}
 
-    Value::Object(outward::<T>(&fields)).to_string()
+/// The same, as the object rather than its text.
+pub(crate) fn wire<T: ModelFields + Serialize>(value: &T) -> Map<String, Value> {
+    match serde_json::to_value(value) {
+        Ok(Value::Object(fields)) => outward::<T>(&fields),
+        _ => Map::new(),
+    }
 }
 
 /// Why a [`Model`] body was refused.

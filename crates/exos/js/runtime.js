@@ -1175,6 +1175,13 @@
             if (el.hasAttribute("data-bind-check")) {
                 debounceCall(el, `~check/${name}`, CHECKING, () => checkField(el));
             }
+
+            // A field others depend on asks for the form again: a choice at
+            // once, typing once it stops.
+            const form = el.getAttribute("data-bind-revise");
+            if (form) {
+                debounceCall(el, "~revise", type === "input" ? CHECKING : 0, () => revise(form));
+            }
         });
     }
 
@@ -1410,6 +1417,52 @@
             console.error(`[exos] ${name} could not be checked:`, error, el);
         } finally {
             idle(el);
+        }
+    }
+
+    // The form rendered again for what the reader has picked so far. The form
+    // element is found by the id its handle wrote and says what it sends.
+    //
+    // Not `request` either: what comes back is the markup and the fields the
+    // server changed, and a field is written back only while it still holds
+    // what was sent, since one the reader edited meanwhile is newer than the
+    // answer. Of two overlapping revisions of one form the newer wins.
+    const revisions = new Map(); // form id -> turn
+
+    async function revise(id) {
+        const form = document.getElementById(id);
+        const source = form?.getAttribute("data-revise");
+        if (!source) return;
+
+        const sent = evaluate(source, form, null, false);
+        const turn = (revisions.get(id) ?? 0) + 1;
+        revisions.set(id, turn);
+        busy(form);
+
+        try {
+            const response = await fetch(`${BASE}/_exos/revise/${id}`, {
+                method: "POST",
+                headers: { "X-Exos": "true", "Content-Type": "application/json" },
+                body: JSON.stringify(sent),
+            });
+
+            if (!response.ok) {
+                console.error(`[exos] ${id} could not be revised:`, response.status, form);
+                return;
+            }
+
+            const { patch, signals } = JSON.parse(await response.text());
+            if (revisions.get(id) !== turn) return;
+
+            applyPatch(patch);
+
+            for (const [name, value] of Object.entries(signals)) {
+                if (JSON.stringify(read(name)) === JSON.stringify(sent[name])) write(name, value);
+            }
+        } catch (error) {
+            console.error(`[exos] ${id} could not be revised:`, error, form);
+        } finally {
+            idle(form);
         }
     }
 

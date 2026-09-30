@@ -588,6 +588,100 @@ test("an answer about a value nobody is holding any more is dropped", async () =
     assert.ok(!field.hasAttribute("aria-busy"), "and the marker goes with the answer");
 });
 
+/**
+ * A form one of whose fields others depend on.
+ *
+ * The form carries its id and what a revision sends; the control carries the
+ * form it revises. `said` is shown so a test can tell which render landed.
+ */
+const revisable = (said = "") =>
+    `<form id="f1" data-signals-root='{"tenant":"a","sport":""}' ` +
+    `data-revise="{tenant: $.tenant, sport: $.sport}">` +
+    `<select id="tenant" data-bind="tenant" data-bind-kind="string" data-bind-revise="f1">` +
+    `<option value="a">a</option><option value="b">b</option><option value="c">c</option>` +
+    `</select>` +
+    `<input id="sport" data-bind="sport" data-bind-kind="string">` +
+    `<p id="said">${said}</p>` +
+    `</form>`;
+
+const revision = (said, signals) => JSON.stringify({ patch: revisable(said), signals });
+
+async function pick(window, value) {
+    const select = window.document.getElementById("tenant");
+    select.value = value;
+    select.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await after(5);
+    await settled();
+}
+
+/** Every revision held until the test answers it, by the order it went out. */
+function holding(window) {
+    const answers = [];
+    window.fetch = () => new Promise((resolve) => answers.push(resolve));
+
+    return (at, body) => answers[at]({ ok: true, status: 200, text: () => Promise.resolve(body) });
+}
+
+test("a choice others depend on renders the form again at once", async () => {
+    const window = boot(revisable());
+    window.transport.responses.body = revision("football only", { sport: "football" });
+
+    await pick(window, "b");
+
+    assert.deepEqual(
+        window.transport.requests.map(({ url, body }) => ({ url, body })),
+        [{ url: "/_exos/revise/f1", body: { tenant: "b", sport: "" } }],
+    );
+    assert.equal(window.document.getElementById("said").textContent, "football only");
+    assert.equal(window.exos.signals.sport, "football");
+});
+
+// The answer is about what was sent. A field the reader has edited since is
+// newer than that, so it keeps what they typed.
+test("a field edited while a revision was out keeps its value", async () => {
+    const window = boot(revisable());
+    const answer = holding(window);
+
+    await pick(window, "b");
+
+    const sport = window.document.getElementById("sport");
+    sport.value = "chess";
+    sport.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    answer(0, revision("", { sport: "football" }));
+    await settled();
+
+    assert.equal(window.exos.signals.sport, "chess");
+});
+
+// A reader tabbing through a revising select is the common path, and the
+// control they are on sits inside the element the morph replaces.
+test("focus stays on the control a revision was asked from", async () => {
+    const window = boot(revisable());
+    window.transport.responses.body = revision("", {});
+
+    const select = window.document.getElementById("tenant");
+    select.focus();
+    await pick(window, "b");
+
+    assert.equal(window.document.activeElement, select);
+});
+
+test("the older of two overlapping revisions is dropped", async () => {
+    const window = boot(revisable());
+    const answer = holding(window);
+
+    await pick(window, "b");
+    await pick(window, "c");
+
+    answer(1, revision("for c", {}));
+    await settled();
+    answer(0, revision("for b", {}));
+    await settled();
+
+    assert.equal(window.document.getElementById("said").textContent, "for c");
+});
+
 // Whether anything in a form has been edited, which is one flag beside the
 // per-field ones rather than a fold over however many fields it has.
 test("a model knows whether any of its controls has been edited", async () => {

@@ -159,6 +159,8 @@ pub struct Bind {
     rules: Option<String>,
     /// The model that answers the rule this field cannot, where it has one.
     check: &'static str,
+    /// The form a change to this field revises, where it revises one.
+    revise: &'static str,
     /// The zone a time belongs to, where it is not the reader's own.
     zone: Option<String>,
 }
@@ -218,6 +220,10 @@ impl IntoAttributes for Bind {
         if !self.check.is_empty() {
             attributes.set("data-bind-check", self.check);
         }
+
+        if !self.revise.is_empty() {
+            attributes.set("data-bind-revise", self.revise);
+        }
     }
 }
 
@@ -242,6 +248,7 @@ impl<T: BindKind> Bindable for Signal<T> {
             group: None,
             arms: "",
             check: "",
+            revise: "",
             zone: None,
         }
     }
@@ -257,6 +264,7 @@ impl<T: BindKind> Bindable for crate::Bound<T> {
             group: self.group(),
             arms: self.arms(),
             check: self.check(),
+            revise: self.revise(),
             zone: None,
         }
     }

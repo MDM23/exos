@@ -8,7 +8,7 @@ use crate::valid;
 
 /// Expands a struct into itself plus its signal handle, field tokens and
 /// payload implementations.
-pub(crate) fn expand(item: TokenStream) -> TokenStream {
+pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
     let mut input = match syn::parse2::<ItemStruct>(item) {
         Ok(input) => input,
         Err(error) => return error.to_compile_error(),
@@ -32,6 +32,11 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     // macro's word and rustc knows nothing about it.
     let rules = match valid::rules(fields, |field| signal_name(&name, field)) {
         Ok(rules) => rules,
+        Err(error) => return error.to_compile_error(),
+    };
+
+    let revising = match revised(&mut input, form) {
+        Ok(revising) => revising,
         Err(error) => return error.to_compile_error(),
     };
 
@@ -121,6 +126,16 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         })
         .collect();
 
+    // A revising field is addressed by its form, whose id is the same name the
+    // record has: one identifier for the element, the route and the record.
+    let revises: Vec<&str> = names
+        .iter()
+        .map(|field| match revising.contains(field) {
+            true => state.as_str(),
+            false => "",
+        })
+        .collect();
+
     let built: Vec<TokenStream> = keys
         .iter()
         .zip(&rows)
@@ -128,8 +143,9 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         .zip(&labels)
         .zip(&arming)
         .zip(&checking)
+        .zip(&revises)
         .map(
-            |(((((key, row), asked), label), arming), checking)| match row {
+            |((((((key, row), asked), label), arming), checking), revise)| match row {
                 // The rows the model opens with, which is what `each` renders
                 // before the template. Everything after that is the browser's.
                 Some(_) => quote! {
@@ -161,6 +177,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
                     ::exos::Bound::new(__signal, #state, __asked)
                         .arming(#arming)
                         .checking(#checking)
+                        .revising(#revise)
                 }},
             },
         )
@@ -281,8 +298,72 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         )
         .collect();
 
+    let fresh = quote! {
+        let __initial = ::exos::serde_json::to_value(self)
+            .unwrap_or(::exos::serde_json::Value::Null);
+
+        #handle { #(#names: #built,)* }
+    };
+
+    let sends = match revising.is_empty() {
+        true => TokenStream::new(),
+        false => quote! {
+            __attributes.set(
+                "data-revise",
+                ::exos::IntoPayload::<#name>::payload(self),
+            );
+        },
+    };
+
+    // A form's handle is built inside its render and nowhere else, so it has
+    // one template. It names the element it is spread on, which is what a
+    // revision's patch finds it by, and says what a revision sends.
+    let (constructors, element, entry) = match form {
+        true => (
+            quote! {
+                /// Signal handles for this form's fields, holding what it
+                /// holds now.
+                pub fn signals(&self, _: ::exos::FormKey) -> #handle {
+                    #fresh
+                }
+            },
+            quote! {
+                __attributes.set("id", #state);
+
+                #sends
+            },
+            quote! {
+                ::exos::inventory::submit! { ::exos::ReviseEntry::new::<#name>() }
+            },
+        ),
+        false => (
+            quote! {
+                /// Signal handles for this model's fields, named after them.
+                pub fn signals() -> #handle
+                where
+                    Self: ::core::default::Default + ::exos::serde::Serialize,
+                {
+                    Self::default().to_signals()
+                }
+
+                /// Signal handles for this model's fields, starting at this
+                /// value rather than at the default.
+                pub fn to_signals(&self) -> #handle
+                where
+                    Self: ::exos::serde::Serialize,
+                {
+                    #fresh
+                }
+            },
+            TokenStream::new(),
+            TokenStream::new(),
+        ),
+    };
+
     quote! {
         #input
+
+        #entry
 
         #[doc = #handle_docs]
         #[derive(::core::clone::Clone, ::core::fmt::Debug)]
@@ -296,16 +377,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         impl #name {
             #(#tokens)*
 
-            /// Signal handles for this model's fields, named after them.
-            pub fn signals() -> #handle
-            where
-                Self: ::core::default::Default + ::exos::serde::Serialize,
-            {
-                let __initial = ::exos::serde_json::to_value(Self::default())
-                    .unwrap_or(::exos::serde_json::Value::Null);
-
-                #handle { #(#names: #built,)* }
-            }
+            #constructors
         }
 
         impl #handle {
@@ -374,6 +446,8 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
                     ),
                     __attributes,
                 );
+
+                #element
             }
         }
 
@@ -503,6 +577,37 @@ fn renamed(input: &ItemStruct) -> Option<TokenStream> {
         })
 }
 
+/// The fields marked `#[revises]`, with the mark taken off.
+///
+/// Refused on a plain model, where nothing renders the form to answer it.
+fn revised(input: &mut ItemStruct, form: bool) -> syn::Result<Vec<Ident>> {
+    let mut revising = Vec::new();
+
+    for field in &mut input.fields {
+        let Some(at) = field
+            .attrs
+            .iter()
+            .position(|attr| attr.path().is_ident("revises"))
+        else {
+            continue;
+        };
+
+        let mark = field.attrs.remove(at);
+
+        if !form {
+            return Err(syn::Error::new_spanned(
+                mark,
+                "only a form can be revised, since a revision is its render asked \
+                 for again; declare it with #[exos::form]",
+            ));
+        }
+
+        revising.extend(field.ident.clone());
+    }
+
+    Ok(revising)
+}
+
 /// What one field is called everywhere outside this crate: its signal in the
 /// client store, and its key in an action's body.
 ///
@@ -539,7 +644,7 @@ mod tests {
     use quote::format_ident;
 
     fn expand_ok(item: &str) -> String {
-        expand(item.parse().expect("valid item")).to_string()
+        expand(item.parse().expect("valid item"), false).to_string()
     }
 
     #[test]
@@ -716,6 +821,37 @@ mod tests {
             expand_ok(r#"struct Draft { #[valid(checked_by = "coupon")] code: String }"#);
 
         assert!(expanded.contains("compile_error"));
+    }
+
+    /// Nothing renders a plain model again, so nothing could answer the mark.
+    #[test]
+    fn revises_on_a_plain_model_is_refused() {
+        assert!(expand_ok("struct Draft { #[revises] sku: String }").contains("compile_error"));
+    }
+
+    /// A form's handle is built inside its render, so it has no `signals()`
+    /// anyone else could call, and the route can find it.
+    #[test]
+    fn a_form_is_registered_and_builds_its_handle_from_a_key() {
+        let expanded = expand(
+            "struct Draft { #[revises] sku: String }"
+                .parse()
+                .expect("valid item"),
+            true,
+        )
+        .to_string();
+        let state = signal_name(&format_ident!("Draft"), &format_ident!("__state"));
+
+        assert!(
+            expanded.contains("ReviseEntry :: new :: < Draft >"),
+            "{expanded}"
+        );
+        assert!(expanded.contains("FormKey"), "{expanded}");
+        assert!(!expanded.contains("fn to_signals"), "{expanded}");
+        assert!(
+            expanded.contains(&format!(r#"revising ("{state}")"#)),
+            "{expanded}"
+        );
     }
 
     /// Other serde attributes are none of this macro's business.

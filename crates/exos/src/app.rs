@@ -429,6 +429,7 @@ pub fn app() -> App {
 fn seal(routes: Router) -> Router {
     routes
         .merge(crate::asset_routes(discover::asset_sets()))
+        .merge(crate::form::routes())
         .merge(crate::live::routes())
         .merge(crate::valid::routes())
         // Inside the scope, which it reads, and outside everything else: the

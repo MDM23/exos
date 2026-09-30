@@ -14,6 +14,7 @@ to [docs/spec](../spec).
 | [loose ends](loose-ends.md) | eleven of the sixteen entries | five: the publish before a subscription, disabling a busy control, the publish index, precompiled expressions, and a navigation rendering what the tab already has |
 | [more than one instance](more-than-one-instance.md) | stages 1 to 4: a cluster with no sticky sessions, where signing out means the same thing everywhere | stage 5, the broker doing the filtering, which waits for a volume nothing has reached |
 | [observability](observability.md) | nothing; the crate emits no span, metric or log line | all five stages, and one field that has to be decided before the bus grows a second version |
+| [revising forms](revising-forms.md) | all four stages: a form is a model that renders itself, revised through one route, writing back only what the server changed, the newest answer winning | what a failed revision shows, and whether gated options become a helper |
 | [trusted proxies](trusted-proxies.md) | nothing; exos has never seen a peer address | all three stages, and the shape of one setting |
 
 Two documents have moved out because nothing in them is open: [sessions and

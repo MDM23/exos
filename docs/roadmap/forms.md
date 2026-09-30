@@ -874,3 +874,11 @@ happens to be the one that knows.
   no error element in the template is silent today by construction. A debug
   build should probably say so, the way `Effect::set` already asserts against a
   signal nothing can read.
+- **What signup becomes as a `Form`.** [Revising
+  forms](revising-forms.md#stage-4-a-form-is-a-model-that-renders-itself) makes
+  every form a model that renders itself, not only a revising one. For
+  [`examples/signup`](../../examples/signup) that turns `registration()` into
+  `impl Form for Signup` and hands the `id` to exos, but the wrapper the
+  confirmation patches over is still the application's. Whether that wrapper
+  stays or the confirmation needs a way to name the form's id is the
+  question.
