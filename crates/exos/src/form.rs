@@ -38,13 +38,15 @@ use crate::{
 /// }
 ///
 /// impl exos::Form for TeamForm {
-///     async fn render(&mut self, key: FormKey) -> Markup {
-///         let sports = Sport::of(&self.tenant).await;
+///     type Error = Error;
+///
+///     async fn render(&mut self, key: FormKey) -> Result<Markup, Error> {
+///         let sports = Sport::of(&self.tenant).await?;
 ///         self.sport = keep_or_preselect(&self.sport, &sports);
 ///
 ///         let form = self.signals(key);
 ///
-///         view! { <form {&form}> … </form> }
+///         Ok(view! { <form {&form}> … </form> })
 ///     }
 /// }
 /// ```
@@ -54,6 +56,14 @@ use crate::{
 /// `render` changed are written back, except one the reader edited while the
 /// request was out.
 pub trait Form: Validate + DeserializeOwned + Serialize + Send + Sized + 'static {
+    /// What a render fails with, answered the way a handler's failure is.
+    ///
+    /// The page gets it back from [`markup`](Self::markup) and hands it on with
+    /// `?`. A revision answers with its response, so whatever the application
+    /// layers on around its handlers says it here too. A form that reads
+    /// nothing names [`Infallible`](core::convert::Infallible).
+    type Error: IntoResponse + Send;
+
     /// The form's markup, for whatever the model holds.
     ///
     /// Decisions go above `self.signals(key)` and markup below it: the handle
@@ -61,12 +71,15 @@ pub trait Form: Validate + DeserializeOwned + Serialize + Send + Sized + 'static
     /// puts a value chosen for the reader on the first render. On a revision
     /// `self` is whatever the reader sent, judged by nothing, so read it the
     /// way the page would read a request.
-    fn render(&mut self, key: FormKey) -> impl Future<Output = Markup> + Send;
+    fn render(
+        &mut self,
+        key: FormKey,
+    ) -> impl Future<Output = Result<Markup, Self::Error>> + Send;
 
     /// The form, rendered.
     ///
     /// The one way in, for the page and the revision route alike.
-    fn markup(mut self) -> impl Future<Output = Markup> + Send {
+    fn markup(mut self) -> impl Future<Output = Result<Markup, Self::Error>> + Send {
         async move { self.render(FormKey(())).await }
     }
 }
@@ -152,7 +165,10 @@ async fn revised<T: Form>(body: Bytes) -> Response {
     };
 
     let before = wire(&form);
-    let patch = form.render(FormKey(())).await;
+    let patch = match form.render(FormKey(())).await {
+        Ok(patch) => patch,
+        Err(error) => return error.into_response(),
+    };
 
     let signals: Map<String, Value> = wire(&form)
         .into_iter()

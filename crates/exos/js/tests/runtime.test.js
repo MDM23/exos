@@ -682,6 +682,20 @@ test("the older of two overlapping revisions is dropped", async () => {
     assert.equal(window.document.getElementById("said").textContent, "for c");
 });
 
+// A render that failed is answered the way a failed handler is, so whatever
+// the application says about a failure, a dialog say, lands here too.
+test("a revision that failed applies the effect it was answered with", async () => {
+    const window = boot(`${revisable()}<p id="slot">before</p>`);
+
+    window.transport.responses.status = 500;
+    window.transport.responses.type = "text/event-stream";
+    window.transport.responses.body = `event: patch\ndata: <p id="slot">it failed</p>\n\n`;
+
+    await pick(window, "b");
+
+    assert.equal(window.document.getElementById("slot").textContent, "it failed");
+});
+
 // Whether anything in a form has been edited, which is one flag beside the
 // per-field ones rather than a fold over however many fields it has.
 test("a model knows whether any of its controls has been edited", async () => {

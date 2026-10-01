@@ -1446,6 +1446,14 @@
                 body: JSON.stringify(sent),
             });
 
+            // A render that failed answers the way a handler does, and an effect
+            // is applied whatever the status, for the reason `request` gives.
+            // What a newer revision has overtaken is dropped either way.
+            if ((response.headers?.get("content-type") ?? "").includes("text/event-stream")) {
+                if (revisions.get(id) === turn) await consume(response);
+                return;
+            }
+
             if (!response.ok) {
                 console.error(`[exos] ${id} could not be revised:`, response.status, form);
                 return;

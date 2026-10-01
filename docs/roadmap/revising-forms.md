@@ -42,14 +42,16 @@ depend on calls it again with what the reader has picked so far.
 
 ```rs
 impl exos::Form for TeamForm {
+    type Error = Error;
+
     /// The whole form, for whatever the reader has picked so far.
-    async fn render(&mut self, key: FormKey) -> Markup {
-        let sports = Sport::of(&self.tenant).await;
+    async fn render(&mut self, key: FormKey) -> Result<Markup, Error> {
+        let sports = Sport::of(&self.tenant).await?;
         self.sport = keep_or_preselect(&self.sport, &sports);
 
         let form = self.signals(key);
 
-        view! { <form {&form} …> … </form> }
+        Ok(view! { <form {&form} …> … </form> })
     }
 }
 ```
@@ -198,8 +200,15 @@ with whatever the reader has picked.
   already comes from its field, so two of one form on a page collide. That is
   the limit models have today, not a new one; per-row edit forms are where it
   will be felt first.
-- **A render is async**, even for a form that awaits nothing, because the trait
-  has one shape.
+- **A render is async and fallible**, even for a form that awaits nothing and
+  cannot fail, because the trait has one shape. Such a form names
+  `Infallible` as its error.
+- **A failed render is answered like a failed handler.** `Form::Error` is
+  `IntoResponse`, the page hands it on with `?`, and a revision answers with
+  its response, which the runtime applies when it is an effect whatever its
+  status, as it does for an action. An application that turns a failure into a
+  dialog therefore shows one here too, and a revision a newer one overtook
+  applies nothing, failure included.
 
 ## What exos will not do
 
@@ -234,10 +243,6 @@ with whatever the reader has picked.
 
 ## Open questions
 
-- **What a failed revision shows.** A revision that errors has no submission to
-  refuse, so an alert is too loud and silence leaves stale options on screen.
-  `render` answers with `Markup` for now, so a query that fails has nowhere to
-  go but the markup; a `Result` there waits for this answer.
 - **Whether gated options become a helper anyway**, for the lists small and
   static enough that a request is waste. That is the first alternative above,
   and it may deserve a name even though it is not this document's answer.

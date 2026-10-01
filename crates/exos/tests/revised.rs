@@ -28,22 +28,27 @@ struct Team {
     name: String,
 }
 
-/// The one tenant with a single sport has it chosen for the reader.
+/// The one tenant with a single sport has it chosen for the reader, and the
+/// one nobody can read fails the way a handler would.
 impl Form for Team {
-    async fn render(&mut self, key: FormKey) -> Markup {
-        if self.tenant == "solo" {
-            self.sport = String::from("football");
+    type Error = StatusCode;
+
+    async fn render(&mut self, key: FormKey) -> Result<Markup, StatusCode> {
+        match self.tenant.as_str() {
+            "solo" => self.sport = String::from("football"),
+            "down" => return Err(StatusCode::SERVICE_UNAVAILABLE),
+            _ => {}
         }
 
         let form = self.signals(key);
 
-        view! {
+        Ok(view! {
             <form {&form}>
                 <select {bind(&form.tenant)}></select>
                 <input {bind(&form.sport)}>
                 <input {bind(&form.name)}>
             </form>
-        }
+        })
     }
 }
 
@@ -78,7 +83,7 @@ fn solo() -> Team {
 /// control others depend on says which form it revises.
 #[tokio::test]
 async fn a_form_names_its_element_and_its_revising_controls() {
-    let html = Team::default().markup().await;
+    let html = Team::default().markup().await.expect("renders");
     let state = <Team as exos::Validate>::STATE;
 
     assert!(html.as_str().contains(&format!("id=\"{state}\"")), "{html}");
@@ -96,7 +101,7 @@ async fn a_form_names_its_element_and_its_revising_controls() {
 /// step exists to correct it afterwards.
 #[tokio::test]
 async fn a_value_chosen_for_the_reader_is_declared_on_first_render() {
-    let html = solo().markup().await;
+    let html = solo().markup().await.expect("renders");
 
     assert!(html.as_str().contains("football"), "{html}");
 }
@@ -151,4 +156,19 @@ async fn a_guard_refuses_a_revision() {
     let (status, _) = revise(app, state, exos::to_wire(&solo())).await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// A render that fails is answered with what it failed with, so whatever the
+/// application layers on says it as it would for a handler.
+#[tokio::test]
+async fn a_render_that_fails_answers_with_its_error() {
+    let state = <Team as exos::Validate>::STATE;
+    let down = Team {
+        tenant: String::from("down"),
+        ..Team::default()
+    };
+
+    let (status, _) = revise(exos::app(), state, exos::to_wire(&down)).await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
