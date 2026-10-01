@@ -49,10 +49,11 @@ use crate::{Frame, Id, Keys, Resolution, Sent, Violation, discover};
 /// added with [`route_layer`](Self::route_layer) reads
 /// [`session`](crate::session), [`locale`](crate::locale) and
 /// [`scope`](crate::scope) the way a handler does, and writes a scope the views
-/// under it can read. It also wraps the application's own routes and nothing
-/// else: exos's endpoints are merged around it later, since a stream and a
-/// field check answer the client runtime rather than a browser that could
-/// follow a redirect.
+/// under it can read. It also wraps the application's own routes, and the two
+/// of exos's that run the application's code: a field check calls its
+/// `checked_by` and a revision calls a form's render, so a guard refusing a
+/// page refuses those as it refuses an action. The stream and the assets run
+/// none of it and are merged around the guard later.
 ///
 /// ```ignore
 /// axum::serve(
@@ -415,6 +416,13 @@ pub fn app() -> App {
         routes
     };
 
+    // Here rather than in `seal`, so that what the application layers on wraps
+    // them: both call the application's own functions, which read whatever its
+    // guard puts in the scope exactly as a handler does.
+    let routes = routes
+        .merge(crate::form::routes())
+        .merge(crate::valid::routes());
+
     App {
         routes,
         serving: None,
@@ -429,9 +437,7 @@ pub fn app() -> App {
 fn seal(routes: Router) -> Router {
     routes
         .merge(crate::asset_routes(discover::asset_sets()))
-        .merge(crate::form::routes())
         .merge(crate::live::routes())
-        .merge(crate::valid::routes())
         // Inside the scope, which it reads, and outside everything else: the
         // stream needs the name as much as a handler does, and an asset request
         // that carries the cookie costs a header lookup and nothing more.

@@ -190,6 +190,10 @@ with whatever the reader has picked.
   itself does not render, provided `render` treats `self` as untrusted: on a
   revision it is an unjudged draft, `team` included, so it authorizes what it
   reads exactly as the page would.
+- **The application's guard answers it.** Both routes run application code, so
+  they are merged in with the application's routes and sit under whatever it
+  layers on, the way an action does. A form on a page served without a session
+  therefore needs its guard to let `/_exos/revise/{form}` through as well.
 - **One instance per page.** The id comes from the type, as every signal name
   already comes from its field, so two of one form on a page collide. That is
   the limit models have today, not a new one; per-row edit forms are where it

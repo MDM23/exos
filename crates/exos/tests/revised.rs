@@ -8,6 +8,8 @@
 use axum::{
     body::Body,
     http::{Request, StatusCode, header},
+    middleware::{Next, from_fn},
+    response::{IntoResponse as _, Response},
 };
 use exos::{Form, FormKey, Markup, Validate as _, bind, view};
 use serde::{Deserialize, Serialize};
@@ -45,7 +47,7 @@ impl Form for Team {
     }
 }
 
-async fn revise(form: &str, body: String) -> (StatusCode, String) {
+async fn revise(app: exos::App, form: &str, body: String) -> (StatusCode, String) {
     let request = Request::builder()
         .method("POST")
         .header("x-exos", "true")
@@ -54,10 +56,7 @@ async fn revise(form: &str, body: String) -> (StatusCode, String) {
         .body(Body::from(body))
         .expect("a valid request");
 
-    let response = exos::app()
-        .oneshot(request)
-        .await
-        .expect("the router answers");
+    let response = app.oneshot(request).await.expect("the router answers");
 
     let status = response.status();
 
@@ -107,7 +106,7 @@ async fn a_value_chosen_for_the_reader_is_declared_on_first_render() {
 #[tokio::test]
 async fn a_revision_answers_with_the_markup_and_what_changed() {
     let state = <Team as exos::Validate>::STATE;
-    let (status, body) = revise(state, exos::to_wire(&solo())).await;
+    let (status, body) = revise(exos::app(), state, exos::to_wire(&solo())).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
@@ -123,7 +122,7 @@ async fn a_revision_answers_with_the_markup_and_what_changed() {
 #[tokio::test]
 async fn a_revision_refuses_nothing() {
     let state = <Team as exos::Validate>::STATE;
-    let (status, body) = revise(state, exos::to_wire(&Team::default())).await;
+    let (status, body) = revise(exos::app(), state, exos::to_wire(&Team::default())).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
@@ -134,7 +133,22 @@ async fn a_revision_refuses_nothing() {
 
 #[tokio::test]
 async fn a_form_nobody_declared_is_not_found() {
-    let (status, _) = revise("nothing", String::from("{}")).await;
+    let (status, _) = revise(exos::app(), "nothing", String::from("{}")).await;
 
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// A revision runs the application's render, so the application's guard
+/// answers it the way it answers an action.
+#[tokio::test]
+async fn a_guard_refuses_a_revision() {
+    async fn guard(_: Request<Body>, _: Next) -> Response {
+        StatusCode::FORBIDDEN.into_response()
+    }
+
+    let app = exos::app().route_layer(from_fn(guard));
+    let state = <Team as exos::Validate>::STATE;
+    let (status, _) = revise(app, state, exos::to_wire(&solo())).await;
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
 }
