@@ -66,6 +66,9 @@ pub trait ModelFields {
 ///
 /// Called by the `#[model]` expansion, which is the only thing that knows
 /// which fields hold rows and of what.
+///
+/// What the row is, added or trashed, is no field of it and keeps its key
+/// both ways; see [`Rows`](crate::Rows).
 #[doc(hidden)]
 pub fn nested_rows<T: ModelFields>(value: Value, outwards: bool) -> Value {
     let Value::Array(rows) = value else {
@@ -73,15 +76,22 @@ pub fn nested_rows<T: ModelFields>(value: Value, outwards: bool) -> Value {
     };
 
     let renamed = rows.into_iter().map(|row| {
-        let Value::Object(fields) = row else {
+        let Value::Object(mut fields) = row else {
             return row;
         };
 
-        Value::Object(if outwards {
+        let kind = fields.remove(crate::rows::KIND);
+        let mut renamed = if outwards {
             outward::<T>(&fields)
         } else {
             inward::<T>(fields)
-        })
+        };
+
+        if let Some(kind) = kind {
+            renamed.insert(crate::rows::KIND.to_owned(), kind);
+        }
+
+        Value::Object(renamed)
     });
 
     Value::Array(renamed.collect())

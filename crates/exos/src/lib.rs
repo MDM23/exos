@@ -81,7 +81,7 @@ pub use crate::{
     number::Symbols,
     render::{AttributeValue, Flag, Markup, Render, escape_display_into, escape_into},
     response::Page,
-    rows::{Row, RowModel, Rows, RowsOf},
+    rows::{Row, RowModel, Rows, RowsIntoIter, RowsIter, RowsOf},
     scope::{Scope, detached, scope, with_scope},
     session::{Id, Session, session},
     signal::{Bound, Field, Placement, Signal, signal},

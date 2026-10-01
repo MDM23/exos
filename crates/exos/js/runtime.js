@@ -246,7 +246,7 @@
                 "$", "el", "ev",
                 "get", "post", "put", "patch", "del",
                 "attr", "append", "focus", "debounce",
-                "rows", "addRow", "dropRow", "rowError", "dirty", "msg",
+                "rows", "addRow", "dropRow", "trashRow", "restoreRow", "rowError", "dirty", "msg",
                 "date", "time", "ago",
                 statement ? source : `return (${source})`,
             );
@@ -297,6 +297,17 @@
         return el ? [...el.children].filter((child) => child.hasAttribute("data-row")) : [];
     }
 
+    // A row says what it is in `data-row`: empty for one the form opened with,
+    // `added` for one the browser made since, `trashed` for an opened one the
+    // next submission drops. A trashed row is still a row, because restoring
+    // it is one click, but it is no longer counted: the server numbers the
+    // rows it keeps, so a position is one among those.
+    const trashed = (row) => row.getAttribute("data-row") === "trashed";
+
+    function liveRowsIn(el) {
+        return rowsIn(el).filter((row) => !trashed(row));
+    }
+
     // The row `el` sits in, within the named group. Walked rather than
     // `closest`, so a group inside a row answers for the group that was asked
     // for rather than for whichever row is nearest.
@@ -315,16 +326,26 @@
     // carries the same field names and only position tells them apart.
     function rowIndex(el, key) {
         const row = rowOf(el, key);
-        return row ? rowsIn(row.parentElement).indexOf(row) : -1;
+        return row ? liveRowsIn(row.parentElement).indexOf(row) : -1;
     }
 
     // The body's rows, read out of the group in the order they are shown. Not
     // a loop over data that renders: the values are in the DOM already and
     // this walks them once, when the request is built.
+    //
+    // What a row is rides along under `~row`, a key no field can spell, so a
+    // revision renders an added row as added and a trashed one as trashed and
+    // still restorable. A handler never sees a trashed row: `Rows` keeps it
+    // out of everything it hands out.
     function collectRows(el, key, fields) {
-        return rowsIn(group(key)).map((row) =>
-            Object.fromEntries(fields.map((field) => [field, read(resolve(row, field))])),
-        );
+        return rowsIn(group(key)).map((row) => {
+            const values = Object.fromEntries(
+                fields.map((field) => [field, read(resolve(row, field))]),
+            );
+            const kind = row.getAttribute("data-row");
+
+            return kind ? { ...values, "~row": kind } : values;
+        });
     }
 
     function addRow(el, key, state) {
@@ -342,16 +363,61 @@
 
         // The new row goes on the end, so no message moves. What does go is
         // what the server said about how many rows there are.
-        forgetRows(el, key, state, rowsIn(into).length);
+        forgetRows(el, key, state, liveRowsIn(into).length);
         into.appendChild(clone);
+        edited(el, state);
     }
 
     function dropRow(el, key, state) {
         const row = rowOf(el, key);
         if (!row) return;
 
-        forgetRows(el, key, state, rowsIn(row.parentElement).indexOf(row));
+        if (!trashed(row)) forgetRows(el, key, state, rowIndex(row, key));
         row.remove();
+        edited(el, state);
+    }
+
+    // The form opts into this one where a row has something to lose. A row
+    // the browser added has not and goes as `dropRow` would. One the form
+    // opened with is only trashed, so the reader sees what the save will drop
+    // and can restore it until the form is sent.
+    function trashRow(el, key, state) {
+        const row = rowOf(el, key);
+        if (!row || trashed(row)) return;
+
+        if (row.getAttribute("data-row") === "added") return dropRow(el, key, state);
+
+        forgetRows(el, key, state, rowIndex(row, key));
+        row.setAttribute("data-row", "trashed");
+        lockRow(row);
+        edited(el, state);
+    }
+
+    function restoreRow(el, key, state) {
+        const row = rowOf(el, key);
+        if (!row || !trashed(row)) return;
+
+        row.setAttribute("data-row", "");
+        lockRow(row);
+        forgetRows(el, key, state, rowIndex(row, key));
+        edited(el, state);
+    }
+
+    // A trashed row's controls take no input and no focus: what is typed into
+    // a row that is going would be thrown away, and the keyboard would walk
+    // through fields that no longer count. Its buttons stay, since one of them
+    // is the way back. Read off the row rather than passed in, so binding a
+    // row that arrives trashed and trashing one are the same call.
+    function lockRow(row) {
+        for (const control of row.querySelectorAll("input, select, textarea")) {
+            control.inert = trashed(row);
+        }
+    }
+
+    // Adding, removing, trashing and restoring a row edit the form as much as
+    // typing does, so they set the flag `forgetField` sets.
+    function edited(el, state) {
+        if (state) write(dirtyKey(resolve(el, state)), true);
     }
 
     // What the server said about a group, retired because the group changed
@@ -462,6 +528,8 @@
             (from, key, fields) => collectRows(from, key, fields),
             addRow,
             dropRow,
+            trashRow,
+            restoreRow,
             rowError,
             (name) => isDirty(el, name),
             say,
@@ -1055,6 +1123,11 @@
         if (root.nodeType !== Node.ELEMENT_NODE) return;
         if (root.matches(BINDING_SELECTOR)) bind(root);
         for (const el of root.querySelectorAll(BINDING_SELECTOR)) bind(el);
+
+        // A revision renders a trashed row back as one, and what arrives new
+        // is locked the way a row the reader trashed is.
+        for (const row of root.querySelectorAll('[data-row="trashed"]')) lockRow(row);
+        if (root.matches('[data-row="trashed"]')) lockRow(root);
     }
 
     function unbindTree(root) {
@@ -1667,6 +1740,11 @@
         syncAttributes(from, to);
         morphChildren(from, to);
         reapply(from);
+
+        // The markup knows whether a row is trashed but not that its controls
+        // are locked for it, so the lock is read off the row again rather than
+        // left to whatever the attributes just synced to.
+        if (from.hasAttribute("data-row")) lockRow(from);
     }
 
     // Whether two same-shaped elements are live in different ways. A control

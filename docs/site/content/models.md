@@ -142,6 +142,23 @@ That is the whole of it. No ids, no routes, no list on the server: `add` clones
 the template and `remove` takes an element off the page, and neither is a
 request.
 
+**Where a row has something to lose, trash it instead.** `trash` drops a row
+the browser added, which has nothing to lose, but keeps one the form opened
+with on screen as `data-row="trashed"`, its controls locked, until the form is
+sent. The reader sees what the save will drop and `restore` takes it back out
+of the trash. A trashed row survives a revision, and the handler never meets
+it: `Rows` hands out only the rows that stay. Showing it is the stylesheet's,
+which is why trashing is a choice and not what `remove` does.
+
+```rust
+<button type="button" {on_click(|_| form.lines.trash())}>"Remove"</button>
+<button type="button" {on_click(|_| form.lines.restore())}>"Undo"</button>
+```
+
+```css
+[data-row="trashed"] { opacity: 0.5; }
+```
+
 **A row needs no name because a clone is its own scope.** The runtime keys
 signals per element, so every row declares the same field name and holds its own
 value, which is the rule that has always given [a row's own
@@ -164,7 +181,8 @@ is written under the third row, so removing a row would leave every message
 after it about a different one. They are retired rather than renumbered, and
 the next submit says what is wrong with the rows as they then are. That is the
 price of never inventing an id, and editing a row clears its own message
-either way.
+either way. A trashed row has no position: the third row is the third of the
+rows that stay.
 
 ## Rules on a model
 

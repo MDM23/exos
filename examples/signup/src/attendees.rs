@@ -88,6 +88,19 @@ mod tests {
         assert_eq!(marks, 2, "the template and the one row it opens with");
     }
 
+    /// A clone of the template is a row the browser added, which trashing
+    /// drops. Trashing the row the form opened with keeps it instead.
+    #[tokio::test]
+    async fn the_template_is_an_added_row_and_the_opening_row_is_not() {
+        let html = get("/").await;
+
+        assert_eq!(
+            html.matches("data-row=\"added\"").count(),
+            1,
+            "{html:.3000}"
+        );
+    }
+
     /// A row added and never typed into still has to be a row. The template
     /// carries the row model's `Default`, not nothing: a field that started as
     /// `null` would be one the server cannot read back.

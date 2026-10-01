@@ -164,8 +164,8 @@ One declaration is the client state, the request body and the rules. See
 | `handle.refused()` | Whether there is one |
 | `Model<T>` | The body extractor, which renames, deserializes and checks before a handler runs |
 | `to_wire(&value)` | A model as the body the extractor reads, for a server that already knows what to send |
-| `Rows<T>` | The field type for [repeating groups](models#repeating-groups): `iter`, `len`, `is_empty` |
-| `RowsOf<T>` | Its handle: `key`, `add`, `remove`, `error`, `invalid`, `each(render)` |
+| `Rows<T>` | The field type for [repeating groups](models#repeating-groups): `iter`, `len`, `is_empty`, over the rows that stay |
+| `RowsOf<T>` | Its handle: `key`, `add`, `remove`, `trash`, `restore`, `error`, `invalid`, `each(render)` |
 
 A row's handle derefs to the row model's own, and declares the row when put on
 its root element. Adding and removing a row costs no round trip.
@@ -361,6 +361,7 @@ your own uses.
 | `--exos-progress-color`, `-height`, `-shadow`, `-z-index`, `-duration`, `-fade` | What it looks like |
 | `data-keep-scroll` | Keeps the scroll position across a link's navigation; written by `Link::keep_scroll()` |
 | `data-reload` | Opts a link out of client-side navigation; written by `Link::reload()` |
+| `data-row="trashed"` | A row the next submission drops, for a stylesheet to show; written by `RowsOf::trash()` |
 
 The element a call came from carries `aria-busy` for the duration, which is
 what says where the work is happening.

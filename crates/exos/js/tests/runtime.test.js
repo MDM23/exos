@@ -1195,25 +1195,33 @@ test("the first of two requests to answer does not unmark the element", async ()
 // whole point is that a row needs no name: a clone is its own signal scope, so
 // adding one is a DOM copy and the submission reads them back out at the end.
 
-/** One row of the group below, template and rendered row alike. */
-const rowOf = (state) =>
-    `<div data-signals='{"name":""}' data-row>` +
+/** One row of the group below, of `kind`: the template renders an added one. */
+const rowOf = (state, kind = "") =>
+    `<div data-signals='{"name":""}' data-row="${kind}">` +
     `<input data-bind="name" data-bind-state="${state}" data-bind-rows="g">` +
     `<button type="button" data-on-click="dropRow(el, 'g', '${state}')">x</button>` +
+    `<button type="button" class="trash" data-on-click="trashRow(el, 'g', '${state}')">-</button>` +
+    `<button type="button" class="restore" data-on-click="restoreRow(el, 'g', '${state}')">` +
+    `undo</button>` +
     `</div>`;
 
 /** A group as the server renders it: the template, then the rows it opened with. */
 const group = (rows = 1, state = "errors") =>
-    `<form data-signals-root='{"${state}":{}}' ` +
+    `<form id="f" data-signals-root='{"${state}":{}}' ` +
     `data-on-submit="post('/save', {'g': rows(el, 'g', ['name'])})">` +
     `<div data-rows="g">` +
-    `<template>${rowOf(state)}</template>` +
+    `<template>${rowOf(state, "added")}</template>` +
     Array.from({ length: rows })
         .map(() => rowOf(state))
         .join("") +
     `</div>` +
     `<button id="add" type="button" data-on-click="addRow(el, 'g', '${state}')">add</button>` +
     `</form>`;
+
+const submit = (window) =>
+    window.document
+        .querySelector("form")
+        .dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
 
 /** Types `text` into the nth row's field, the way a person would. */
 function fill(window, nth, text) {
@@ -1260,12 +1268,14 @@ test("the submission collects the rows in the order they are shown", async () =>
         .dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
     await settled();
 
+    // The added row says so, which is what lets a revision render it back as
+    // one the browser made rather than one the form opened with.
     assert.deepEqual(window.transport.requests[0].body, {
-        g: [{ name: "Ada" }, { name: "Grace" }],
+        g: [{ name: "Ada" }, { name: "Grace", "~row": "added" }],
     });
 });
 
-test("a row removed in the browser is gone from the submission", async () => {
+test("a row added in the browser and removed again is gone from the submission", async () => {
     const window = boot(group(1));
 
     click(window, "#add");
@@ -1275,17 +1285,132 @@ test("a row removed in the browser is gone from the submission", async () => {
     fill(window, 1, "Grace");
     await settled();
 
-    // The first row's own button, so this also checks that `dropRow` walks up
+    // The second row's own button, so this also checks that `dropRow` walks up
     // to the row it was clicked inside rather than to some other one.
+    window.document
+        .querySelectorAll("[data-row]")[1]
+        .querySelector("button")
+        .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await settled();
+
+    submit(window);
+    await settled();
+
+    assert.equal(window.document.querySelectorAll("[data-row]").length, 1);
+    assert.deepEqual(window.transport.requests[0].body, { g: [{ name: "Ada" }] });
+});
+
+test("removing a row the form opened with drops it there and then", async () => {
+    const window = boot(group(1));
+
     click(window, "[data-row] button");
     await settled();
 
-    window.document
-        .querySelector("form")
-        .dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    submit(window);
     await settled();
 
-    assert.deepEqual(window.transport.requests[0].body, { g: [{ name: "Grace" }] });
+    assert.equal(window.document.querySelectorAll("[data-row]").length, 0);
+    assert.deepEqual(window.transport.requests[0].body, { g: [] });
+});
+
+// Where a form opts into the trash, a row it opened with is kept on screen as
+// trashed, for the reader to see and restore until the form is sent.
+test("trashing a row the form opened with keeps it, as trashed", async () => {
+    const window = boot(group(1));
+
+    fill(window, 0, "Ada");
+    click(window, "[data-row] .trash");
+    await settled();
+
+    const row = window.document.querySelector("[data-row]");
+    assert.equal(row.getAttribute("data-row"), "trashed");
+    assert.ok(row.querySelector("input").inert, "nothing typed into it would count");
+    assert.ok(!row.querySelector(".restore").inert, "and the way back is not locked");
+
+    submit(window);
+    await settled();
+
+    assert.deepEqual(window.transport.requests[0].body, {
+        g: [{ name: "Ada", "~row": "trashed" }],
+    });
+});
+
+test("trashing a row the browser added drops it, having nothing to lose", async () => {
+    const window = boot(group(0));
+
+    click(window, "#add");
+    await settled();
+
+    click(window, "[data-row] .trash");
+    await settled();
+
+    assert.equal(window.document.querySelectorAll("[data-row]").length, 0);
+});
+
+test("restoring a row puts it back as it was", async () => {
+    const window = boot(group(1));
+
+    fill(window, 0, "Ada");
+    click(window, "[data-row] .trash");
+    await settled();
+
+    click(window, "[data-row] .restore");
+    await settled();
+
+    const row = window.document.querySelector("[data-row]");
+    assert.equal(row.getAttribute("data-row"), "");
+    assert.ok(!row.querySelector("input").inert);
+
+    submit(window);
+    await settled();
+
+    assert.deepEqual(window.transport.requests[0].body, { g: [{ name: "Ada" }] });
+});
+
+// The server numbers the rows it keeps, so a message about its first row is
+// about the first one still standing.
+test("a trashed row is not counted when a message finds its row", async () => {
+    const window = boot(group(2));
+
+    click(window, "[data-row] .trash");
+    await settled();
+
+    window.exos.signals.errors = { "g.0.name": "needed" };
+    await settled();
+
+    const [gone, kept] = window.document.querySelectorAll("[data-row] input");
+    assert.ok(!gone.hasAttribute("aria-invalid"));
+    assert.equal(kept.getAttribute("aria-invalid"), "true");
+});
+
+test("changing the rows is an edit", async () => {
+    const window = boot(
+        group(1) + `<p id="flag" data-text="dirty('errors') ? 'edited' : 'pristine'"></p>`,
+    );
+    await settled();
+
+    assert.equal(window.document.getElementById("flag").textContent, "pristine");
+
+    click(window, "[data-row] button");
+    await settled();
+
+    assert.equal(window.document.getElementById("flag").textContent, "edited");
+});
+
+// The markup a revision sends says the row is trashed and nothing about its
+// controls, which the runtime locked. The lock is read off the row again.
+test("a trashed row stays locked when the form is morphed", async () => {
+    const window = boot(group(1));
+
+    click(window, "[data-row] .trash");
+    await settled();
+
+    const next = window.document.createElement("div");
+    next.innerHTML = group(1).replace(/data-row=""/, 'data-row="trashed"');
+    window.exos.morph(window.document.getElementById("f"), next.firstElementChild);
+    await settled();
+
+    assert.ok(window.document.querySelector("[data-row] input").inert);
 });
 
 // A message names a row by where it sits, so the group changing shape decides
