@@ -339,7 +339,7 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
 ///
 /// Every declared language rather than the ones being watched, because this
 /// node cannot see what the tabs on another one watch. Narrowing it to those
-/// is a matter of what [`in_every_language`] is handed.
+/// is a matter of what `in_every_language` is handed.
 ///
 /// # What it costs
 ///

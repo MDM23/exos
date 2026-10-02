@@ -46,7 +46,7 @@ use crate::{
 ///
 ///         let form = self.signals(key);
 ///
-///         Ok(view! { <form {&form}> … </form> })
+///         Ok(view! { <form {&form}> ... </form> })
 ///     }
 /// }
 /// ```
@@ -71,10 +71,7 @@ pub trait Form: Validate + DeserializeOwned + Serialize + Send + Sized + 'static
     /// puts a value chosen for the reader on the first render. On a revision
     /// `self` is whatever the reader sent, judged by nothing, so read it the
     /// way the page would read a request.
-    fn render(
-        &mut self,
-        key: FormKey,
-    ) -> impl Future<Output = Result<Markup, Self::Error>> + Send;
+    fn render(&mut self, key: FormKey) -> impl Future<Output = Result<Markup, Self::Error>> + Send;
 
     /// The form, rendered.
     ///

@@ -231,7 +231,7 @@ impl Browser {
     ///
     /// # Panics
     ///
-    /// If nothing arrives within [`PATIENCE`], or if no stream is open, which
+    /// If nothing arrives within five seconds, or if no stream is open, which
     /// means nothing this tab has been served held a live fragment.
     pub async fn next(&mut self) -> Step {
         let step = loop {
