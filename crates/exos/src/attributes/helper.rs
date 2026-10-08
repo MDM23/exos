@@ -301,6 +301,12 @@ impl<T: BindKind> BindKind for Vec<T> {
     const KIND: &'static str = T::KIND;
 }
 
+/// An optional value binds like the value. It is how an `Instant` field starts
+/// out blank: an emptied `datetime-local` control sends `null`, which is `None`.
+impl<T: BindKind> BindKind for Option<T> {
+    const KIND: &'static str = T::KIND;
+}
+
 /// Text content, kept in sync with the expression.
 pub fn text<T>(expression: Js<T>) -> Attr {
     Attr::new("data-text", source(expression))

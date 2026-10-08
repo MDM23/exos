@@ -800,10 +800,11 @@
     // Read as UTC first and then corrected by the offset that guess has, twice,
     // because the offset an hour either side of a transition is not the offset
     // at the answer. An hour a zone skips or repeats has no one instant to be,
-    // and what comes back for one is the later reading.
+    // and what comes back for one is the later reading. An emptied control is
+    // no instant at all, which an `Option<Instant>` reads as `None`.
     function instantOf(text, zone) {
         const naive = instantAt(text.length === 16 ? `${text}:00Z` : `${text}Z`);
-        if (naive === null) return "";
+        if (naive === null) return null;
 
         let at = naive;
         for (let pass = 0; pass < 2; pass += 1) at = naive - offsetAt(at, zone);

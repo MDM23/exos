@@ -2343,6 +2343,16 @@ test("a wall clock typed into a control reaches the model as an instant", async 
     assert.equal(window.exos.signals.at, AT);
 });
 
+test("an emptied control reaches the model as no instant", async () => {
+    const window = boot(control);
+    const field = window.document.getElementById("field");
+
+    field.value = "";
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+
+    assert.equal(window.exos.signals.at, null);
+});
+
 test("and the instant reaches the control as the wall clock again", async () => {
     const window = boot(control);
     Object.assign(window.exos.signals, { at: AT });
