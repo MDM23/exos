@@ -873,7 +873,13 @@ happens to be the one that knows.
 - **What a form does with a rule it cannot show.** A violation on a field with
   no error element in the template is silent today by construction. A debug
   build should probably say so, the way `Effect::set` already asserts against a
-  signal nothing can read.
+  signal nothing can read. Neither side can tell for sure. The runtime cannot,
+  because a message is read through an ordinary expression over the whole
+  record and nothing tracks which keys an expression reads. The server cannot
+  at the refusal, because that is a later request than the render. What is
+  left is a render-time check that a field with a control never had `error()`
+  asked of it, which is wrong wherever the message is shown in another fragment
+  or in a summary over the whole record. Wait for a form that lost a message.
 - **What signup becomes as a `Form`.** [Revising
   forms](revising-forms.md#stage-4-a-form-is-a-model-that-renders-itself) makes
   every form a model that renders itself, not only a revising one. For
