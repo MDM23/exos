@@ -364,7 +364,8 @@ your own uses.
 | `data-row="trashed"` | A row the next submission drops, for a stylesheet to show; written by `RowsOf::trash()` |
 
 The element a call came from carries `aria-busy` for the duration, which is
-what says where the work is happening.
+what says where the work is happening, and takes no second click or submit
+until it is done.
 
 ## Endpoints exos mounts
 

@@ -115,6 +115,16 @@ on_click(move |_| {
 
 Follows from: server state is markup, and a patch always wins.
 
+## A form is not sent twice
+
+A double click, or Enter pressed twice on a slow connection, sends one request.
+Nothing is written for it and no control is disabled, so focus stays where it
+was. A click or submit on an element still waiting on its own request is
+dropped, and other elements on the page stay usable.
+
+Follows from: `aria-busy` is owned by the requests waiting on an element, so
+the runtime always knows which elements are mid-request.
+
 ## A dropped connection repairs itself
 
 A reconnect fetches the current URL and morphs it in, and every fragment on

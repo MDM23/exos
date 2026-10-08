@@ -105,7 +105,9 @@ every trip reads as a rendering fault rather than as progress.
 
 Actions do not draw it. The element a click came from carries `aria-busy` for
 the duration, and a disabled button, a spinner or a skeleton says where the
-work is happening better than a bar at the top of the window can.
+work is happening better than a bar at the top of the window can. While it
+does, a second click or submit on that element is dropped, so a double click or
+Enter pressed twice sends one request.
 
 What the bar looks like is CSS. The runtime writes how far along it is and the
 rest is custom properties, so a theme sets values rather than rules:

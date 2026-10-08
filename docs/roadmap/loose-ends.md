@@ -271,37 +271,32 @@ Two answers, and choosing is the work. Refusing to change a session once its
 response has gone makes the mistake loud where it is made. Documenting that the
 session is settled before the stream starts is cheaper, and leaves it silent.
 
-## Nothing disables a busy control
+## A busy control took a second click
 
-`aria-busy` is advisory. It says work is happening and prevents none of it, so a
-second click during a request sends a second request, and a form slow enough to
-be doubted is a form that gets submitted twice.
+**Done**, in [runtime.js](../../crates/exos/js/runtime.js). `aria-busy` was
+advisory: it said work was happening and prevented none of it, so a second click
+during a request sent a second request, and a form slow enough to be doubted was
+a form that got submitted twice.
 
-Most of the answer is already an application's to write, and that is worth
-recording before anybody builds machinery for it. The attribute is set
-synchronously, before the `await`, so this blocks the second click rather than
-racing it:
+A click or a submit on an element still waiting on its own request is now
+dropped. The count the busy marker is owned by already says which elements
+those are, so the guard is one line where events are delegated. Three things
+decided its shape.
 
-```css
-[aria-busy="true"] {
-    pointer-events: none;
-}
-```
+- **Dropped, not disabled.** A disabled element loses focus, which hands the
+  caret back to the body in the middle of somebody's typing. Nothing on the
+  element changes, so nothing is taken away from it.
+- **The keyboard is covered by the same line.** Enter or Space on a focused
+  button arrives as a click, and Enter in a text field as a submit, which is
+  where a `pointer-events: none` rule in a stylesheet fell short.
+- **Only the element that is waiting.** A busy `<form {on_submit(...)}>` refuses
+  a second submit and nothing else, so its fields stay live, and another button
+  on the page is another request rather than the same one again. Other events
+  pass too: a debounced field and the form around it both being in flight is the
+  case the counting exists for.
 
-Two things it does not cover. The keyboard goes straight past it: a focused
-button still activates with Enter or Space, and Enter in a text field still
-submits. And the element marked busy is the one carrying the handler, so for
-`<form {on_submit(...)}>` that rule freezes every field in the form rather than
-the button, which is either exactly right or far too much depending on how long
-the request takes.
-
-Whether exos should write `disabled` itself is the open question, and what keeps
-it open is that the obvious version is wrong in both directions. A framework
-that disables a control for the length of a request also disables it where a
-second click was wanted, and a disabled element loses focus, which hands the
-caret back to the body in the middle of somebody's typing. An application that
-wants it today writes `prop("disabled", ...)` over a model field the handler
-clears, which is a few lines and keeps the policy where the policy belongs.
+An application that wants a control to look disabled still writes
+`prop("disabled", ...)` over a model field, or styles `[aria-busy="true"]`.
 
 ## Publishing scans every connection
 
