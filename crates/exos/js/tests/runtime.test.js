@@ -1168,17 +1168,18 @@ test("a patch landing mid-request leaves the busy marker on", async () => {
 // waiting, not to whichever of them answers first. A debounced field and the
 // form around it are both in flight on one element often enough.
 test("the first of two requests to answer does not unmark the element", async () => {
-    const window = boot(acting);
+    const window = boot(
+        `<button id="go" data-on-click="post('/drafts')" data-on-keyup="post('/drafts')">x</button>`,
+    );
     const go = window.document.getElementById("go");
     const answers = [];
 
     window.fetch = () => new Promise((resolve) => answers.push(resolve));
 
-    const click = () => go.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const answer = () => answers.shift()({ ok: true, status: 204, headers: { get: () => null } });
 
-    click();
-    click();
+    go.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    go.dispatchEvent(new window.KeyboardEvent("keyup", { bubbles: true }));
 
     answer();
     await settled();
@@ -1189,6 +1190,30 @@ test("the first of two requests to answer does not unmark the element", async ()
     await settled();
 
     assert.ok(!go.hasAttribute("aria-busy"), "and gone once nothing is");
+});
+
+// What aria-busy shows, the click honours: an element waiting on its request
+// does not send the same one again.
+test("a click or a submission still in flight is not sent twice", async () => {
+    const window = boot(
+        `${acting}<form id="form" data-on-submit="post('/drafts')"><button>y</button></form>`,
+    );
+    let sent = 0;
+
+    window.fetch = () => {
+        sent += 1;
+        return new Promise(() => {});
+    };
+
+    const go = window.document.getElementById("go");
+    const form = window.document.getElementById("form");
+
+    for (let twice = 0; twice < 2; twice += 1) {
+        go.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        form.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    }
+
+    assert.equal(sent, 2, "one each");
 });
 
 // A repeating group is a <template> and however many rows are beside it. The

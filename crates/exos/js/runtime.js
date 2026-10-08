@@ -1266,6 +1266,13 @@
             if (!el) return;
 
             if (type === "submit") ev.preventDefault();
+
+            // A click or a submission on an element still waiting for the last
+            // one is that one again: a double click, or Enter pressed twice.
+            // aria-busy already says so on the page, and sending it a second
+            // time would write twice.
+            if ((type === "click" || type === "submit") && waiting.has(el)) return;
+
             evaluate(el.getAttribute(attribute), el, ev, true);
         });
     }
