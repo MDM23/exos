@@ -7,7 +7,7 @@ to [docs/spec](../spec).
 
 | Document | Built | Left |
 | --- | --- | --- |
-| [async fragments](async-fragments.md) | nothing | all five stages, and it changes code that exists rather than adding beside it |
+| [async fragments](async-fragments.md) | stage 1, the recorder, which was never the blocker it looked like | stages 2 to 5, and they change code that exists rather than adding beside it |
 | [directed effects](directed-effects.md) | stages 1 to 3: a connection knows who it is, `send` reaches every tab an audience has open | stage 4, what a toast *is*, which is two open questions rather than a chore |
 | [forms](forms.md) | stages 0 to 3, 5, 6, and the gate half of 4 | `required_when`, which waits for a form that wants one |
 | [localization](localization.md) | stages 1, 2, 4, 5 and the count half of 3: locales, messages, a count the browser picks its own sentence for, live fragments in the reader's language, dates and times | the rest of stage 3, text from other crates (waits for one that needs it) |

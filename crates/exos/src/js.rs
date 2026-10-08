@@ -142,10 +142,10 @@ pub trait IntoPayload<T> {
 //                                 THE RECORDER
 // -----------------------------------------------------------------------------
 
-thread_local! {
-    /// A stack, so a handler nested inside a [`when`] branch records into its
-    /// own frame.
-    static FRAMES: RefCell<Vec<Vec<String>>> = const { RefCell::new(Vec::new()) };
+tokio::task_local! {
+    /// The innermost frame. A [`when`] branch scopes its own over its parent's
+    /// and the parent's comes back when it ends, unwinding included.
+    static FRAME: RefCell<Vec<String>>;
 }
 
 /// Runs `body` with a fresh recording frame and returns the script it built.
@@ -160,10 +160,10 @@ thread_local! {
 /// assert_eq!(script, "a(); b()");
 /// ```
 pub fn record(body: impl FnOnce()) -> String {
-    FRAMES.with(|frames| frames.borrow_mut().push(Vec::new()));
-    body();
-
-    FRAMES.with(|frames| frames.borrow_mut().pop().unwrap_or_default().join("; "))
+    FRAME.sync_scope(RefCell::default(), || {
+        body();
+        FRAME.with(|frame| frame.take().join("; "))
+    })
 }
 
 /// Appends a statement to the innermost recording frame.
@@ -174,13 +174,15 @@ pub fn record(body: impl FnOnce()) -> String {
 /// meaning, since it is not a value and there is nowhere for it to go, so this
 /// says so rather than silently doing nothing.
 pub fn emit(statement: impl Into<String>) {
-    FRAMES.with(|frames| match frames.borrow_mut().last_mut() {
-        Some(frame) => frame.push(statement.into()),
-        None => panic!(
+    if FRAME
+        .try_with(|frame| frame.borrow_mut().push(statement.into()))
+        .is_err()
+    {
+        panic!(
             "this only works inside a handler, such as on_click(|_| ..); \
              called outside one there is nothing to record into"
-        ),
-    });
+        );
+    }
 }
 
 /// Branches in the browser.
@@ -357,6 +359,15 @@ mod tests {
     #[test]
     #[should_panic(expected = "only works inside a handler")]
     fn emitting_outside_a_handler_says_so() {
+        emit("orphan()");
+    }
+
+    /// A handler that panics takes its frame with it, rather than leaving one
+    /// behind on the thread for a stray statement to land in.
+    #[test]
+    #[should_panic(expected = "only works inside a handler")]
+    fn a_panicking_handler_leaves_no_frame_behind() {
+        let _ = std::panic::catch_unwind(|| record(|| panic!("in a handler")));
         emit("orphan()");
     }
 

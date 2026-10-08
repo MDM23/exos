@@ -1,9 +1,10 @@
 # Asynchronous fragments
 
-Letting a live fragment await, and the two things that have to change first.
+Letting a live fragment await, and the one thing that has to change first.
 
-Status: not built, and unlike the rest of this roadmap it changes code that
-exists rather than adding beside it.
+Status: stage 1 is done, and turned out not to be a blocker. The rest is not
+built, and unlike the rest of this roadmap it changes code that exists rather
+than adding beside it.
 
 It is here because the alternative is not that fragments stay pure. A fragment
 is a plain function today, so an application whose data lives in Postgres
@@ -37,24 +38,23 @@ Three things that would have been the hard parts, and are not.
 
 ## Stage 1: the recorder stops being thread-local
 
-**The one real blocker, and it is small.** [js.rs](../../crates/exos/src/js.rs)
-keeps recording frames in a `thread_local!` stack, pushed and popped around a
-synchronous closure, and [attributes.rs](../../crates/exos/src/attributes.rs)
-runs it while rendering an attribute block. Two ways that breaks as soon as a
-render can yield:
+**Done**, in [js.rs](../../crates/exos/src/js.rs), and smaller than this
+section first claimed. It was written as the one real blocker: frames lived in a
+`thread_local!` stack, and a render that yields could resume on another thread
+or interleave with a second render on the same one, wiring a handler to the
+wrong element.
 
-- A task that awaits mid-render can resume on another worker thread, where its
-  frame does not exist.
-- Two renders interleaving on one thread push and pop each other's frames, so a
-  handler recorded by one lands in the other's markup. The result is valid HTML
-  wired to the wrong element, which is the worst shape a bug can have.
+That cannot happen, and not by accident. A frame lives exactly as long as one
+call to `record`, whose body is a synchronous `FnOnce`, and a handler closure
+cannot await because it is not async. A render may yield between two attribute
+blocks but never inside one, so no frame is ever open across an await, and an
+async twin of `record` would have nothing to call it.
 
-The fix is the one the scope already uses: a task-local. `record` keeps its
-signature for synchronous bodies and gains an async twin.
-
-Worth doing whether or not the rest follows. The invariant it restores, that a
-frame belongs to a render, is currently true only by accident of rendering
-being synchronous.
+What the thread-local did get wrong was unwinding. A handler that panicked left
+its frame pushed on the worker thread, and the next stray `emit` there recorded
+into it instead of saying it was outside a handler. A frame is now a
+`task_local!` scoped by `sync_scope`, which restores the enclosing frame however
+the body ends, and the stack is gone because nesting the scope is the stack.
 
 ## Stage 2: the lock becomes asynchronous
 
@@ -83,7 +83,7 @@ the topic lock goes away with it, since a tokio mutex has none.
 
 `#[exos::live]` on an `async fn` generates the awaiting wrapper. The topic is
 computed from the arguments exactly as it is now, and the body runs inside the
-masked scope through the async twin from stage 1.
+masked scope through the async twin of `sync_scope`.
 
 ```rust
 #[exos::live]
@@ -136,8 +136,8 @@ worth asking.
 - **The topic invariant.** Awaiting does not let a render read anything it
   could not read before: the mask still blocks the request scope, so a
   fragment's arguments and language are still its whole input.
-- **`exos::scope()` still panics inside a fragment**, and stage 1 is what keeps
-  that true across a yield rather than by luck.
+- **`exos::scope()` still panics inside a fragment**, and the scope being a
+  task-local is what keeps that true across a yield rather than by luck.
 - **The ordering guarantee**, restated per topic, which is where it always
   lived.
 - **Synchronous fragments**, which stay the common case.
@@ -195,9 +195,6 @@ write is the second one.
 
 ## Testing
 
-- **Two renders interleaving on one thread each record their own handlers.**
-  That is the stage 1 bug, it fails today with a thread-local, and joining two
-  renders on a current-thread runtime is enough to produce it.
 - **A cancelled render sends nothing.**
 - **Two publishes racing on one topic still leave the newest patch last**, with
   an awaiting render and a per-topic lock, which is the same property the
