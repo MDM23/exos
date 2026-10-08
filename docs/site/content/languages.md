@@ -372,6 +372,9 @@ view! {
 }
 ```
 
+A field that may be left blank is an `Option<Instant>`: an emptied control sends
+`null`, which the field reads as `None`.
+
 Say the zone beside the field as well. A reader who cannot see which zone they
 are typing in cannot tell what they typed, and nothing in exos writes content
 next to a control it was handed.
