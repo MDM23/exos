@@ -371,6 +371,23 @@ test("a navigation places the caret the arriving page asks for", async () => {
     assert.equal(window.document.activeElement, window.document.getElementById("field"));
 });
 
+test("a navigation on a touch screen leaves the caret to the reader", async () => {
+    const window = boot(`<a href="/next">next</a>`);
+    window.matchMedia = (media) => ({ matches: media === "(pointer: coarse)", media });
+
+    window.fetch = async () => ({
+        text: async () =>
+            `<!DOCTYPE html><html><head><title>next</title></head>` +
+            `<body><input id="field" autofocus></body></html>`,
+        url: "http://localhost/next",
+    });
+
+    await window.exos.navigate("http://localhost/next", true);
+    await settled();
+
+    assert.notEqual(window.document.activeElement, window.document.getElementById("field"));
+});
+
 test("a control keeps what the viewer typed when a patch lands on it", async () => {
     const window = boot(
         `<form id="form"><input id="field" data-bind="draft" data-bind-kind="string"></form>`,

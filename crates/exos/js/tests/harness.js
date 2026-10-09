@@ -65,6 +65,10 @@ function booted(body, base, plugins, query = "") {
     // One jsdom provides only to refuse.
     window.scrollTo = () => {};
 
+    // One jsdom does not provide at all. Every query misses, which makes the
+    // page a mouse's until a test says it is under a finger.
+    window.matchMedia = (media) => ({ matches: false, media });
+
     // jsdom has the element and none of its behaviour. The runtime relies on
     // `open` and on the `close` event, so those are what this keeps.
     window.HTMLDialogElement.prototype.showModal = function () {

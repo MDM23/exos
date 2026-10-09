@@ -2064,7 +2064,12 @@
     //
     // Only whole documents. A patch is an update to the page being read, and a
     // fragment that wants the caret says so with a focus effect.
+    //
+    // Not on a touch screen. There a load places no caret the reader sees,
+    // while focus following the tap that navigated opens the keyboard over
+    // half the page before the reader has seen the form.
     function autofocus() {
+        if (matchMedia("(pointer: coarse)").matches) return;
         focusLater("[autofocus]");
     }
 
