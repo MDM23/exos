@@ -29,6 +29,10 @@ become one merge on the wire. The wire format is the same server-sent event
 format the live channel uses, so there is one parser rather than two, and the
 action path and the live path are the same code.
 
+A `navigate` or `reload` is waited for before the next step runs, so
+`Effect::navigate(url).and_patch(note)` lands the note on the page it arrives
+at rather than on the one it replaces.
+
 `set` takes a handle, so the name and the type come from wherever the template
 got them and no string has to agree with anything. The client resolves that
 name from the document root, which is exactly where a `#[model]` field is

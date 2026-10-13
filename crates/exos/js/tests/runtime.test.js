@@ -1050,6 +1050,27 @@ test("an effect is applied whatever the status the server sent it with", async (
     assert.equal(window.document.getElementById("slot").textContent, "after");
 });
 
+test("a step after a navigation lands on the page it arrived at", async () => {
+    const window = boot(`<p>before</p>`);
+
+    window.transport.responses.status = 200;
+    window.transport.responses.type = "text/event-stream";
+    window.transport.responses.body =
+        `event: navigate\ndata: http://localhost/next\n\n` +
+        `event: patch\ndata: <p id="note">saved</p>\n\n`;
+
+    const post = window.fetch;
+    window.fetch = (url, options) =>
+        options.method
+            ? post(url, options)
+            : Promise.resolve({ text: async () => `<p>next</p>`, url });
+
+    await posted(window);
+    await settled();
+
+    assert.equal(window.document.getElementById("note")?.textContent, "saved");
+});
+
 test("a failure with nothing to apply is announced rather than swallowed", async () => {
     const window = boot(`<p>x</p>`);
     const seen = [];

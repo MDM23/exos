@@ -1561,6 +1561,9 @@
 
     // An action answers with server-sent-event frames, the same format the
     // live stream uses, so this is the only place that interprets either.
+    //
+    // A step that fetches a page is waited for, so whatever follows it lands
+    // on the page it arrived at rather than on the one about to be replaced.
 
     async function consume(response) {
         const reader = response.body.getReader();
@@ -1575,7 +1578,7 @@
 
             let boundary = buffer.indexOf("\n\n");
             while (boundary !== -1) {
-                dispatch(buffer.slice(0, boundary));
+                await dispatch(buffer.slice(0, boundary));
                 buffer = buffer.slice(boundary + 2);
                 boundary = buffer.indexOf("\n\n");
             }
@@ -1591,7 +1594,7 @@
             else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
         }
 
-        apply(event, data.join("\n"));
+        return apply(event, data.join("\n"));
     }
 
     // `granting` is false for what the stream carries. A grant is made to the
@@ -1609,8 +1612,7 @@
                 break;
 
             case "navigate":
-                navigate(payload, true);
-                break;
+                return navigate(payload, true);
 
             case "page":
                 // A page handed over by an action is a navigation that saved a
@@ -1632,8 +1634,7 @@
             // The page it is on, fetched and morphed like any navigation, so
             // what the reader holds survives and the scroll stays where it is.
             case "reload":
-                navigate(location.href, false, null);
-                break;
+                return navigate(location.href, false, null);
 
             case "remove":
                 for (const node of document.querySelectorAll(payload)) {
