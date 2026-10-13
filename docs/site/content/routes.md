@@ -114,6 +114,10 @@ document instead of navigating client-side:
 view! { <a {order::link(row.id).keep_scroll()}>{ &row.name }</a> }
 ```
 
+Going back or forward puts the reader where they were on that page. That is the
+window's scroll position, unless a layout scrolls in an element of its own and
+marks it with `data-scroll-root`.
+
 For anything that is not a route, `exos::url` joins a path to the base:
 
 ```rust

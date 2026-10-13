@@ -242,6 +242,28 @@ test("going back puts the reader where they were on that page", async () => {
     assert.deepEqual(scrolls.at(-1), [0, 300]);
 });
 
+// The bug: a page scrolling in an element rather than the window was put back
+// at the window's position, which is always the top.
+test("a page that scrolls in its own element is put back in that element", async () => {
+    const window = boot(`<main data-scroll-root><a href="/orders/7">open</a></main>`);
+    const main = window.document.querySelector("main");
+    const scrolls = [];
+    main.scrollTo = (x, y) => scrolls.push([x, y]);
+    main.scrollTop = 300;
+    main.dispatchEvent(new window.Event("scroll"));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    window.document.querySelector("a").click();
+    await settled();
+    assert.deepEqual(scrolls, [[0, 0]], "a new page starts at the top");
+
+    window.history.back();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await settled();
+
+    assert.deepEqual(scrolls.at(-1), [0, 300]);
+});
+
 // Nested under `/admin`, the rest of the origin is the host application's, and
 // a page this runtime did not render is not one to morph in.
 test("a link outside where the application is mounted is not intercepted", async () => {

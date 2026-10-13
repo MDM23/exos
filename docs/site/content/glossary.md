@@ -362,6 +362,7 @@ your own uses.
 | `data-keep-scroll` | Keeps the scroll position across a link's navigation; written by `Link::keep_scroll()` |
 | `data-reload` | Opts a link out of client-side navigation; written by `Link::reload()` |
 | `data-row="trashed"` | A row the next submission drops, for a stylesheet to show; written by `RowsOf::trash()` |
+| `data-scroll-root` | Marks the element a page scrolls in, where it is not the window, so navigating back puts the reader where they were |
 
 The element a call came from carries `aria-busy` for the duration, which is
 what says where the work is happening, and takes no second click or submit

@@ -1944,13 +1944,26 @@
     // Written as the reader scrolls rather than on the way out, because by the
     // time `popstate` fires the entry being left is no longer the one
     // `replaceState` writes to. On the entry, so a reload finds it as well.
+    //
+    // What scrolls is the window, unless the page marks the element it scrolls
+    // in instead. Listened for while capturing, since an element's scroll
+    // does not bubble.
     history.scrollRestoration = "manual";
 
     let scrolling;
 
+    function scrollRoot() {
+        return document.querySelector("[data-scroll-root]");
+    }
+
+    function scrollPageTo(y) {
+        (scrollRoot() ?? window).scrollTo(0, y);
+    }
+
     function remember() {
         clearTimeout(scrolling);
-        history.replaceState({ ...history.state, scroll: window.scrollY }, "");
+        const scroll = scrollRoot()?.scrollTop ?? window.scrollY;
+        history.replaceState({ ...history.state, scroll }, "");
     }
 
     window.addEventListener(
@@ -1959,7 +1972,7 @@
             clearTimeout(scrolling);
             scrolling = setTimeout(remember, 150);
         },
-        { passive: true },
+        { capture: true, passive: true },
     );
 
     window.addEventListener("popstate", () => {
@@ -2041,7 +2054,7 @@
             if (push) history.pushState(null, "", response.url || url);
             else if (response.url && response.url !== location.href)
                 history.replaceState(history.state, "", response.url);
-            if (scroll !== null) window.scrollTo(0, scroll);
+            if (scroll !== null) scrollPageTo(scroll);
         } catch (error) {
             // A newer navigation is the tab's answer to this one having
             // failed, and loading the URL it has moved on from would be worse
@@ -2386,7 +2399,7 @@
     bindTree(document.documentElement);
 
     // A reload lands on the entry it left, and on where the reader was in it.
-    if (history.state?.scroll) window.scrollTo(0, history.state.scroll);
+    if (history.state?.scroll) scrollPageTo(history.state.scroll);
 
     // The observer only fires on changes, so a page that arrives with live
     // fragments already in it would never announce them and would receive
