@@ -222,6 +222,56 @@ test("a link that keeps the scroll stays where a navigation would reset it", asy
     assert.deepEqual(scrolls, [[0, 0]]);
 });
 
+test("a GET form navigates to its query the way a link would", async () => {
+    const window = boot(
+        `<form action="/members"><input name="q" value="anna"><button>go</button></form>` +
+            `<form method="post" action="/members"><button>send</button></form>`,
+    );
+    const [search, send] = window.document.querySelectorAll("button");
+
+    search.click();
+    await settled();
+    assert.equal(window.transport.requests[0].url, "http://localhost/members?q=anna");
+    assert.equal(window.location.href, "http://localhost/members?q=anna");
+    assert.equal(window.history.length, 2);
+
+    send.click();
+    await settled();
+    assert.equal(window.transport.requests.length, 1, "a POST form is the browser's");
+});
+
+// The bug this guards: each keystroke added a page to go back through.
+test("refining a form replaces the page being read rather than adding one", async () => {
+    const window = boot(
+        `<form action="/members" data-on-input="refine()"><input name="q"></form>`,
+    );
+    const input = window.document.querySelector("input");
+
+    input.value = "an";
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await settled();
+
+    assert.equal(window.location.href, "http://localhost/members?q=an");
+    assert.equal(window.history.length, 1);
+});
+
+test("a sticky link brings back the query its own path was left with", async () => {
+    const window = boot(
+        `<a id="nav" href="/members" data-sticky-query>members</a>` +
+            `<a id="search" href="/members?q=anna">anna</a>` +
+            `<a id="club" href="/clubs/7/members?q=bert">club</a>`,
+    );
+    const nav = () => window.document.getElementById("nav");
+
+    window.document.getElementById("search").click();
+    await settled();
+    assert.equal(nav().search, "?q=anna");
+
+    window.document.getElementById("club").click();
+    await settled();
+    assert.equal(nav().search, "?q=anna", "a record's view keeps nothing");
+});
+
 // The bug: a navigation put the reader at the top whichever way they came, so
 // going back to a long list lost the place they had scrolled it to.
 test("going back puts the reader where they were on that page", async () => {

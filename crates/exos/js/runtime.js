@@ -245,7 +245,7 @@
             fn = new Function(
                 "$", "el", "ev",
                 "get", "post", "put", "patch", "del",
-                "attr", "append", "focus", "debounce",
+                "attr", "append", "focus", "debounce", "refine",
                 "rows", "addRow", "dropRow", "trashRow", "restoreRow", "rowError", "dirty", "msg",
                 "date", "time", "ago",
                 statement ? source : `return (${source})`,
@@ -525,6 +525,7 @@
             appendTemplate,
             focusLater,
             (key, delay, body) => debounceCall(el, key, delay, body),
+            () => refine(el),
             (from, key, fields) => collectRows(from, key, fields),
             addRow,
             dropRow,
@@ -1936,12 +1937,7 @@
         const link = ev.target.closest?.("a[href]");
         if (!link || link.hasAttribute("download") || link.hasAttribute("data-reload")) return;
         if (link.target && link.target !== "_self") return;
-        if (link.origin !== location.origin) return;
-
-        // Outside where this application is mounted is the host's page, which
-        // this runtime did not render and has no business morphing in.
-        if (BASE && link.pathname !== BASE && !link.pathname.startsWith(`${BASE}/`)) return;
-
+        if (!inside(link)) return;
         if (link.hash && link.pathname === location.pathname) return;
 
         // A detail panel opened beside a list lands on a new URL that is
@@ -1950,6 +1946,61 @@
         ev.preventDefault();
         navigate(link.href, true, link.hasAttribute("data-keep-scroll") ? null : 0);
     });
+
+    // A GET form is a link whose query the reader filled in, and goes the way
+    // a link goes. One the page handles itself has been prevented by then, and
+    // a submit button sending it somewhere of its own is left to the browser.
+    document.addEventListener("submit", (ev) => {
+        const form = ev.target;
+        if (ev.defaultPrevented || form.method !== "get") return;
+        if (form.target && form.target !== "_self") return;
+        if (ev.submitter?.matches("[formaction], [formmethod], [formtarget]")) return;
+
+        const url = query(form, ev.submitter);
+        if (!inside(url)) return;
+
+        ev.preventDefault();
+        navigate(url.href, true);
+    });
+
+    // The same request while the reader is still typing. It replaces the
+    // entry rather than adding one and leaves the reader where they were, so a
+    // search box is not a trail of pages to go back through. A debounce that
+    // fires after its form has gone has nothing left to ask for.
+    function refine(el) {
+        const form = el.form ?? el.closest("form");
+        if (form?.isConnected) navigate(query(form).href, false, null);
+    }
+
+    // What the browser would load for a GET form: its action, with the fields
+    // as the query.
+    function query(form, submitter) {
+        const url = new URL(form.action);
+        url.search = new URLSearchParams(new FormData(form, submitter)).toString();
+        return url;
+    }
+
+    // Outside where this application is mounted is the host's page, which
+    // this runtime did not render and has no business morphing in.
+    function inside(url) {
+        if (url.origin !== location.origin) return false;
+        return !BASE || url.pathname === BASE || url.pathname.startsWith(`${BASE}/`);
+    }
+
+    // A link to a list opens it with the query the reader last left it with
+    // in this tab. Only the link's own path keeps one: the same list under a
+    // record's path is a view of that record, and refining it must not change
+    // what the link brings back. Storage that refuses, as a private window's
+    // can, leaves every link as the server rendered it.
+    function stickQueries() {
+        try {
+            for (const link of document.querySelectorAll("a[data-sticky-query]")) {
+                const key = `exos:query:${link.pathname}`;
+                if (link.pathname === location.pathname) sessionStorage.setItem(key, location.search);
+                link.search = sessionStorage.getItem(key) ?? link.search;
+            }
+        } catch {}
+    }
 
     // Where the reader was, kept on the history entry it belongs to. The
     // browser restores a position against the page still on screen, before
@@ -2060,13 +2111,15 @@
             if (push) remember();
             present(new DOMParser().parseFromString(html, "text/html"));
             reseed();
-            autofocus();
-            // Without a push the entry is the one on screen, and a redirect,
-            // a reload after signing in answered from somewhere else, still
-            // has to leave the address bar saying where the page came from.
+            // One that neither adds an entry nor moves the reader is the page
+            // being read, updated, and the caret is wherever they are typing.
+            if (push || scroll !== null) autofocus();
+            // Without a push the entry is the one on screen, and still has to
+            // say where the page came from: a refined query, or a redirect,
+            // a reload after signing in answered from somewhere else.
             if (push) history.pushState(null, "", response.url || url);
-            else if (response.url && response.url !== location.href)
-                history.replaceState(history.state, "", response.url);
+            else history.replaceState(history.state, "", response.url || url);
+            stickQueries();
             if (scroll !== null) scrollPageTo(scroll);
         } catch (error) {
             // A newer navigation is the tab's answer to this one having
@@ -2421,6 +2474,7 @@
     };
 
     bindTree(document.documentElement);
+    stickQueries();
 
     // A reload lands on the entry it left, and on where the reader was in it.
     if (history.state?.scroll) scrollPageTo(history.state.scroll);

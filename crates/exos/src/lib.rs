@@ -68,7 +68,7 @@ pub use crate::{
     instant::{Instant, NotAnInstant, When},
     js::{
         IntoJs, IntoPayload, Js, append, attr_now, call, debounce, emit, focus_now, quote_js,
-        record, when,
+        record, refine, when,
     },
     keys::Keys,
     live::{

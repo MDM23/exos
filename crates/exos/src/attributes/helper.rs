@@ -58,6 +58,7 @@ pub struct Link {
     section: bool,
     keep_scroll: bool,
     reload: bool,
+    sticky_query: bool,
 }
 
 impl Link {
@@ -70,6 +71,7 @@ impl Link {
             section: false,
             keep_scroll: false,
             reload: false,
+            sticky_query: false,
         }
     }
 
@@ -122,6 +124,25 @@ impl Link {
         self.reload = true;
         self
     }
+
+    /// Opens the page with the query it was last left with in this tab.
+    ///
+    /// For a nav bar's link to a list, so the search and filters a reader set
+    /// there are waiting when they come back to it. The query is kept only
+    /// while the page being read is at this link's own path: the same list
+    /// under a record's path, `/clubs/7/members` rather than `/members`, is a
+    /// view of that record, and refining it leaves the kept query alone.
+    ///
+    /// ```rust
+    /// # use exos::{Link, Markup, view};
+    /// # fn members() -> Markup {
+    /// view! { <a {Link::to(exos::url("/members")).sticky_query()}>"Members"</a> }
+    /// # }
+    /// ```
+    pub fn sticky_query(mut self) -> Self {
+        self.sticky_query = true;
+        self
+    }
 }
 
 impl IntoAttributes for Link {
@@ -139,6 +160,10 @@ impl IntoAttributes for Link {
 
         if self.reload {
             attributes.set("data-reload", "");
+        }
+
+        if self.sticky_query {
+            attributes.set("data-sticky-query", "");
         }
     }
 }
@@ -431,6 +456,10 @@ mod tests {
         let mut attributes = Attributes::new();
         Link::to("/export").reload().write(&mut attributes);
         assert_eq!(attributes.render(), " href=\"/export\" data-reload");
+
+        let mut attributes = Attributes::new();
+        Link::to("/members").sticky_query().write(&mut attributes);
+        assert_eq!(attributes.render(), " href=\"/members\" data-sticky-query");
     }
 
     #[test]

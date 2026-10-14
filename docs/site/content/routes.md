@@ -118,6 +118,28 @@ Going back or forward puts the reader where they were on that page. That is the
 window's scroll position, unless a layout scrolls in an element of its own and
 marks it with `data-scroll-root`.
 
+**A `GET` form is a link whose query the reader fills in**, and navigates the
+same way. A search box that answers while it is typed into calls `refine`,
+which replaces the history entry instead of adding one and leaves the reader
+where they were:
+
+```rust
+view! {
+    <form action={ members::url() } {on_input(|_| debounce(150, refine))}>
+        <input type="search" name="q">
+    </form>
+}
+```
+
+`sticky_query` on a nav bar's link to that list brings back the query it was
+last left with in this tab. Only the link's own path keeps one, so the same
+list scoped under a record, `/clubs/7/members` rather than `/members`, is a view
+of that record and refining it leaves the link alone:
+
+```rust
+view! { <a {members::link().section().sticky_query()}>"Members"</a> }
+```
+
 For anything that is not a route, `exos::url` joins a path to the base:
 
 ```rust

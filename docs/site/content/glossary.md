@@ -46,6 +46,7 @@ test writes `exos::app()` in the helper that serves it.
 | `Link::to(url)` | The same for a URL that is not a route's |
 | `Link::section()` | Marks it while a page below it is being read, for a nav bar's link to a section |
 | `Link::keep_scroll()`, `Link::reload()` | Keeps the scroll position across the navigation, or loads the page as a whole document instead |
+| `Link::sticky_query()` | Opens the page with the query it was last left with in this tab, for a nav bar's link to a list |
 | `name::get(..)`, `name::post(..)`, … | Records a call to it, with the payload type checked |
 | `Page` | A whole document, answering `no-cache, private` |
 | `Markup` | A fragment, as a response and as the type every template produces |
@@ -124,6 +125,7 @@ one by hand: they come out of handles, callers and the combinators below. See
 | `emit(statement)` | Appends one statement to what is being recorded |
 | `attr_now(name, value)` | A speculative DOM write, for [optimistic updates](calling-the-server#optimistic-updates) |
 | `focus_now(selector)` | Moves the caret during a handler |
+| `refine()` | Shows what the handler's `GET` form asks for now, replacing the history entry, for a search box answering as it is typed into |
 | `append(template, into)` | Clones a `<template>` into a container |
 | `quote_js(value)` | Quotes a string into source, for a hand-written `Js::raw` |
 
@@ -365,6 +367,7 @@ your own uses.
 | `data-reload` | Opts a link out of client-side navigation; written by `Link::reload()` |
 | `data-row="trashed"` | A row the next submission drops, for a stylesheet to show; written by `RowsOf::trash()` |
 | `data-scroll-root` | Marks the element a page scrolls in, where it is not the window, so navigating back puts the reader where they were |
+| `data-sticky-query` | Keeps a link's page's query in `sessionStorage` and opens it with that; written by `Link::sticky_query()` |
 
 The element a call came from carries `aria-busy` for the duration, which is
 what says where the work is happening, and takes no second click or submit

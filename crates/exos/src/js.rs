@@ -280,6 +280,26 @@ pub fn focus_now(selector: &str) {
     emit(format!("focus({})", quote_js(selector)));
 }
 
+/// Shows what the `GET` form the handler sits in asks for now, in place of
+/// the page being read.
+///
+/// A submitted `GET` form navigates like a link. This is the same request
+/// made while the reader is still typing: it replaces the history entry
+/// rather than adding one, and leaves the reader where they had scrolled to,
+/// so a search box is not a trail of pages to go back through. Wrap it in
+/// [`debounce`]; a newer navigation drops an older one's answer by itself.
+///
+/// ```ignore
+/// <form {on_input(|_| debounce(150, refine))}>
+/// ```
+///
+/// # Panics
+///
+/// If called outside a handler; see [`emit`].
+pub fn refine() {
+    emit("refine()");
+}
+
 /// Clones a `<template>` into a container.
 ///
 /// Adding a form row does not need a reactive list; it needs a copy. The clone
@@ -403,6 +423,12 @@ mod tests {
     #[test]
     fn focus_is_a_statement_rather_than_a_round_trip() {
         assert_eq!(record(|| focus_now("#edit-3")), "focus(\"#edit-3\")");
+    }
+
+    /// Which form, and what is in it, is only known in the browser.
+    #[test]
+    fn refining_is_a_statement_without_arguments() {
+        assert_eq!(record(refine), "refine()");
     }
 
     #[test]
