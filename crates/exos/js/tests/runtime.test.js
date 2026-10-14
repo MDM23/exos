@@ -2128,6 +2128,60 @@ test("a dev build reloads on a reconnect rather than repairing", async () => {
     );
 });
 
+// A sign-in rotates the session, and the server ends this tab's stream from
+// inside the very request that signed in. That request's answer may still be
+// streaming into the page, so what the reconnect owes waits for it.
+test("a reconnect during a request repairs once the request has answered", async () => {
+    const page = (count) => `<main>${live()}<p id="count">${count}</p></main>${acting}`;
+    const window = boot(page(1));
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    let release;
+    window.transport.responses.held = new Promise((resolve) => (release = resolve));
+    window.document.getElementById("go").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    window.transport.responses.body = served(page(2));
+    stream.emit("connection", "second");
+    await settled();
+
+    const repairs = () =>
+        window.transport.requests.filter((request) => request.headers["X-Exos-Navigate"]).length;
+    assert.equal(repairs(), 0, "nothing fetched to morph under the answer still arriving");
+
+    release();
+    await settled();
+    await settled();
+
+    assert.equal(repairs(), 1);
+    assert.equal(window.document.getElementById("count").textContent, "2");
+});
+
+test("a dev build's reload waits for the request in flight too", async () => {
+    const window = bootDev(`<main>${live()}</main>${acting}`);
+    const [stream] = window.transport.streams;
+
+    stream.emit("connection", "first");
+    await settled();
+
+    let release;
+    window.transport.responses.held = new Promise((resolve) => (release = resolve));
+    window.document.getElementById("go").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    stream.emit("connection", "second");
+    await settled();
+
+    assert.deepEqual(window.transport.navigations, [], "or the answer would be cut off");
+
+    release();
+    await settled();
+    await settled();
+
+    assert.equal(window.transport.navigations.length, 1);
+});
+
 // The failure that would make the whole thing unusable: a page that reloads on
 // the greeting it gets for being loaded never finishes loading.
 test("a dev build's first connection reloads nothing", async () => {

@@ -1344,6 +1344,11 @@
         el.removeAttribute("aria-busy");
     }
 
+    // Requests in flight on the whole page, and what a reconnect owes it while
+    // there are any; see `caughtUp`.
+    let inFlight = 0;
+    let owed = null;
+
     async function request(method, url, el, data) {
         // Claimed synchronously, before anything awaits, so a call made under a
         // debounce key is stamped with the turn it went out on.
@@ -1373,6 +1378,7 @@
         }
 
         busy(el);
+        inFlight += 1;
         announce("busy", { kind: "request", method, url });
 
         try {
@@ -1432,7 +1438,14 @@
             return response;
         } finally {
             idle(el);
+            inFlight -= 1;
             announce("idle", { kind: "request", method, url });
+
+            if (!inFlight && owed) {
+                const run = owed;
+                owed = null;
+                run();
+            }
         }
     }
 
@@ -2185,13 +2198,24 @@
             // wrong shape twice over: it morphs the body, where a rebuild
             // changes the head, and it keeps the stylesheet and the runtime the
             // previous build hashed. The whole document has to come back.
-            if (greeted) {
-                if (DEV) location.reload();
-                else repair();
-            }
+            if (greeted) caughtUp(DEV ? () => location.reload() : repair);
 
             greeted = true;
         });
+    }
+
+    // Runs what a reconnect owes the page, once no request is in flight.
+    //
+    // A reconnect during a request is most likely that request's doing: a
+    // sign-in rotates the session, and the server ends this tab's stream with
+    // the old name. The request's answer is what says what the page becomes,
+    // and it may still be arriving: a streamed one patches into elements a
+    // repair would morph back to how the page was served, and the dev build's
+    // reload would cut it off. Waiting costs a gap no longer than the answer
+    // takes.
+    function caughtUp(run) {
+        if (inFlight) owed = run;
+        else run();
     }
 
     // What a reconnect lost, fetched back.

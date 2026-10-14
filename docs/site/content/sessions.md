@@ -167,6 +167,12 @@ sign out of would otherwise hold a signed-in stream until you closed it. With a
 [bus](live-fragments#more-than-one-instance) registered it reaches those tabs
 wherever they are streaming from, not only the node that took the request.
 
+The tab that asked loses its stream as well, while its own request is still
+answering, so its catch-up waits for that answer to end. That matters once the
+answer is an `EffectStream` that signed in before it started: it goes on
+patching the page it is on, and the re-fetch, or a dev build's reload, comes
+after it.
+
 That takes about a sixth of a second, not the three a browser waits after a
 stream it thinks broke. A server-sent stream can name its own reconnection
 time, so a stream being ended on purpose says "come straight back" on the way
