@@ -14,17 +14,13 @@
 //!
 //! ```ignore
 //! #[exos::post("/reports/build")]
-//! async fn build() -> EffectStream<ReceiverStream<Effect>> {
-//!     let (sender, receiver) = tokio::sync::mpsc::channel(8);
-//!
-//!     tokio::spawn(async move {
+//! async fn build() -> EffectStream {
+//!     EffectStream::spawn(|effects| async move {
 //!         for step in plan {
 //!             let done = run(step).await;
-//!             drop(sender.send(Effect::patch(progress(done))).await);
+//!             drop(effects.send(Effect::patch(progress(done))).await);
 //!         }
-//!     });
-//!
-//!     EffectStream::new(ReceiverStream::new(receiver))
+//!     })
 //! }
 //! ```
 //!
@@ -44,6 +40,7 @@ use core::{
 
 use axum::response::{IntoResponse, Response, sse};
 use futures_core::Stream;
+use tokio::sync::mpsc;
 
 use crate::{Effect, Step};
 
@@ -54,8 +51,9 @@ use crate::{Effect, Step};
 /// exactly as a whole one would be, so what reaches the browser is
 /// indistinguishable from a handler that answered several times.
 ///
-/// The stream has to be [`Unpin`], which every ordinary source already is:
-/// a channel receiver, [`tokio_stream::iter`], or a boxed stream.
+/// [`spawn`](Self::spawn) is the usual way to make one. [`new`](Self::new)
+/// takes any other source, which has to be [`Unpin`] as every ordinary one
+/// already is: a channel receiver, [`tokio_stream::iter`], or a boxed stream.
 ///
 /// # No keep-alive
 ///
@@ -64,7 +62,38 @@ use crate::{Effect, Step};
 /// middle of one would be a frame the client has no step for.
 #[derive(Debug)]
 #[must_use = "an effect stream does nothing until it is returned from a handler"]
-pub struct EffectStream<S>(S);
+pub struct EffectStream<S = Spawned>(S);
+
+/// What [`EffectStream::spawn`] answers with: whatever its task sends, in the
+/// order sent, until the task is done.
+#[derive(Debug)]
+pub struct Spawned(mpsc::Receiver<Effect>);
+
+/// How many effects wait for a slow browser before the task sending them
+/// waits too.
+const BUFFERED: usize = 8;
+
+impl EffectStream {
+    /// Runs `work` on a task of its own, inside this request's scope, and
+    /// answers with every effect it sends.
+    ///
+    /// The response ends when `work` does. A send fails only once the browser
+    /// has gone, so `work` may stop there or drop the error and finish anyway.
+    ///
+    /// # Panics
+    ///
+    /// Outside a request, as [`scope`](crate::scope) does.
+    pub fn spawn<F, W>(work: F) -> Self
+    where
+        F: FnOnce(mpsc::Sender<Effect>) -> W,
+        W: Future<Output = ()> + Send + 'static,
+    {
+        let (sender, receiver) = mpsc::channel(BUFFERED);
+        drop(crate::scope().spawn(work(sender)));
+
+        Self(Spawned(receiver))
+    }
+}
 
 impl<S> EffectStream<S>
 where
@@ -73,6 +102,14 @@ where
     /// Answers with `effects` as they arrive.
     pub fn new(effects: S) -> Self {
         Self(effects)
+    }
+}
+
+impl Stream for Spawned {
+    type Item = Effect;
+
+    fn poll_next(mut self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Effect>> {
+        self.0.poll_recv(context)
     }
 }
 
@@ -184,6 +221,27 @@ mod tests {
         let stream = streamed(vec![Effect::none(), patch("after"), Effect::none()]).await;
 
         assert_eq!(stream, patch("after").to_stream());
+    }
+
+    /// A spawned stream reads its request's scope, and its response is done
+    /// once the work is, with everything the work sent on it.
+    #[tokio::test]
+    async fn a_spawned_stream_answers_with_what_its_work_sends_from_inside_the_request() {
+        let response = crate::with_scope(|| {
+            crate::scope().set(String::from("inside"));
+
+            EffectStream::spawn(|effects| async move {
+                let id = crate::scope().get::<String>().expect("the request's value");
+                drop(effects.send(patch(&id)).await);
+            })
+        })
+        .into_response();
+
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("the body is readable");
+
+        assert_eq!(bytes, patch("inside").to_stream());
     }
 
     #[tokio::test]

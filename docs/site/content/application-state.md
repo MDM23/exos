@@ -46,6 +46,10 @@ Two rules are enforced rather than documented:
 - A live fragment never sees it, so `exos::scope()` panics inside one whether
   or not a request is being served. A fragment's arguments are its whole input.
 
+A task a request starts and does not wait for leaves the scope behind, since a
+task-local belongs to the task that set it. `scope().spawn(task)` takes it
+along, which is what `EffectStream::spawn` does for the work it runs.
+
 Tests use `exos::with_scope`, which runs a closure in a scope of its own. Being
 per task rather than process-global, two tests can hold different scopes at
 once, which `provide` cannot do.

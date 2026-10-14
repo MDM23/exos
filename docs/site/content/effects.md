@@ -97,25 +97,28 @@ an `EffectStream` and each effect goes out as it is produced:
 
 ```rust
 #[exos::post("/reports/build")]
-async fn build() -> EffectStream<ReceiverStream<Effect>> {
-    let (sender, receiver) = tokio::sync::mpsc::channel(8);
-
-    tokio::spawn(async move {
+async fn build() -> EffectStream {
+    EffectStream::spawn(|effects| async move {
         for stage in plan {
             let done = run(stage).await;
-            drop(sender.send(Effect::patch(progress(done))).await);
+            drop(effects.send(Effect::patch(progress(done))).await);
         }
-    });
-
-    EffectStream::new(ReceiverStream::new(receiver))
+    })
 }
 ```
 
-`EffectStream::new` takes any `Stream<Item = Effect>` that is `Unpin`, which a
-channel receiver, a boxed stream and `tokio_stream::iter` all are. The wrapper
-above is `tokio_stream::wrappers::ReceiverStream`, so a crate that streams adds
-`tokio-stream` to its own dependencies; exos does not re-export it, because
-which stream type you want is yours to pick.
+`EffectStream::spawn` runs the work on a task of its own, inside the request's
+scope, so the work reads the viewer, their language and everything else the
+request holds. The response ends when the work does. A send fails only once the
+browser has gone, which the work may ignore or stop at.
+
+The session is the exception. Its cookie went out with the response before the
+work began, so a sign-in or a sign-out belongs in the handler, ahead of the
+stream, and making one inside the work panics.
+
+Where the effects come from somewhere else, `EffectStream::new` takes any
+`Stream<Item = Effect>` that is `Unpin`, which a channel receiver, a boxed
+stream and `tokio_stream::iter` all are.
 
 Nothing on the client learns about this. The response is the same server-sent
 events a whole `Effect` would be, so it is read frame by frame by the parser

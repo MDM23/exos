@@ -76,8 +76,10 @@
 //! are computed. A change made after that point would never reach the browser,
 //! so signing out from inside a stream would leave the browser signed in
 //! without a word. Starting, rotating or ending a session once its response
-//! has gone therefore panics, through whatever handle was moved into the
-//! stream. Change it in the handler, and read it from the stream.
+//! has gone therefore panics, whether through a handle moved into the stream
+//! or through [`session`] inside the work
+//! [`EffectStream::spawn`](crate::EffectStream::spawn) runs. Change it in the
+//! handler, and read it from the stream.
 //!
 //! # A name that changes takes this browser's streams with it
 //!

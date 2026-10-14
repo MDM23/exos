@@ -48,6 +48,7 @@ use std::{
 };
 
 use axum::{extract::Request, middleware::Next, response::Response};
+use tokio::task::JoinHandle;
 
 type Store = RwLock<HashMap<TypeId, Arc<dyn Any + Send + Sync>>>;
 
@@ -134,6 +135,36 @@ impl Scope {
             .insert(TypeId::of::<T>(), Arc::new(value));
 
         previous.and_then(|any| any.downcast::<T>().ok())
+    }
+
+    /// Runs `task` on a task of its own that is still inside this request, so
+    /// [`scope`] answers there with the same store it answers with here.
+    ///
+    /// A plain `tokio::spawn` leaves the scope behind, because a task-local
+    /// belongs to the task that set it. This is for work a request starts and
+    /// does not wait for, which is what
+    /// [`EffectStream::spawn`](crate::EffectStream::spawn) is built on. The
+    /// response may have gone before the task ends, so the session it settled
+    /// is read from here and never changed.
+    ///
+    /// ```
+    /// # struct Principal(u32);
+    /// # #[tokio::main(flavor = "current_thread")]
+    /// # async fn main() {
+    /// let task = exos::with_scope(|| {
+    ///     exos::scope().set(Principal(7));
+    ///     exos::scope().spawn(async { exos::scope().get::<Principal>().map(|it| it.0) })
+    /// });
+    ///
+    /// assert_eq!(task.await.ok().flatten(), Some(7));
+    /// # }
+    /// ```
+    pub fn spawn<F>(self, task: F) -> JoinHandle<F::Output>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        tokio::spawn(STATE.scope(State::Request(self.0), task))
     }
 }
 
@@ -363,6 +394,18 @@ mod tests {
             .expect("the task finishes");
 
         assert!(!escaped);
+    }
+
+    /// The other half of the one above: spawned through the scope, the task
+    /// writes into the store the request reads.
+    #[tokio::test]
+    async fn a_task_spawned_through_the_scope_is_still_inside_the_request() {
+        let (store, task) =
+            with_scope(|| (scope(), scope().spawn(async { scope().set(Principal(7)) })));
+
+        task.await.expect("the task finishes");
+
+        assert_eq!(*store.get::<Principal>().expect("it was set"), Principal(7));
     }
 
     #[test]

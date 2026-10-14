@@ -62,7 +62,7 @@ pub use crate::{
     base::{base_path, segment, segments, url},
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry},
-    effect::{Effect, EffectStream, Step},
+    effect::{Effect, EffectStream, Spawned, Step},
     form::{Form, FormKey, ReviseEntry},
     identity::{Audience, Audiences, Resolution},
     instant::{Instant, NotAnInstant, When},

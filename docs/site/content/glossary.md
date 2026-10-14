@@ -213,7 +213,8 @@ given whatever status carries it. See [effects](effects).
 | `focus(selector)`, `scroll(selector)` | Move the caret, or the viewport |
 | `steps`, `into_steps`, `to_stream` | What it holds, and how it is framed |
 | `Step` | One instruction: `Focus`, `Navigate`, `Page`, `Patch`, `Reload`, `Remove`, `Scroll`, `Signals`, `Title` |
-| `EffectStream::new(stream)` | Answers with effects as they are computed, for a handler too slow to answer at once |
+| `EffectStream::spawn(work)` | Answers with the effects `work` sends from a task of its own, for a handler too slow to answer at once |
+| `EffectStream::new(stream)` | The same over a stream from anywhere else |
 
 ## Live fragments
 
@@ -292,6 +293,7 @@ needs without every caller above it forwarding one. See
 | `try_data::<T>()` | The same question asked politely |
 | `scope()` | The current request's scope, which panics outside a request |
 | `Scope::get::<T>()`, `Scope::set(value)` | What is in it |
+| `Scope::spawn(task)` | Runs `task` on a task of its own that is still inside the request |
 | `with_scope(body)` | Opens one, which `app()` does for every request |
 | `detached(body)` | Renders with no scope at all, which is what a live fragment does |
 

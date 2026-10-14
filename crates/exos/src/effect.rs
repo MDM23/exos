@@ -39,7 +39,7 @@ use crate::{Markup, Placement, Signal};
 
 mod streaming;
 
-pub use crate::effect::streaming::EffectStream;
+pub use crate::effect::streaming::{EffectStream, Spawned};
 
 /// One instruction for the client.
 #[derive(Clone, Debug, PartialEq)]

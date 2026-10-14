@@ -256,9 +256,8 @@ on each element, which `reapply` reads. Three things came out of writing it.
 **Done**, in [session.rs](../../crates/exos/src/session.rs), by refusing. The
 layer marks the session settled under the same lock that decides the cookie,
 and a `start`, `rotate` or `end` after that panics. Only a handle moved into
-the stream can reach it there, because the request scope is gone by the time
-the body is polled, so the panic lands in exactly the code that made the
-mistake.
+the stream, or work spawned inside the request scope, can reach it there, so
+the panic lands in exactly the code that made the mistake.
 
 The session layer writes the cookie when the response goes out, and an
 [`EffectStream`](../../crates/exos/src/effect/streaming.rs) goes out as soon as
