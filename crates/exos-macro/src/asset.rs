@@ -116,18 +116,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
         .iter()
         .map(|source| LitStr::new(&source.display().to_string(), Span::call_site()));
 
-    // Detection reads rustc's command line, so if a future cargo changes how
-    // it spells these flags, this fails loudly here instead of quietly
-    // shipping a stylesheet nobody minified.
-    let checked = profile::debug_assertions().map(|debug| {
-        quote! {
-            const _: () = assert!(
-                #debug == cfg!(debug_assertions),
-                "exos: asset! could not tell a debug build from a release one. \
-                 Please report this, with your cargo version and profile."
-            );
-        }
-    });
+    let checked = profile::checked();
 
     quote! {
         {

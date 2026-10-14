@@ -8,6 +8,8 @@
 use std::env;
 
 use exos_build::Mode;
+use proc_macro2::TokenStream;
+use quote::quote;
 
 /// The mode to build assets in, when it can be established.
 ///
@@ -59,6 +61,23 @@ pub(crate) fn debug_assertions() -> Option<bool> {
     }
 
     Some(codegen(&args, "opt-level").is_none_or(|level| level == "0"))
+}
+
+/// Asserts [`debug_assertions`] against the real `cfg!(debug_assertions)`.
+///
+/// Detection reads rustc's command line, so if a future cargo changes how it
+/// spells these flags, every expansion that depends on the answer fails loudly
+/// instead of quietly shipping code nobody minified.
+pub(crate) fn checked() -> Option<TokenStream> {
+    debug_assertions().map(|debug| {
+        quote! {
+            const _: () = assert!(
+                #debug == cfg!(debug_assertions),
+                "exos: could not tell a debug build from a release one. \
+                 Please report this, with your cargo version and profile."
+            );
+        }
+    })
 }
 
 /// The value of a `-C name=value` flag, however it was spelled.

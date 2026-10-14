@@ -54,6 +54,20 @@ pub(crate) fn bundle(path: &Path, minify: bool) -> Result<Bundled> {
     })
 }
 
+/// Minifies a script that has no file behind it, such as the content of a
+/// `<script>` element.
+///
+/// # Errors
+///
+/// Returns [`Error::Inline`] when the script cannot be parsed.
+pub fn minify_js(code: &str) -> Result<String> {
+    minifier::js::minify(code)
+        .map(|minified| minified.to_string())
+        .map_err(|message| Error::Inline {
+            message: message.to_owned(),
+        })
+}
+
 /// A depth-first walk of the import graph, collecting files in run order.
 #[derive(Default)]
 struct Walk {

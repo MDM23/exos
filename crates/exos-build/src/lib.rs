@@ -30,7 +30,7 @@ mod css;
 mod javascript;
 mod media;
 
-pub use crate::media::content_type;
+pub use crate::{css::minify_css, javascript::minify_js, media::content_type};
 
 // Where an asset is served from is deliberately not here. This crate turns a
 // file into bytes and a hashed name, and a URL is neither: it starts with the
@@ -87,6 +87,14 @@ pub enum Error {
         property: String,
         /// The URL as it was written.
         url: String,
+    },
+
+    /// Inline code, such as the content of a `<style>` element, could not be
+    /// minified.
+    #[error("cannot minify inline code: {message}")]
+    Inline {
+        /// What the minifier reported.
+        message: String,
     },
 
     /// A script could not be bundled or minified.

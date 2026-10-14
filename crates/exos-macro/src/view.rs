@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 
+use exos_build::Mode;
 use proc_macro2::TokenStream;
 use quote::quote;
 use rstml::{
@@ -11,7 +12,10 @@ use rstml::{
 
 mod signals;
 
-use crate::escape::{escape_attribute, escape_text};
+use crate::{
+    escape::{escape_attribute, escape_text},
+    profile,
+};
 
 /// Elements that must not be given a closing tag.
 ///
@@ -156,12 +160,70 @@ fn emit_element<C: rstml::node::CustomNode>(element: &NodeElement<C>, out: &mut 
         return;
     }
 
-    let raw = RAW_TEXT.contains(&name.as_str());
-    for child in &element.children {
-        emit_node(child, out, raw);
+    if let Some(code) = minified(&name, element, out) {
+        push_literal(&code, out);
+    } else {
+        let raw = RAW_TEXT.contains(&name.as_str());
+        for child in &element.children {
+            emit_node(child, out, raw);
+        }
     }
 
     push_literal(&format!("</{name}>"), out);
+}
+
+/// The content of a `<style>` or `<script>`, minified the way `asset!`
+/// minifies a file: in release builds only, and only when all of it is known
+/// at compile time and is CSS or JavaScript.
+fn minified<C: rstml::node::CustomNode>(
+    name: &str,
+    element: &NodeElement<C>,
+    out: &mut TokenStream,
+) -> Option<String> {
+    if !matches!(profile::mode()?, Mode::Release) {
+        return None;
+    }
+
+    let mut code = String::new();
+    for child in &element.children {
+        match child {
+            Node::Text(text) => code.push_str(&text.value_string()),
+            Node::RawText(text) => code.push_str(&text.to_string_best()),
+            _ => return None,
+        }
+    }
+
+    let minified = match name {
+        "style" => exos_build::minify_css(&code),
+        "script" if is_javascript(element) => exos_build::minify_js(&code),
+        _ => return None,
+    };
+
+    match minified {
+        Ok(code) => {
+            out.extend(profile::checked());
+            Some(code)
+        }
+        Err(error) => {
+            out.extend(syn::Error::new_spanned(&element.open_tag.name, error).to_compile_error());
+            None
+        }
+    }
+}
+
+/// A `<script>` without a `type`, or with one that names JavaScript. JSON, an
+/// import map or a template is data and stays as written.
+fn is_javascript<C: rstml::node::CustomNode>(element: &NodeElement<C>) -> bool {
+    element
+        .attributes()
+        .iter()
+        .all(|attribute| match attribute {
+            NodeAttribute::Attribute(attribute) if attribute.key.to_string() == "type" => matches!(
+                attribute.value_literal_string().as_deref(),
+                Some("module" | "text/javascript")
+            ),
+            _ => true,
+        })
 }
 
 /// `<li {gone} {show(..)} {class("busy", ..)}>`, and the signals inferred

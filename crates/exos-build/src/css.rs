@@ -10,7 +10,7 @@ use lightningcss::{
     bundler::{Bundler, FileProvider, ResolveResult, SourceProvider},
     properties::{Property, custom::CustomPropertyName},
     rules::CssRule,
-    stylesheet::{MinifyOptions, ParserOptions, PrinterOptions},
+    stylesheet::{MinifyOptions, ParserOptions, PrinterOptions, StyleSheet},
     targets::Targets,
     values::url::Url,
     visit_types,
@@ -97,6 +97,32 @@ pub(crate) fn bundle(path: &Path, mode: Mode) -> Result<Bundled> {
         sources,
         assets: references.assets,
     })
+}
+
+/// Minifies a stylesheet that has no file behind it, such as the content of a
+/// `<style>` element. There is nothing to bundle, and a `url()` resolves
+/// against the page, so it is left as written.
+///
+/// # Errors
+///
+/// Returns [`Error::Inline`] when the sheet cannot be parsed or printed.
+pub fn minify_css(code: &str) -> Result<String> {
+    let inline = |error: &dyn std::fmt::Display| Error::Inline {
+        message: error.to_string(),
+    };
+
+    let mut sheet = StyleSheet::parse(code, ParserOptions::default()).map_err(|e| inline(&e))?;
+    sheet
+        .minify(MinifyOptions::default())
+        .map_err(|e| inline(&e))?;
+
+    sheet
+        .to_css(PrinterOptions {
+            minify: true,
+            ..PrinterOptions::default()
+        })
+        .map(|output| output.code)
+        .map_err(|e| inline(&e))
 }
 
 /// Rewrites every `url()` to the asset it names, building it on the way.

@@ -99,7 +99,9 @@ fixes it. It is a compile error rather than an image that loads on `/` and
 
 Release builds minify and debug builds do not, which the macro works out from
 the profile it is being compiled under. Minifying during development buys a
-slower edit cycle and unreadable stack traces.
+slower edit cycle and unreadable stack traces. The same holds for a `<style>`
+or `<script>` written inline in a `view!`, unless its `type` says it holds data
+rather than JavaScript.
 
 Because there is no build script, nothing declares which files to watch. The
 macro does it instead: it lists every file the bundler actually opened, so
