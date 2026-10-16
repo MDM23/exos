@@ -756,6 +756,23 @@ test("focus stays on the control a revision was asked from", async () => {
     assert.equal(window.document.activeElement, select);
 });
 
+// The form is not being sent, so its submit button has nothing to wait on.
+test("a revision in flight marks the control asked, not the form", async () => {
+    const window = boot(revisable());
+    const answer = holding(window);
+
+    await pick(window, "b");
+
+    const select = window.document.getElementById("tenant");
+    assert.equal(select.getAttribute("aria-busy"), "true", "the control says so");
+    assert.ok(!window.document.getElementById("f1").hasAttribute("aria-busy"), "the form does not");
+
+    answer(0, revision("", {}));
+    await settled();
+
+    assert.ok(!window.document.getElementById("tenant").hasAttribute("aria-busy"), "and the marker goes with the answer");
+});
+
 test("the older of two overlapping revisions is dropped", async () => {
     const window = boot(revisable());
     const answer = holding(window);

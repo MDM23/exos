@@ -1255,7 +1255,7 @@
             // once, typing once it stops.
             const form = el.getAttribute("data-bind-revise");
             if (form) {
-                debounceCall(el, "~revise", type === "input" ? CHECKING : 0, () => revise(form));
+                debounceCall(el, "~revise", type === "input" ? CHECKING : 0, () => revise(form, el));
             }
         });
     }
@@ -1524,7 +1524,7 @@
     // answer. Of two overlapping revisions of one form the newer wins.
     const revisions = new Map(); // form id -> turn
 
-    async function revise(id) {
+    async function revise(id, control) {
         const form = document.getElementById(id);
         const source = form?.getAttribute("data-revise");
         if (!source) return;
@@ -1532,7 +1532,7 @@
         const sent = evaluate(source, form, null, false);
         const turn = (revisions.get(id) ?? 0) + 1;
         revisions.set(id, turn);
-        busy(form);
+        busy(control);
 
         try {
             const response = await fetch(`${BASE}/_exos/revise/${id}`, {
@@ -1549,6 +1549,11 @@
                 return;
             }
 
+    //
+    // The control asked is what is busy, the way a field being checked is.
+    // The form is not being sent, so it must not look as if it were, and a
+    // search typed into a form would otherwise turn its submit button into a
+    // spinner at every pause.
             if (!response.ok) {
                 console.error(`[exos] ${id} could not be revised:`, response.status, form);
                 return;
@@ -1565,7 +1570,7 @@
         } catch (error) {
             console.error(`[exos] ${id} could not be revised:`, error, form);
         } finally {
-            idle(form);
+            idle(control);
         }
     }
 
