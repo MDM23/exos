@@ -6,13 +6,14 @@ use crate::{
     emit,
 };
 
-/// An event type the runtime delegates.
+/// An event type the runtime carries.
 ///
-/// The runtime listens for one of each on `document` and dispatches on
-/// attributes at event time, which is what makes markup that arrives ten
-/// minutes after page load already wired. The flip side is that the set is
-/// closed: a handler for anything else would sit in the DOM and never fire, so
-/// the set is a type rather than a string.
+/// The runtime listens for one of each on `document`, or on the element for
+/// one that does not bubble, and dispatches on attributes at event time, which
+/// is what makes markup that arrives ten minutes after page load already
+/// wired. The flip side is that the set is closed: a handler for anything else
+/// would sit in the DOM and never fire, so the set is a type rather than a
+/// string.
 ///
 /// Anything outside it is registered from JavaScript with
 /// `window.exos.listen`, and named here with [`Custom`](Self::Custom).
@@ -38,6 +39,12 @@ pub enum EventType {
     KeyUp,
     /// A pointer went down.
     PointerDown,
+    /// A pointer moved onto the element, not onto one inside it.
+    ///
+    /// It does not bubble, so the runtime hears it on each element handling
+    /// it rather than on `document`. That is what hover means, and it fires
+    /// once per arrival where `pointerover` fires at every child crossed.
+    PointerEnter,
     /// A pointer came back up.
     PointerUp,
     /// A form was submitted. The runtime suppresses the browser's own
@@ -64,6 +71,7 @@ impl EventType {
             Self::KeyDown => "keydown",
             Self::KeyUp => "keyup",
             Self::PointerDown => "pointerdown",
+            Self::PointerEnter => "pointerenter",
             Self::PointerUp => "pointerup",
             Self::Submit => "submit",
         }
@@ -163,6 +171,12 @@ pub fn on_input(handler: impl FnOnce(Event)) -> Attr {
 /// A delegated `keydown` handler.
 pub fn on_keydown(handler: impl FnOnce(Event)) -> Attr {
     on(EventType::KeyDown, handler)
+}
+
+/// A `pointerenter` handler, heard on the element itself; see
+/// [`EventType::PointerEnter`].
+pub fn on_pointerenter(handler: impl FnOnce(Event)) -> Attr {
+    on(EventType::PointerEnter, handler)
 }
 
 /// A delegated `submit` handler. The default submission is suppressed.

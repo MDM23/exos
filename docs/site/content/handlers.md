@@ -47,15 +47,23 @@ the large majority of handlers.
 
 ## Which events there are
 
-`on_change`, `on_click`, `on_dblclick`, `on_focusout`, `on_input`, `on_keydown`
-and `on_submit` are the shorthands; `on(EventType::PointerUp, ..)` names the
-rest. The set is closed on purpose. One listener per type sits on `document`,
-so an event nobody listens for would be a handler in the DOM that never fires,
-and a string would let that be a typo rather than a compile error.
+`on_change`, `on_click`, `on_dblclick`, `on_focusout`, `on_input`,
+`on_keydown`, `on_pointerenter` and `on_submit` are the shorthands;
+`on(EventType::PointerUp, ..)` names the rest. The set is closed on purpose.
+One listener per type sits on `document`, so an event nobody listens for would
+be a handler in the DOM that never fires, and a string would let that be a typo
+rather than a compile error.
 
 Two of those names are the delegated form rather than the familiar one:
 `focusout` bubbles and `blur` does not, and the same goes for `focusin` against
 `focus`.
+
+`pointerenter` is the one that does not bubble, because hover is about one
+element and not about the ones inside it: it fires once as the pointer arrives,
+where `pointerover` fires again at every child crossed. `document` never hears
+it, so the runtime listens on each element carrying the handler instead, added
+as the element arrives or a patch gives it one. A page pays for as many
+listeners as it has hover handlers, and one without any pays nothing.
 
 An event of your own is registered from JavaScript and named with `Custom`,
 which is a promise that you called `listen` for it:

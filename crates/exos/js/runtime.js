@@ -1126,6 +1126,9 @@
         if (root.matches(BINDING_SELECTOR)) bind(root);
         for (const el of root.querySelectorAll(BINDING_SELECTOR)) bind(el);
 
+        if (root.matches(DIRECT_SELECTOR)) listenDirect(root);
+        for (const el of root.querySelectorAll(DIRECT_SELECTOR)) listenDirect(el);
+
         // A revision renders a trashed row back as one, and what arrives new
         // is locked the way a row the reader trashed is.
         for (const row of root.querySelectorAll('[data-row="trashed"]')) lockRow(row);
@@ -1276,6 +1279,30 @@
 
             evaluate(el.getAttribute(attribute), el, ev, true);
         });
+    }
+
+    // An event that does not bubble never reaches `document`, so it is heard
+    // on the element handling it instead: added as the element is bound, or
+    // as a morph gives one it kept the attribute. The handler is read when the
+    // event fires, the way a delegated one is, so a morph changing it needs
+    // nothing, and the listener goes with the element.
+    const DIRECT = ["pointerenter"];
+    const DIRECT_SELECTOR = DIRECT.map((type) => `[data-on-${type}]`).join(",");
+    const heard = new WeakMap();
+
+    function listenDirect(el) {
+        const types = heard.get(el) ?? new Set();
+        for (const type of DIRECT) {
+            const attribute = `data-on-${type}`;
+            if (!el.hasAttribute(attribute) || types.has(type)) continue;
+
+            types.add(type);
+            heard.set(el, types);
+            el.addEventListener(type, (ev) => {
+                const source = el.getAttribute(attribute);
+                if (source !== null) evaluate(source, el, ev, true);
+            });
+        }
     }
 
     // Escape, a `method="dialog"` form and a click outside under
@@ -1522,6 +1549,11 @@
     // server changed, and a field is written back only while it still holds
     // what was sent, since one the reader edited meanwhile is newer than the
     // answer. Of two overlapping revisions of one form the newer wins.
+    //
+    // The control asked is what is busy, the way a field being checked is.
+    // The form is not being sent, so it must not look as if it were, and a
+    // search typed into a form would otherwise turn its submit button into a
+    // spinner at every pause.
     const revisions = new Map(); // form id -> turn
 
     async function revise(id, control) {
@@ -1549,11 +1581,6 @@
                 return;
             }
 
-    //
-    // The control asked is what is busy, the way a field being checked is.
-    // The form is not being sent, so it must not look as if it were, and a
-    // search typed into a form would otherwise turn its submit button into a
-    // spinner at every pause.
             if (!response.ok) {
                 console.error(`[exos] ${id} could not be revised:`, response.status, form);
                 return;
@@ -1766,6 +1793,7 @@
         }
 
         syncAttributes(from, to);
+        listenDirect(from);
         morphChildren(from, to);
         reapply(from);
 

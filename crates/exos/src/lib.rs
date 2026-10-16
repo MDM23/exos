@@ -57,7 +57,7 @@ pub use crate::{
     attributes::{
         Attr, Attributes, Bind, BindKind, Class, Event, EventType, IntoAttributes, Link, Target,
         attr, bind, class, modal, modal_now, on, on_change, on_click, on_dblclick, on_focusout,
-        on_input, on_keydown, on_submit, preserve, prop, show, text,
+        on_input, on_keydown, on_pointerenter, on_submit, preserve, prop, show, text,
     },
     base::{base_path, segment, segments, url},
     context::{data, provide, try_data},

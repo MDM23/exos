@@ -94,7 +94,7 @@ closure runs on the server at render time and records what it does; see
 | --- | --- |
 | `on_change`, `on_click`, `on_dblclick`, `on_focusout`, `on_input`, `on_keydown`, `on_submit` | One handler for the event it names |
 | `on(EventType, handler)` | The same for the rest, custom types included |
-| `EventType` | `Change`, `Click`, `DblClick`, `FocusIn`, `FocusOut`, `Input`, `KeyDown`, `KeyUp`, `PointerDown`, `PointerUp`, `Submit`, `Custom(&str)`, and `name()` |
+| `EventType` | `Change`, `Click`, `DblClick`, `FocusIn`, `FocusOut`, `Input`, `KeyDown`, `KeyUp`, `PointerDown`, `PointerEnter`, `PointerUp`, `Submit`, `Custom(&str)`, and `name()` |
 | `Event::target()` | The element the event came from |
 | `Event::key()` | Which key it was |
 | `Event::prevent_default()` | Suppresses what the browser would do |

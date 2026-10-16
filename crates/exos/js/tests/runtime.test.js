@@ -915,6 +915,23 @@ test("a handler on markup that arrived later still fires", () => {
     assert.equal(window.exos.signals.hit, true);
 });
 
+// `pointerenter` does not bubble, so `document` never hears it: the element
+// does, whether it arrived with the handler or a morph gave it one.
+test("a handler for an event that does not bubble fires on its element", () => {
+    const window = boot(`<ul id="list"><li id="one"></li></ul>`);
+    const one = window.document.getElementById("one");
+
+    window.exos.applyPatch(`<ul id="list"><li id="one" data-on-pointerenter="$.hit = 1"></li><li id="two" data-on-pointerenter="$.hit = 2"></li></ul>`);
+
+    assert.equal(window.document.getElementById("one"), one);
+
+    one.dispatchEvent(new window.Event("pointerenter"));
+    assert.equal(window.exos.signals.hit, 1);
+
+    window.document.getElementById("two").dispatchEvent(new window.Event("pointerenter"));
+    assert.equal(window.exos.signals.hit, 2);
+});
+
 test("a keyed reorder moves rows rather than rebuilding them", () => {
     const window = boot(`<ul id="list">${row("one")}${row("two")}</ul>`);
     const one = window.document.getElementById("one");
