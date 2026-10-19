@@ -20,6 +20,18 @@ binary and nothing is parsed at runtime.
 Everything interpolated is escaped. [`Markup`] is the only type that is not,
 and it is the only way to emit raw HTML, so "unescaped" is greppable.
 
+The content of a `<style>` or `<script>` is one string literal as well, usually
+a raw one so that its quotes need no escaping. It is code rather than text, so
+it reaches the page as written, unescaped and minified in release builds:
+
+```rust
+view! {
+    <style>r#"
+        .files > :first-child { font-weight: bold; }
+    "#</style>
+}
+```
+
 ## Attributes
 
 `Option<T>` drops the attribute entirely when `None`, because `aria-current=""`

@@ -67,33 +67,34 @@ fn none_drops_the_attribute_entirely() {
 }
 
 #[test]
-fn script_content_is_verbatim_source() {
-    // Inside a raw-text element the source is passed through untouched, so
-    // `a && b` must not become `a &amp;&amp; b`. It is also not a Rust string
-    // literal: quotes here would reach the page. Release builds minify it.
-    let markup = view! { <script>a && b</script> };
+fn script_content_is_the_value_of_its_literal() {
+    // Unescaped, so `a && b` does not become `a &amp;&amp; b`, and without the
+    // quotes. A backtick is not a Rust token, which is why the content is a
+    // literal at all. Release builds minify it.
+    let markup = view! { <script>r#"a && `b`"#</script> };
     let expected = if cfg!(debug_assertions) {
-        "<script>a && b</script>"
+        "<script>a && `b`</script>"
     } else {
-        "<script>a&&b</script>"
+        "<script>a&&`b`</script>"
     };
     assert_eq!(markup.as_str(), expected);
 }
 
 #[test]
 fn inline_styles_minify_in_release_builds() {
-    let markup = view! { <style>p { color: red; }</style> };
+    // `:first-child` is what bare tokens came back as `: first - child`.
+    let markup = view! { <style>"p > :first-child { color: red; }"</style> };
     let expected = if cfg!(debug_assertions) {
-        "<style>p { color: red; }</style>"
+        "<style>p > :first-child { color: red; }</style>"
     } else {
-        "<style>p{color:red}</style>"
+        "<style>p>:first-child{color:red}</style>"
     };
     assert_eq!(markup.as_str(), expected);
 }
 
 #[test]
 fn a_script_holding_data_is_never_minified() {
-    let markup = view! { <script type="application/json">{ "a": 1 }</script> };
+    let markup = view! { <script type="application/json">r#"{ "a": 1 }"#</script> };
     assert_eq!(
         markup.as_str(),
         "<script type=\"application/json\">{ \"a\": 1 }</script>"

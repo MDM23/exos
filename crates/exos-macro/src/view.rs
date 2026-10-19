@@ -4,7 +4,7 @@ use std::collections::HashSet;
 
 use exos_build::Mode;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{ToTokens, quote};
 use rstml::{
     Parser, ParserConfig,
     node::{KVAttributeValue, KeyedAttribute, Node, NodeAttribute, NodeElement},
@@ -51,7 +51,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
 
     let mut body = TokenStream::new();
     for node in &nodes {
-        emit_node(node, &mut body, false);
+        emit_node(node, &mut body);
     }
 
     let errors = diagnostics.into_iter().map(|error| {
@@ -77,31 +77,22 @@ fn push_literal(text: &str, out: &mut TokenStream) {
     out.extend(quote! { __out.push_str(#text); });
 }
 
-/// `raw` is set inside `<script>` and `<style>`, whose content is character
-/// data. Escaping there would corrupt it: `a && b` in JavaScript must not
-/// become `a &amp;&amp; b`.
-fn emit_node<C: rstml::node::CustomNode>(node: &Node<C>, out: &mut TokenStream, raw: bool) {
+fn emit_node<C: rstml::node::CustomNode>(node: &Node<C>, out: &mut TokenStream) {
     match node {
         Node::Element(element) => emit_element(element, out),
 
         // A quoted string in the template is author-written text. It is still
         // escaped: the author wrote text, so a `<` in it is a less-than sign
         // and not the start of a tag.
-        Node::Text(text) => {
-            let value = text.value_string();
-            push_literal(&if raw { value } else { escape_text(&value) }, out);
-        }
+        Node::Text(text) => push_literal(&escape_text(&text.value_string()), out),
 
         // Unquoted text between tags. Whitespace here is the template's own
         // indentation and never reaches the wire. Anything else is refused:
-        // outside a raw-text element it has already been through Rust's
-        // tokenizer, which comes back with the spacing rearranged, so
-        // `50% off` would render as `50 % off` and `don't` would not compile
-        // at all.
+        // it has already been through Rust's tokenizer, which comes back with
+        // the spacing rearranged, so `50% off` would render as `50 % off` and
+        // `don't` would not compile at all.
         Node::RawText(text) => {
-            if raw {
-                push_literal(&text.to_string_best(), out);
-            } else if !text.is_empty() {
+            if !text.is_empty() {
                 out.extend(
                     syn::Error::new_spanned(
                         text,
@@ -124,7 +115,7 @@ fn emit_node<C: rstml::node::CustomNode>(node: &Node<C>, out: &mut TokenStream, 
 
         Node::Fragment(fragment) => {
             for child in &fragment.children {
-                emit_node(child, out, false);
+                emit_node(child, out);
             }
         }
 
@@ -160,53 +151,69 @@ fn emit_element<C: rstml::node::CustomNode>(element: &NodeElement<C>, out: &mut 
         return;
     }
 
-    if let Some(code) = minified(&name, element, out) {
-        push_literal(&code, out);
+    if RAW_TEXT.contains(&name.as_str()) {
+        match raw_text(element) {
+            Ok(code) => push_literal(&minified(&name, element, code, out), out),
+            Err(error) => out.extend(error.to_compile_error()),
+        }
     } else {
-        let raw = RAW_TEXT.contains(&name.as_str());
         for child in &element.children {
-            emit_node(child, out, raw);
+            emit_node(child, out);
         }
     }
 
     push_literal(&format!("</{name}>"), out);
 }
 
-/// The content of a `<style>` or `<script>`, minified the way `asset!`
-/// minifies a file: in release builds only, and only when all of it is known
-/// at compile time and is CSS or JavaScript.
+/// The content of a `<style>` or `<script>`: one string literal, taken by its
+/// value and never escaped, because it is character data and `a && b` must
+/// not become `a &amp;&amp; b`. Bare, it would arrive as Rust tokens with the
+/// spacing rearranged, turning `:first-child` into `: first - child`, and a
+/// backtick would not compile at all.
+fn raw_text<C: rstml::node::CustomNode>(element: &NodeElement<C>) -> syn::Result<String> {
+    let refused = |tokens: &dyn ToTokens| {
+        syn::Error::new_spanned(
+            tokens,
+            "the content of a `<style>` or `<script>` is one string literal: \
+             `<style>r#\"p { color: red; }\"#</style>`",
+        )
+    };
+
+    match element.children.as_slice() {
+        [] => Ok(String::new()),
+        [Node::RawText(text)] => syn::parse2::<syn::LitStr>(text.to_token_stream())
+            .map(|literal| literal.value())
+            .map_err(|_| refused(text)),
+        _ => Err(refused(&element.open_tag.name)),
+    }
+}
+
+/// `code` minified the way `asset!` minifies a file: in release builds only,
+/// and only when it is CSS or JavaScript.
 fn minified<C: rstml::node::CustomNode>(
     name: &str,
     element: &NodeElement<C>,
+    code: String,
     out: &mut TokenStream,
-) -> Option<String> {
-    if !matches!(profile::mode()?, Mode::Release) {
-        return None;
-    }
-
-    let mut code = String::new();
-    for child in &element.children {
-        match child {
-            Node::Text(text) => code.push_str(&text.value_string()),
-            Node::RawText(text) => code.push_str(&text.to_string_best()),
-            _ => return None,
-        }
+) -> String {
+    if profile::mode() != Some(Mode::Release) {
+        return code;
     }
 
     let minified = match name {
         "style" => exos_build::minify_css(&code),
         "script" if is_javascript(element) => exos_build::minify_js(&code),
-        _ => return None,
+        _ => return code,
     };
 
     match minified {
-        Ok(code) => {
+        Ok(minified) => {
             out.extend(profile::checked());
-            Some(code)
+            minified
         }
         Err(error) => {
             out.extend(syn::Error::new_spanned(&element.open_tag.name, error).to_compile_error());
-            None
+            code
         }
     }
 }
@@ -307,7 +314,7 @@ fn emit_attribute(attribute: &KeyedAttribute, out: &mut TokenStream) {
     }
 }
 
-fn emit_attribute_value(name: &str, value: &impl quote::ToTokens, out: &mut TokenStream) {
+fn emit_attribute_value(name: &str, value: &impl ToTokens, out: &mut TokenStream) {
     let open = format!(" {name}=\"");
 
     out.extend(quote! {
@@ -366,11 +373,17 @@ mod tests {
         assert!(!expanded.contains("compile_error"), "{expanded}");
     }
 
-    /// Content of a raw-text element is character data, so the rule does not
-    /// reach into it: `<script>` has no string literals to write.
     #[test]
-    fn script_content_stays_bare() {
-        let expanded = expand_ok("<script>a && b</script>");
+    fn bare_script_content_is_refused() {
+        assert!(expand_ok("<script>a && b</script>").contains("compile_error"));
+    }
+
+    #[test]
+    fn script_content_is_one_string_literal() {
+        let expanded = expand_ok("<script>\"a\" \"b\"</script>");
+        assert!(expanded.contains("compile_error"), "{expanded}");
+
+        let expanded = expand_ok("<script>r#\"a && b\"#</script>");
         assert!(!expanded.contains("compile_error"), "{expanded}");
     }
 }

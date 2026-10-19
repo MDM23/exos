@@ -83,7 +83,9 @@ pub fn asset(input: TokenStream) -> TokenStream {
 ///
 /// Text is a string literal: `<p>"Hello"</p>`. Written bare it would arrive
 /// here as Rust tokens with the spacing rearranged, turning `50% off` into
-/// `50 % off`, so bare text is a compile error instead.
+/// `50 % off`, so bare text is a compile error instead. The content of a
+/// `<style>` or `<script>` is one string literal too, emitted unescaped:
+/// `<style>r#"p > :first-child { color: red; }"#</style>`.
 ///
 /// Static parts become string literals in the binary, so nothing is parsed at
 /// runtime. Interpolated values go through `exos::Render` and are escaped;
