@@ -1869,7 +1869,7 @@
         const isBound = from.hasAttribute("data-bind");
         const isField = from instanceof HTMLInputElement || from instanceof HTMLTextAreaElement;
 
-        if (!isBound && isField) {
+        if (!isBound && isField && from !== typedIn) {
             // A textarea has no value attribute: what it is worth is what is
             // written between its tags. Reading the attribute there finds
             // nothing, so an unbound textarea kept whatever had been typed
@@ -2002,7 +2002,7 @@
     // fires after its form has gone has nothing left to ask for.
     function refine(el) {
         const form = el.form ?? el.closest("form");
-        if (form?.isConnected) navigate(query(form).href, false, null);
+        if (form?.isConnected) navigate(query(form).href, false, null, true);
     }
 
     // What the browser would load for a GET form: its action, with the fields
@@ -2115,8 +2115,14 @@
     // navigating twice to the same URL is a thing people do.
     let navigation = 0;
 
-    // `scroll` is where to put the reader, or `null` to leave them.
-    async function navigate(url, push, scroll = 0) {
+    // The field the reader is typing a refine into, while its answer lands.
+    // The answer only knows what they had typed when it was asked for, and on
+    // a slow line they have typed on since, so its value would undo that.
+    let typedIn = null;
+
+    // `scroll` is where to put the reader, or `null` to leave them. `typing`
+    // keeps the focused field as the reader has it.
+    async function navigate(url, push, scroll = 0, typing = false) {
         const generation = ++navigation;
 
         announce("busy", { kind: "navigate", url });
@@ -2142,7 +2148,9 @@
 
             // The page being left, while it is still the one on screen.
             if (push) remember();
+            typedIn = typing ? document.activeElement : null;
             present(new DOMParser().parseFromString(html, "text/html"));
+            typedIn = null;
             reseed();
             // One that neither adds an entry nor moves the reader is the page
             // being read, updated, and the caret is wherever they are typing.

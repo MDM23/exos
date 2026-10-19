@@ -255,6 +255,28 @@ test("refining a form replaces the page being read rather than adding one", asyn
     assert.equal(window.history.length, 1);
 });
 
+// The bug: on a slow line the answer to "an" landed after "ann" was typed, and
+// wrote "an" back into the box the reader was still typing in.
+test("a refine's answer leaves the field being typed in as the reader has it", async () => {
+    const form = (q) =>
+        `<form action="/members" data-on-input="refine()"><input name="q" value="${q}"></form>`;
+    const window = boot(form(""));
+    const input = window.document.querySelector("input");
+
+    let release;
+    window.transport.responses.held = new Promise((resolve) => (release = resolve));
+    window.transport.responses.body = `<!DOCTYPE html><html><body>${form("an")}</body></html>`;
+
+    input.focus();
+    input.value = "an";
+    input.dispatchEvent(new window.Event("input", { bubbles: true }));
+    input.value = "ann";
+    release();
+    await settled();
+
+    assert.equal(window.document.querySelector("input").value, "ann");
+});
+
 test("a sticky link brings back the query its own path was left with", async () => {
     const window = boot(
         `<a id="nav" href="/members" data-sticky-query>members</a>` +
