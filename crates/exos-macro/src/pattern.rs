@@ -83,8 +83,8 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     quote! {
         #docs
         #(#attrs)*
-        #visibility static #name: ::exos::Pattern =
-            ::exos::Pattern::new(#label, #rust, #js);
+        #visibility static #name: ::exos::valid::Pattern =
+            ::exos::valid::Pattern::new(#label, #rust, #js);
     }
 }
 

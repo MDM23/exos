@@ -7,7 +7,7 @@
 //!
 //! ```no_run
 //! # fn main() -> Result<(), std::env::VarError> {
-//! let app = exos::app().keys(exos::Keys::from_secret(std::env::var("EXOS_SECRET")?));
+//! let app = exos::app().keys(exos::keys::Keys::from_secret(std::env::var("EXOS_SECRET")?));
 //! # Ok(())
 //! # }
 //! ```

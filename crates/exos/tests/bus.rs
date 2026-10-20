@@ -20,7 +20,12 @@ use axum::{
     extract::Path,
     http::{Request, Response, StatusCode, header},
 };
-use exos::{Audience, Effect, Fragment, Frame, Id, Kind, Markup, Topic, publish, send};
+use exos::{
+    Effect, Markup,
+    identity::Audience,
+    live::{Fragment, Topic, bus::Frame, bus::Kind, publish, send},
+    session::Id,
+};
 use tokio::{
     sync::Mutex,
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
@@ -71,7 +76,7 @@ fn node() -> Router {
         // First, and a bus refuses to be registered without it: a cluster signs
         // with one key, and a random one per process is a token that verifies
         // on the node that minted it and nowhere else.
-        .keys(exos::Keys::from_secret("a cluster agrees about this"))
+        .keys(exos::keys::Keys::from_secret("a cluster agrees about this"))
         .bus(move |frame: Frame| {
             let broker = Arc::clone(&broker);
 
@@ -224,7 +229,7 @@ async fn a_frame_off_the_wire_is_one_deliver_takes() {
     assert_eq!(frame.kind(), Kind::Audience);
     assert_eq!(frame.key(), key);
 
-    exos::deliver(frame);
+    exos::live::bus::deliver(frame);
 }
 
 // ---- a subscription that landed on the wrong node ---------------------------
@@ -468,7 +473,7 @@ async fn a_revocation_off_the_wire_ends_this_node_s_streams() {
 
     assert_eq!(frame.kind(), Kind::Session);
 
-    exos::deliver(frame);
+    exos::live::bus::deliver(frame);
 
     let mut ended = body.into_data_stream();
     let parting = ended.next().await.expect("the stream says goodbye");

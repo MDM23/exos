@@ -15,7 +15,7 @@ use axum::{
     http::{Request, StatusCode, header},
     response::Response,
 };
-use exos::{Id, data};
+use exos::{data, session::Id};
 use tower::ServiceExt as _;
 
 /// What an application keeps under a session name. A `HashMap` here, a table

@@ -9,7 +9,7 @@
 //! other test's publishes.
 
 use axum::{Router, extract::Path, http::StatusCode};
-use exos::{Effect, Markup, Model, Page, Step, publish, view};
+use exos::{Effect, Markup, Model, Page, effect::Step, live::publish, view};
 use exos_test::Browser;
 use serde::{Deserialize, Serialize};
 

@@ -7,7 +7,7 @@
 //! so the half holding the fact does the work.
 //!
 //! ```
-//! # use exos::{Instant, Markup, When, view};
+//! # use exos::{Instant, Markup, instant::When, view};
 //! # fn row(at: Instant) -> Markup {
 //! view! {
 //!     <td>{ When::date(at) }</td>
@@ -37,7 +37,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 
-use crate::{Attributes, Js, Render, attributes::BindKind, quote_js, render::AttributeValue, text};
+use crate::{
+    Js, Render,
+    attributes::{Attributes, BindKind},
+    js::quote_js,
+    render::AttributeValue,
+    text,
+};
 
 /// Milliseconds in a day, which is the only unit conversion here that is not a
 /// multiple of sixty.
@@ -283,7 +289,7 @@ fn civil(days: i64) -> (i64, i64, i64) {
 /// one:
 ///
 /// ```
-/// # use exos::{Instant, Markup, When, view};
+/// # use exos::{Instant, Markup, instant::When, view};
 /// # fn row(at: Instant) -> Markup {
 /// view! { <p>"Due " { When::date(at) }</p> }
 /// # }
@@ -333,8 +339,8 @@ impl When {
     /// ```
     /// # exos::locales! { #[fallback] En = "en" }
     /// # exos::messages! { kickoff_at(when: Time) { En = "Kickoff at {when}" } }
-    /// # use exos::{Instant, When};
-    /// # fn main() { exos::with_scope(|| {
+    /// # use exos::{Instant, instant::When};
+    /// # fn main() { exos::scope::with_scope(|| {
     /// # exos::scope().set(Locale::En);
     /// let at = Instant::from_millis(1_787_130_000_000);
     /// let said = kickoff_at(When::of(at).zone("Europe/Berlin"));
@@ -385,7 +391,7 @@ impl When {
     /// own.
     ///
     /// ```
-    /// # use exos::{Instant, When};
+    /// # use exos::{Instant, instant::When};
     /// let at = Instant::from_millis(1_787_130_000_000);
     ///
     /// assert_eq!(
@@ -431,7 +437,7 @@ impl Render for When {
     fn render_to(&self, out: &mut String) {
         let mut attributes = Attributes::new();
         attributes.set("datetime", self.at.to_string());
-        crate::IntoAttributes::write(text(self.to_js()), &mut attributes);
+        crate::attributes::IntoAttributes::write(text(self.to_js()), &mut attributes);
 
         out.push_str("<time");
         out.push_str(&attributes.render());

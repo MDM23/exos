@@ -43,7 +43,7 @@
 use core::{future::Future, hash::Hash, panic::Location, pin::Pin};
 use std::{collections::HashSet, sync::OnceLock};
 
-use crate::{Id, live::Topic};
+use crate::{live::Topic, session::Id};
 
 // -----------------------------------------------------------------------------
 //                                   AUDIENCES
@@ -56,7 +56,7 @@ use crate::{Id, live::Topic};
 /// the compiler keeps apart, and a typo in either is a compile error.
 ///
 /// ```
-/// # use exos::Audience;
+/// # use exos::identity::Audience;
 /// #[derive(Hash)]
 /// struct Team(u32);
 ///
@@ -84,7 +84,7 @@ pub trait Audience: Hash {
 /// on a team, or every tab in a workspace.
 ///
 /// ```
-/// # use exos::{Audience, Audiences};
+/// # use exos::{identity::{Audience, Audiences}};
 /// # #[derive(Hash)]
 /// # struct Viewer(u32);
 /// # impl Audience for Viewer { const NAME: &'static str = "viewer"; }

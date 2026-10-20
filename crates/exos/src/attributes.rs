@@ -8,7 +8,12 @@
 
 use serde_json::{Map, Value};
 
-use crate::{Js, Signal, escape_into, js::record, quote_js, signal::Placement};
+use crate::{
+    Js, Signal,
+    js::{quote_js, record},
+    render::escape_into,
+    signal::Placement,
+};
 
 mod handler;
 mod helper;

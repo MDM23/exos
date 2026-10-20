@@ -19,7 +19,7 @@
 //! }
 //!
 //! { presence(user.id) }           // in a template, renders it
-//! exos::publish(presence(id));    // anywhere, re-renders and pushes it
+//! exos::live::publish(presence(id));    // anywhere, re-renders and pushes it
 //! ```
 //!
 //! # The invariant
@@ -35,13 +35,13 @@
 //! [`Effect`](crate::Effect), which reaches only the requester.
 //!
 //! The invariant is enforced rather than asked for. A fragment body renders
-//! through [`detached`](crate::detached), so [`scope`](crate::scope) panics
+//! through [`detached`](crate::scope::detached), so [`scope`](crate::scope()) panics
 //! inside one whether or not a request is being served.
 //!
 //! # Its language
 //!
 //! The one thing a fragment may read besides its arguments is the language it
-//! renders in, which [`locale`](crate::locale) answers inside one. It is
+//! renders in, which [`locale`](crate::locale()) answers inside one. It is
 //! part of the topic rather than read from the request: a page in German
 //! subscribes to the German render, and [`publish`] renders once per declared
 //! language. So a topic is a fragment's name, its arguments and its language,
@@ -52,15 +52,12 @@ use core::{
     hash::{Hash, Hasher as _},
 };
 
-use crate::{Id, Markup, Render, escape_into, fnv::Fnv1a, keys};
+use crate::{Markup, Render, fnv::Fnv1a, keys, render::escape_into, session::Id};
 
-mod bus;
+pub mod bus;
 mod stream;
 
-pub use crate::live::{
-    bus::{Frame, Kind, Sent, deliver},
-    stream::{connected, connection_count, disconnect, publish, send},
-};
+pub use crate::live::stream::{connected, connection_count, disconnect, publish, send};
 
 pub(crate) use crate::live::{bus::set as set_bus, stream::routes};
 
@@ -173,7 +170,7 @@ impl Topic {
     ///   therefore says nothing about the token, and the element it lands on
     ///   keeps the grant it was served with. A patch has never been a grant.
     /// * **Inside another fragment**, whose body renders through
-    ///   [`detached`](crate::detached). A nested fragment's markup is
+    ///   [`detached`](crate::scope::detached). A nested fragment's markup is
     ///   published to everybody watching the outer one, so a token in it would
     ///   be one viewer's grant handed to all of them. The mask that keeps a
     ///   fragment's content viewer-independent turns out to be the same rule.
@@ -408,12 +405,12 @@ mod tests {
     /// binding exists for and would be worth nothing if a test could step
     /// around it.
     fn served(topic: &Topic) -> String {
-        crate::with_scope(|| topic.token().expect("a request has a viewer to bind to"))
+        crate::scope::with_scope(|| topic.token().expect("a request has a viewer to bind to"))
     }
 
     #[test]
     fn a_token_only_opens_its_own_topic() {
-        crate::with_scope(|| {
+        crate::scope::with_scope(|| {
             let mine = Topic::new("presence", &(1_u32,));
             let theirs = Topic::new("presence", &(2_u32,));
 
@@ -432,8 +429,8 @@ mod tests {
         let topic = Topic::new("presence", &(1_u32,));
         let stolen = served(&topic);
 
-        assert!(!crate::with_scope(|| topic.verify(&stolen)));
-        assert!(crate::with_scope(|| topic.verify(
+        assert!(!crate::scope::with_scope(|| topic.verify(&stolen)));
+        assert!(crate::scope::with_scope(|| topic.verify(
             &topic.token().expect("a request has a viewer to bind to")
         )));
     }
@@ -446,7 +443,7 @@ mod tests {
         let topic = Topic::new("presence", &(1_u32,));
         let token = served(&topic);
 
-        crate::with_scope(|| {
+        crate::scope::with_scope(|| {
             // A scope with a session that was never started: the browser sent
             // no cookie, so there is no name behind this request.
             assert!(crate::session().id().is_none());
@@ -458,7 +455,7 @@ mod tests {
     /// there has to be something to bind the grant to.
     #[test]
     fn rendering_one_names_the_browser() {
-        crate::with_scope(|| {
+        crate::scope::with_scope(|| {
             assert!(crate::session().id().is_none());
 
             drop(Topic::new("presence", &(1_u32,)).token());
@@ -491,7 +488,7 @@ mod tests {
 
     #[test]
     fn the_wrapper_is_invisible_to_layout_and_carries_the_subscription() {
-        let html = crate::with_scope(|| {
+        let html = crate::scope::with_scope(|| {
             Fragment::new(Topic::new("presence", &(1_u32,)), online)
                 .to_markup()
                 .into_string()
@@ -524,8 +521,8 @@ mod tests {
     /// as outside one.
     #[test]
     fn a_fragment_inside_a_fragment_carries_no_grant_either() {
-        crate::with_scope(|| {
-            let inner = crate::detached(|| {
+        crate::scope::with_scope(|| {
+            let inner = crate::scope::detached(|| {
                 Fragment::new(Topic::new("presence", &(1_u32,)), Markup::default)
                     .to_markup()
                     .into_string()

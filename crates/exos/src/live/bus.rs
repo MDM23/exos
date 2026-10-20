@@ -23,8 +23,8 @@
 //! // The application owns its subscriber loop, and its reconnection.
 //! tokio::spawn(async move {
 //!     while let Some(message) = subscription.next().await {
-//!         if let Some(frame) = exos::Frame::from_bytes(message.payload()) {
-//!             exos::deliver(frame);
+//!         if let Some(frame) = exos::live::bus::Frame::from_bytes(message.payload()) {
+//!             exos::live::bus::deliver(frame);
 //!         }
 //!     }
 //! });
@@ -79,7 +79,7 @@ pub type Sent = Result<(), Box<dyn core::error::Error + Send + Sync>>;
 pub enum Kind {
     /// A fragment, watched by whoever was served it.
     Topic,
-    /// A person, as [`Audience`](crate::Audience) reduces them.
+    /// A person, as [`Audience`](crate::identity::Audience) reduces them.
     Audience,
     /// One open stream, as the node holding it knows itself to.
     Connection,
@@ -126,7 +126,7 @@ enum Carries {
 
 /// One message, on its way to the nodes this one is not.
 ///
-/// Built by [`publish`](crate::publish), [`send`](crate::send) and the
+/// Built by [`publish`](crate::live::publish), [`send`](crate::live::send) and the
 /// subscription endpoint when a bus is registered, and handed back to
 /// [`deliver`] by the application's subscriber.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -338,7 +338,7 @@ pub(crate) fn cross(frame: impl FnOnce() -> Frame) {
 ///
 /// What an application's subscriber loop calls for every message the broker
 /// hands it. Synchronous, because delivery is a registry walk and a channel
-/// send, which is what [`publish`](crate::publish) already is.
+/// send, which is what [`publish`](crate::live::publish) already is.
 ///
 /// A frame addressed to nothing this node holds is free and silent, which is
 /// most of them: every node receives every frame until a broker is doing the
@@ -347,7 +347,7 @@ pub(crate) fn cross(frame: impl FnOnce() -> Frame) {
 /// # Panics
 ///
 /// If the registry lock was poisoned; see
-/// [`connection_count`](crate::connection_count).
+/// [`connection_count`](crate::live::connection_count).
 #[expect(
     clippy::needless_pass_by_value,
     reason = "a delivery is a handover, and a frame an adapter kept would be one it delivered twice"

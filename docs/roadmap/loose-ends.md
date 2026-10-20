@@ -124,7 +124,7 @@ the first request and kept for the process. Four things came out of it.
   nothing rather than guessing, since the guess would be kept for good.
 - **Route callers had to move with it.** A route attribute says the path the
   server sees and a browser has to ask for the one it is served at, so
-  `exos::call` prefixes. That is the same rule for nesting and for a
+  `exos::js::call` prefixes. That is the same rule for nesting and for a
   prefix-stripping proxy, which is the sign it is the right one.
 
 `exos::base` survives for the case discovery cannot see: it is the outermost
@@ -147,7 +147,7 @@ them, so it now generates `show::url(3)` as well. That is the typed answer:
 renaming a route or changing a parameter breaks every link to it at compile
 time, which is the guarantee the README already advertises for actions. It also
 put the URL in one place rather than two, since the caller now asks for it
-instead of building its own, and `exos::call` stopped prefixing.
+instead of building its own, and `exos::js::call` stopped prefixing.
 
 `asset!` stopped handing back a `&'static str` here, and
 `exos_build::Built::url` is gone: what a URL starts with is a runtime fact and a

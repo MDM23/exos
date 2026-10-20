@@ -30,7 +30,7 @@ async fn page() -> Page {
         <!DOCTYPE html>
         <html lang="en">
             <head>
-                <script defer src={ exos::runtime() }></script>
+                <script defer src={ exos::asset::runtime() }></script>
             </head>
             <body>
                 <h1>"Nested"</h1>
@@ -65,7 +65,7 @@ async fn status(uri: &str) -> StatusCode {
 }
 
 /// The rendered page, which is where every URL a browser would use comes from.
-/// Asking `exos::runtime()` directly would be asking a question no browser
+/// Asking `exos::asset::runtime()` directly would be asking a question no browser
 /// asks.
 async fn rendered() -> String {
     let bytes = axum::body::to_bytes(served("/admin/page").await.into_body(), usize::MAX)
@@ -108,7 +108,7 @@ async fn the_prefix_is_the_one_nesting_put_there() {
     // Any request settles it, and asking for a page is the honest one.
     assert!(!script_url().await.is_empty());
 
-    assert_eq!(exos::base_path(), BASE);
+    assert_eq!(exos::url::base_path(), BASE);
 }
 
 #[tokio::test]

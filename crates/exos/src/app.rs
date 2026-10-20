@@ -41,14 +41,21 @@ use axum::{
 };
 use tower::{Layer, Service};
 
-use crate::{Frame, Id, Keys, Resolution, Sent, Violation, discover};
+use crate::{
+    discover,
+    identity::Resolution,
+    keys::Keys,
+    live::{bus::Frame, bus::Sent},
+    session::Id,
+    valid::Violation,
+};
 
 /// Every route the binary declared, and whatever else is put on it.
 ///
 /// What goes on here goes on *inside* the layers exos puts up, so a middleware
 /// added with [`route_layer`](Self::route_layer) reads
-/// [`session`](crate::session), [`locale`](crate::locale) and
-/// [`scope`](crate::scope) the way a handler does, and writes a scope the views
+/// [`session`](crate::session()), [`locale`](crate::locale()) and
+/// [`scope`](crate::scope()) the way a handler does, and writes a scope the views
 /// under it can read. It also wraps the application's own routes, and the two
 /// of exos's that run the application's code: a field check calls its
 /// `checked_by` and a revision calls a form's render, so a guard refusing a
@@ -106,7 +113,7 @@ impl App {
     /// after the first request had already answered the question, and both are
     /// worth being loud about rather than resolving by whichever ran first.
     pub fn base(self, path: impl Into<String>) -> Self {
-        crate::base::set(path);
+        crate::url::set(path);
         self
     }
 
@@ -155,7 +162,7 @@ impl App {
     /// violation to exos, which says it in the language being rendered:
     ///
     /// ```no_run
-    /// # use exos::Violation;
+    /// # use exos::valid::Violation;
     /// let app = exos::app().complaints(|field, violation| match (field, violation) {
     ///     ("vat", Violation::Required) => Some(String::from("An invoice needs a VAT id.")),
     ///     _ => None,
@@ -184,7 +191,7 @@ impl App {
     /// yet.
     ///
     /// ```no_run
-    /// use exos::{Audience, Audiences};
+    /// use exos::{identity::{Audience, Audiences}};
     ///
     /// #[derive(Hash)]
     /// struct Viewer(u32);
@@ -195,7 +202,7 @@ impl App {
     ///
     /// # struct Sessions;
     /// # impl Sessions {
-    /// #     async fn viewer(&self, _: &exos::Id) -> Result<Option<u32>, std::io::Error> {
+    /// #     async fn viewer(&self, _: &exos::session::Id) -> Result<Option<u32>, std::io::Error> {
     /// #         Ok(Some(7))
     /// #     }
     /// # }
@@ -237,7 +244,7 @@ impl App {
     ///
     /// ```no_run
     /// # fn main() -> Result<(), std::env::VarError> {
-    /// let app = exos::app().keys(exos::Keys::from_secret(std::env::var("EXOS_SECRET")?));
+    /// let app = exos::app().keys(exos::keys::Keys::from_secret(std::env::var("EXOS_SECRET")?));
     /// # Ok(())
     /// # }
     /// ```
@@ -436,7 +443,7 @@ pub fn app() -> App {
 /// mounted.
 fn seal(routes: Router) -> Router {
     routes
-        .merge(crate::asset_routes(discover::asset_sets()))
+        .merge(crate::asset::routes(discover::asset_sets()))
         .merge(crate::live::routes())
         // Inside the scope, which it reads, and outside everything else: the
         // stream needs the name as much as a handler does, and an asset request

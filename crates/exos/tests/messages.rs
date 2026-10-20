@@ -176,7 +176,7 @@ async fn page() -> Page {
 
     Page(view! {
         <!DOCTYPE html>
-        <html { exos::lang(locale) }>
+        <html { exos::locale::lang(locale) }>
             <body>
                 <button>{ clear_selection() }</button>
                 <button>{ save_and_close() }</button>
@@ -200,7 +200,7 @@ async fn projected() -> Page {
 
     Page(view! {
         <!DOCTYPE html>
-        <html { exos::lang(locale) }>
+        <html { exos::locale::lang(locale) }>
             <body {&picked}>
                 <p id="selected" {exos::text(items_selected(picked.get().len()))}></p>
                 <p id="assigned" {exos::text(assigned(Assignee::Me, picked.get().len()))}></p>
@@ -219,13 +219,13 @@ async fn dated() -> Page {
 
     Page(view! {
         <!DOCTYPE html>
-        <html { exos::lang(locale) }>
+        <html { exos::locale::lang(locale) }>
             <body>
                 <p id="due" {exos::text(due(when))}></p>
                 <p id="posted" {exos::text(posted(Assignee::Me, when))}></p>
-                <p id="plain">{ exos::When::ago(when) }</p>
+                <p id="plain">{ exos::instant::When::ago(when) }</p>
                 <p id="kickoff" {exos::text(kickoff_at(
-                    exos::When::of(when).long().zone("Europe/Berlin"),
+                    exos::instant::When::of(when).long().zone("Europe/Berlin"),
                 ))}></p>
             </body>
         </html>
@@ -255,7 +255,7 @@ async fn body(uri: &str, accepted: &str) -> String {
 /// Renders `message` in `locale`, the way a handler that resolved its reader
 /// would.
 fn spoken<T>(locale: Locale, message: impl FnOnce() -> T) -> T {
-    exos::with_scope(|| {
+    exos::scope::with_scope(|| {
         exos::scope().set(locale);
         message()
     })

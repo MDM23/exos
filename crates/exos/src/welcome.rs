@@ -60,7 +60,7 @@ async fn home() -&gt; Page {{
     Page(view! {{
         &lt;!DOCTYPE html&gt;
         &lt;html lang="en"&gt;
-            &lt;head&gt;&lt;script defer src={{ exos::runtime() }}&gt;&lt;/script&gt;&lt;/head&gt;
+            &lt;head&gt;&lt;script defer src={{ exos::asset::runtime() }}&gt;&lt;/script&gt;&lt;/head&gt;
             &lt;body&gt;&lt;h1&gt;"Hello"&lt;/h1&gt;&lt;/body&gt;
         &lt;/html&gt;
     }})
@@ -74,6 +74,6 @@ it replaces itself.</p>
 </body>
 </html>
 "#,
-        runtime = crate::runtime(),
+        runtime = crate::asset::runtime(),
     )))
 }

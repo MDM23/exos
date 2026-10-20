@@ -91,7 +91,7 @@ pub(crate) const fn category(category: Category) -> &'static str {
     }
 }
 
-/// What a direction is called as a variant of `exos::Direction`.
+/// What a direction is called as a variant of `exos::locale::Direction`.
 pub(crate) const fn direction(direction: Direction) -> &'static str {
     match direction {
         Direction::LeftToRight => "LeftToRight",

@@ -2,7 +2,7 @@
 //!
 //! An action route is not a public API. The typed caller builds the body, the
 //! extractor reads it, and both are generated from the same `#[model]`, so the
-//! keys on the wire are the generated names from [`signal`](crate::signal)
+//! keys on the wire are the generated names from [`signal`](crate::signal())
 //! rather than the field names:
 //!
 //! ```json
@@ -38,7 +38,7 @@ use axum::{
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::{Map, Value};
 
-use crate::{Effect, Errors, Placement, Signal, Validate};
+use crate::{Effect, Signal, Validate, signal::Placement, valid::Errors};
 
 /// The wire name of every field of a model.
 ///
@@ -198,7 +198,7 @@ fn outward<T: ModelFields>(fields: &Map<String, Value>) -> Map<String, Value> {
 /// rather than a JSON literal that would have to be kept in step by hand.
 ///
 /// ```ignore
-/// let body = exos::to_wire(&Selection { picked: vec![], fail: true });
+/// let body = exos::model::to_wire(&Selection { picked: vec![], fail: true });
 /// ```
 ///
 /// The value serializes under its field names and the keys are renamed

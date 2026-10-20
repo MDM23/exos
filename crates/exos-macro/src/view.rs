@@ -276,11 +276,11 @@ fn emit_attribute_blocks<C: rstml::node::CustomNode>(
 
     out.extend(quote! {
         {
-            let mut __attributes = ::exos::Attributes::new();
+            let mut __attributes = ::exos::attributes::Attributes::new();
             // Seeded first, so a handle declaring the same name wins. An
             // inferred name is a default; a handle is a statement.
             #(__attributes.signal(#inferred, ::exos::serde_json::Value::Null);)*
-            #(::exos::IntoAttributes::write(#blocks, &mut __attributes);)*
+            #(::exos::attributes::IntoAttributes::write(#blocks, &mut __attributes);)*
             __out.push_str(&__attributes.render());
         }
     });
@@ -318,7 +318,7 @@ fn emit_attribute_value(name: &str, value: &impl ToTokens, out: &mut TokenStream
     let open = format!(" {name}=\"");
 
     out.extend(quote! {
-        if let Some(__value) = ::exos::AttributeValue::attribute_value(&(#value)) {
+        if let Some(__value) = ::exos::render::AttributeValue::attribute_value(&(#value)) {
             __out.push_str(#open);
             ::exos::Render::render_to(&__value, &mut __out);
             __out.push('"');

@@ -14,21 +14,21 @@ use axum::{
     routing::get,
 };
 
-use crate::{AttributeValue, Render};
+use crate::{Render, render::AttributeValue};
 
 /// Where assets sit under whatever [`base`](crate::App::base) the application
 /// has.
 ///
 /// Hashed names make the segment itself arbitrary. What is not arbitrary is
 /// that the runtime finds the base by looking for this in its own script URL,
-/// so the endpoints in [`live`](crate::live) share it deliberately rather than
+/// so the endpoints in [`live`](mod@crate::live) share it deliberately rather than
 /// by coincidence.
 pub(crate) const PREFIX: &str = "/_exos";
 
 /// The URL of the client runtime, which every page has to load.
 ///
 /// ```ignore
-/// view! { <script defer src={ exos::runtime() }></script> }
+/// view! { <script defer src={ exos::asset::runtime() }></script> }
 /// ```
 ///
 /// It ships inside this crate, so there is nothing to copy into a project and
@@ -59,7 +59,7 @@ pub fn runtime() -> String {
     }
 }
 
-/// What [`asset!`](crate::asset) evaluates to: a file the binary carries.
+/// What [`asset!`](crate::asset!) evaluates to: a file the binary carries.
 ///
 /// It holds the hashed file name and nothing else, so it is a `&'static str` in
 /// a newtype and every call site is a constant. Interpolating it into a
@@ -82,7 +82,7 @@ pub fn runtime() -> String {
 pub struct Asset(&'static str);
 
 impl Asset {
-    /// Names one built asset. Called by [`asset!`](crate::asset).
+    /// Names one built asset. Called by [`asset!`](crate::asset!).
     pub const fn new(file: &'static str) -> Self {
         Self(file)
     }
@@ -130,7 +130,7 @@ impl Render for Asset {
     /// that HTML escaping would touch, and the [`String`] the URL would be
     /// built in first is a temporary that only ever gets copied here.
     fn render_to(&self, out: &mut String) {
-        out.push_str(crate::base::path());
+        out.push_str(crate::url::path());
         out.push_str(PREFIX);
         out.push('/');
         out.push_str(self.0);
@@ -148,7 +148,7 @@ impl AttributeValue for Asset {
     }
 }
 
-/// One asset built by [`asset!`](crate::asset), with the bytes it embedded.
+/// One asset built by [`asset!`](crate::asset!), with the bytes it embedded.
 ///
 /// Values come from that macro rather than being written by hand, which is
 /// why the constructor takes everything at once.
@@ -161,7 +161,7 @@ pub struct Embedded {
 }
 
 impl Embedded {
-    /// Describes one built asset. Called by [`asset!`](crate::asset).
+    /// Describes one built asset. Called by [`asset!`](crate::asset!).
     pub const fn new(
         name: &'static str,
         file: &'static str,
@@ -192,7 +192,7 @@ impl Embedded {
     }
 }
 
-/// The assets one [`asset!`](crate::asset) call site registered.
+/// The assets one [`asset!`](crate::asset!) call site registered.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct AssetSet(pub &'static [Embedded]);
 

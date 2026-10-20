@@ -6,7 +6,8 @@
 //! in the handler is what a declaration cannot reach.
 
 use exos::{
-    Bound, Effect, Markup, Model, Refusal, Rows, attr, bind, data, on_submit, show, text, view,
+    Effect, Markup, Model, Rows, attr, bind, data, on_submit, show, signal::Bound, text,
+    valid::Refusal, view,
 };
 use serde::{Deserialize, Serialize};
 
@@ -601,7 +602,7 @@ mod tests {
     async fn a_row_travels_under_generated_keys_too() {
         let group = Signup::signals().attendees.key();
         let field = <Attendee as exos::RowModel>::keys()[0];
-        let body = exos::to_wire(&draft());
+        let body = exos::model::to_wire(&draft());
 
         assert!(
             body.contains(&format!("\"{group}\":[{{\"{field}\"")),

@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use axum::{Router, routing::MethodRouter};
 
-use crate::AssetSet;
+use crate::asset::AssetSet;
 
 /// One discovered route, submitted by the method attributes.
 ///
@@ -59,7 +59,7 @@ impl core::fmt::Debug for RouteEntry {
 
 inventory::collect!(RouteEntry);
 
-/// One discovered asset set, submitted by [`asset!`](crate::asset).
+/// One discovered asset set, submitted by [`asset!`](crate::asset!).
 #[derive(Clone, Copy, Debug)]
 pub struct AssetSetEntry(AssetSet);
 
@@ -107,7 +107,7 @@ pub(crate) fn routes() -> (Router, bool) {
 
 /// Every asset the binary embedded, the client runtime included.
 ///
-/// The runtime is not a special case: [`runtime`](crate::runtime) expands the
+/// The runtime is not a special case: [`runtime`](crate::asset::runtime) expands the
 /// same macro every application does, and registers the same way.
 pub(crate) fn asset_sets() -> Vec<AssetSet> {
     inventory::iter::<AssetSetEntry>

@@ -5,7 +5,11 @@
 //! patch, so two browsers stay in step without either of them asking.
 
 use axum::Json;
-use exos::{Effect, Markup, connection_count, data, preserve, publish, view};
+use exos::{
+    Effect, Markup, data,
+    live::{connection_count, publish},
+    preserve, view,
+};
 use serde::Deserialize;
 
 use crate::{
@@ -177,7 +181,7 @@ mod tests {
     /// the wrapper is bound to whoever the request is for.
     fn markup() -> String {
         seeded();
-        exos::with_scope(|| room().to_markup().into_string())
+        exos::scope::with_scope(|| room().to_markup().into_string())
     }
 
     /// Being able to subscribe is the authorization, so the wrapper carries a

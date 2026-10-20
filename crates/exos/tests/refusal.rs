@@ -49,7 +49,7 @@ async fn posted(draft: &Draft) -> (StatusCode, String) {
                 .header("x-exos", "true")
                 .uri("/drafts")
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(exos::to_wire(draft)))
+                .body(Body::from(exos::model::to_wire(draft)))
                 .expect("a valid request"),
         )
         .await

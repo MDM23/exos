@@ -72,7 +72,7 @@ async fn place_order(order: &Order) -> (StatusCode, String) {
             .header("x-exos", "true")
             .uri("/orders")
             .header(header::CONTENT_TYPE, "application/json")
-            .body(Body::from(exos::to_wire(order)))
+            .body(Body::from(exos::model::to_wire(order)))
             .expect("a valid request"),
     )
     .await

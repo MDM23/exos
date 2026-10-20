@@ -5,7 +5,7 @@
 //! cross-reference in the guide have something to point at. Code is
 //! highlighted on the server, which is why this site ships no highlighter and
 //! keeps the promise the guide makes about bundlers. And a link to another
-//! page is rewritten through [`exos::url`], so the site survives being mounted
+//! page is rewritten through [`exos::url()`], so the site survives being mounted
 //! under a prefix like anything else exos writes.
 
 use std::sync::LazyLock;
@@ -214,12 +214,12 @@ fn language(kind: &CodeBlockKind<'_>) -> String {
 /// One code block, highlighted where the language is one syntect knows.
 fn block(language: &str, source: &str) -> String {
     let mut out = String::from("<pre class=\"code\" data-language=\"");
-    exos::escape_into(language, &mut out);
+    exos::render::escape_into(language, &mut out);
     out.push_str("\"><code>");
 
     match highlight(language, source) {
         Some(highlighted) => out.push_str(&highlighted),
-        None => exos::escape_into(source, &mut out),
+        None => exos::render::escape_into(source, &mut out),
     }
 
     out.push_str("</code></pre>");

@@ -5,10 +5,10 @@
 //!
 //! ```
 //! # fn main() -> Result<(), Box<dyn core::error::Error>> {
-//! # exos::with_scope(|| {
+//! # exos::scope::with_scope(|| {
 //! # let authenticated = 7_u32;
 //! # struct Sessions;
-//! # impl Sessions { fn bind(&self, _: &exos::Id, _: u32) {} }
+//! # impl Sessions { fn bind(&self, _: &exos::session::Id, _: u32) {} }
 //! # let sessions = Sessions;
 //! // At sign-in: a new name, then whatever the application keeps under it.
 //! let id = exos::session().rotate();
@@ -25,7 +25,7 @@
 //!
 //! An application resolves the id to whatever it means, in a handler, where
 //! awaiting a database is legal, and drops the result into
-//! [`scope`](crate::scope). Every view underneath then reads it synchronously,
+//! [`scope`](crate::scope()). Every view underneath then reads it synchronously,
 //! which is the job the request scope already exists for. A framework holding
 //! the contents would have to load them before the handler runs, because a
 //! [`view!`](crate::view) fragment is a plain function and cannot await, and
@@ -65,26 +65,26 @@
 //!
 //! Nothing is sent until something asks for an id. A crawler, a health check or
 //! an anonymous read gets no `Set-Cookie`, and a browser that already holds the
-//! cookie is not sent it again. Rendering a [live](crate::live) fragment does
+//! cookie is not sent it again. Rendering a [live](mod@crate::live) fragment does
 //! ask, because the subscription in its wrapper is bound to the browser it was
 //! served to, so a page with one on it names whoever looks at it.
 //!
 //! # Settled when the response goes out
 //!
 //! The cookie is written with the headers, and an
-//! [`EffectStream`](crate::EffectStream) sends those before any of its effects
+//! [`EffectStream`](crate::effect::EffectStream) sends those before any of its effects
 //! are computed. A change made after that point would never reach the browser,
 //! so signing out from inside a stream would leave the browser signed in
 //! without a word. Starting, rotating or ending a session once its response
 //! has gone therefore panics, whether through a handle moved into the stream
 //! or through [`session`] inside the work
-//! [`EffectStream::spawn`](crate::EffectStream::spawn) runs. Change it in the
+//! [`EffectStream::spawn`](crate::effect::EffectStream::spawn) runs. Change it in the
 //! handler, and read it from the stream.
 //!
 //! # A name that changes takes this browser's streams with it
 //!
 //! [`rotate`](Session::rotate) and [`end`](Session::end) close every
-//! [live](crate::live) connection that opened under the name they replaced.
+//! [live](mod@crate::live) connection that opened under the name they replaced.
 //! That is what carries a privilege change to the tabs that did not ask for
 //! it: they made no request, so there is nothing to answer them with, and a
 //! connection identified as somebody who no longer exists is exactly what
@@ -100,13 +100,13 @@
 //!
 //! # Where it cannot be reached
 //!
-//! [`session`] is built on [`scope`](crate::scope) and inherits both of its
+//! [`session`] is built on [`scope`](crate::scope()) and inherits both of its
 //! rules. Outside a request, asking panics, because a background job reading
 //! the request is a mistake made once rather than a condition every caller
 //! handles. Inside a live fragment, asking also panics: a fragment renders
 //! again from whatever publishes it, so its arguments are its whole input.
 //!
-//! Under [`with_scope`](crate::with_scope) there is no layer, and [`session`]
+//! Under [`with_scope`](crate::scope::with_scope) there is no layer, and [`session`]
 //! answers with one that mints and rotates exactly as it would in a request and
 //! is thrown away with the scope.
 
@@ -119,7 +119,7 @@ use axum::{
     response::Response,
 };
 
-use crate::{Scope, hex};
+use crate::{hex, scope::Scope};
 
 // -----------------------------------------------------------------------------
 //                                  THE SESSION
@@ -146,7 +146,7 @@ impl Id {
     /// # Panics
     ///
     /// If the operating system has no entropy to give, which is where
-    /// [`Keys::random`](crate::Keys::random) already stands and has the same
+    /// [`Keys::random`](crate::keys::Keys::random) already stands and has the same
     /// answer: a guessable id is worse than not starting.
     pub fn random() -> Self {
         let mut bytes = [0_u8; ID_BYTES];
@@ -200,7 +200,7 @@ impl Session {
     ///
     /// `None` is an anonymous visit. Asking does not start a session, so
     /// looking costs no cookie unless something on the page asks for one, which
-    /// rendering a [live](crate::live) fragment does.
+    /// rendering a [live](mod@crate::live) fragment does.
     pub fn id(&self) -> Option<Id> {
         self.inner().id.clone()
     }
@@ -226,12 +226,12 @@ impl Session {
     ///
     /// ```
     /// # fn main() -> Result<(), Box<dyn core::error::Error>> {
-    /// # exos::with_scope(|| {
+    /// # exos::scope::with_scope(|| {
     /// # let user = 7_u32;
     /// # struct Sessions;
     /// # impl Sessions {
-    /// #     fn bind(&self, _: &exos::Id, _: u32) {}
-    /// #     fn forget(&self, _: &exos::Id) {}
+    /// #     fn bind(&self, _: &exos::session::Id, _: u32) {}
+    /// #     fn forget(&self, _: &exos::session::Id) {}
     /// # }
     /// # let sessions = Sessions;
     /// let session = exos::session();
@@ -256,7 +256,7 @@ impl Session {
     ///
     /// # It ends this browser's open streams
     ///
-    /// Every [live](crate::live) connection that opened under the old name is
+    /// Every [live](mod@crate::live) connection that opened under the old name is
     /// closed when this request finishes. A browser is one cookie and many
     /// tabs, and the tabs that did not make this request are still watching as
     /// whoever the browser used to be; they cannot be answered, because they
@@ -312,7 +312,7 @@ impl Session {
     /// # Panics
     ///
     /// Once the response has taken its cookie. A handle moved into an
-    /// [`EffectStream`](crate::EffectStream) outlives the headers, and a
+    /// [`EffectStream`](crate::effect::EffectStream) outlives the headers, and a
     /// sign-out made there would leave the browser signed in without a word.
     /// The guard is dropped first, so the lock is not poisoned for the handles
     /// that did nothing wrong.
@@ -348,7 +348,7 @@ impl core::fmt::Debug for Session {
 ///
 /// If there is no request, or if the caller is inside a live fragment. Both are
 /// programming mistakes rather than conditions to handle, and
-/// [`scope`](crate::scope) says why.
+/// [`scope`](crate::scope()) says why.
 pub fn session() -> Session {
     of(&crate::scope())
 }
@@ -358,7 +358,7 @@ pub fn session() -> Session {
 /// What [`session`] panics about, answered instead. A live fragment's wrapper
 /// renders in a request, inside the mask a fragment's body renders under, and
 /// again from a publish that has no request at all, and the token it carries
-/// has to be produced in all three; see [`scope::current`](crate::scope).
+/// has to be produced in all three; see [`scope::current`](crate::scope()).
 pub(crate) fn current() -> Option<Session> {
     crate::scope::current().as_ref().map(of)
 }
@@ -379,7 +379,7 @@ fn of(scope: &Scope) -> Session {
 
 /// One request's session while it is being served.
 ///
-/// Lives in the request [scope](crate::scope), which is what gives [`session`]
+/// Lives in the request [scope](crate::scope()), which is what gives [`session`]
 /// its two panics for free and keeps two requests in flight from naming each
 /// other's viewer.
 #[derive(Debug, Default)]
@@ -533,7 +533,7 @@ fn expired() -> HeaderValue {
 )]
 mod tests {
     use super::*;
-    use crate::{detached, with_scope};
+    use crate::scope::{detached, with_scope};
 
     /// The handle a handler would be given for a request carrying `cookie`, and
     /// what the layer decides from it afterwards. Together these are the layer

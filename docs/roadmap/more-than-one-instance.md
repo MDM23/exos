@@ -4,7 +4,7 @@ What a second process breaks, and the one piece of state that cannot be moved.
 
 Status: stages 1 to 4 are built. A
 [`Frame`](../../crates/exos/src/live/bus.rs) crosses, `exos::bus` says how,
-`exos::deliver` is what an application's subscriber hands one back to, a
+`exos::live::bus::deliver` is what an application's subscriber hands one back to, a
 publish and a send fan out through it local-first, a subscription that landed
 on the wrong node is forwarded rather than refused, and a rotation ends the
 browser's streams on every node rather than on the one that took the request.
@@ -121,7 +121,7 @@ the same reason: the choice is the application's and exos would learn nothing by
 being told. What it ships is the two ends.
 
 ```rust
-exos::bus(move |frame: exos::Frame| {
+exos::bus(move |frame: exos::live::bus::Frame| {
     let redis = redis.clone();
 
     async move {
@@ -133,8 +133,8 @@ exos::bus(move |frame: exos::Frame| {
 // The application owns its own subscriber loop, and its reconnection.
 tokio::spawn(async move {
     while let Some(message) = subscription.next().await {
-        if let Some(frame) = exos::Frame::from_bytes(message.payload()) {
-            exos::deliver(frame);
+        if let Some(frame) = exos::live::bus::Frame::from_bytes(message.payload()) {
+            exos::live::bus::deliver(frame);
         }
     }
 });

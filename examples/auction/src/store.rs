@@ -8,7 +8,7 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
-use exos::Id;
+use exos::session::Id;
 
 // -----------------------------------------------------------------------------
 //                                   THE ROOM

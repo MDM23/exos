@@ -149,7 +149,7 @@ view! { <a href={ exos::url("/files") }>"Files"</a> }
 At the root both add nothing, which is exactly why they are easy to forget until
 the day something is mounted somewhere.
 
-`<base href={ format!("{}/", exos::base_path()) }>` is the obvious alternative
+`<base href={ format!("{}/", exos::url::base_path()) }>` is the obvious alternative
 and is worth knowing the shape of before reaching for it. It does not do what it
 looks like it does:
 

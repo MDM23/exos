@@ -10,7 +10,7 @@ async fn home() -> Page {
         <html lang="en">
             <head>
                 <link rel="stylesheet" href={ exos::asset!("css/app.css") }>
-                <script defer src={ exos::runtime() }></script>
+                <script defer src={ exos::asset::runtime() }></script>
             </head>
             <body><h1>"Hello"</h1></body>
         </html>

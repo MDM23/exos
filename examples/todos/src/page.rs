@@ -33,7 +33,7 @@ fn document(filter: Filter) -> Page {
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>"todos"</title>
                 <link rel="stylesheet" href={ exos::asset!("css/app.css") }>
-                <script defer src={ exos::runtime() }></script>
+                <script defer src={ exos::asset::runtime() }></script>
             </head>
             <body>
                 <section class="todoapp">

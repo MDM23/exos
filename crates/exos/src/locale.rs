@@ -14,7 +14,7 @@
 //! }
 //!
 //! # fn main() {
-//! exos::with_scope(|| {
+//! exos::scope::with_scope(|| {
 //!     // Nothing knows any better, so the fallback.
 //!     assert_eq!(exos::locale::<Locale>(), Locale::En);
 //!
@@ -29,7 +29,7 @@
 //!
 //! In order, first hit wins:
 //!
-//! 1. A locale in the [request scope](crate::scope), put there by the
+//! 1. A locale in the [request scope](crate::scope()), put there by the
 //!    application.
 //! 2. `Accept-Language`, matched against the declared tags by RFC 4647 lookup.
 //! 3. The locale `locales!` marked `#[fallback]`.
@@ -53,7 +53,7 @@
 //! # fn main() {
 //! # struct Viewer { locale: Locale }
 //! # let viewer = Viewer { locale: Locale::De };
-//! # exos::with_scope(|| {
+//! # exos::scope::with_scope(|| {
 //! exos::scope().set(viewer.locale);
 //! # });
 //! # }
@@ -77,9 +77,17 @@ use axum::{
     response::Response,
 };
 
-use crate::{Attributes, IntoAttributes, scope::Setting};
+use crate::{
+    attributes::{Attributes, IntoAttributes},
+    scope::Setting,
+};
 
 mod negotiate;
+
+pub use crate::{
+    message::{Count, Counted},
+    number::Symbols,
+};
 
 // -----------------------------------------------------------------------------
 //                                THE LOCALE SET
@@ -113,9 +121,10 @@ pub trait LocaleSet: Copy + Sealed + Send + Sync + 'static {
 
 /// What keeps [`LocaleSet`] implementable by `locales!` alone.
 ///
-/// Re-exported at the crate root so the macro can name it. There is no reason
-/// to name it yourself, and a locale set written by hand would be one exos
-/// could not add a method to without breaking it.
+/// Public so the macro can name it. There is no reason to name it yourself,
+/// and a locale set written by hand would be one exos could not add a method to
+/// without breaking it.
+#[doc(hidden)]
 pub trait Sealed {}
 
 /// Which way a script runs.
@@ -190,7 +199,7 @@ impl PluralCategory {
 /// ```
 /// # exos::locales! { De = "de", #[fallback] En = "en" }
 /// # fn main() {
-/// # exos::with_scope(|| {
+/// # exos::scope::with_scope(|| {
 /// assert_eq!(exos::locale::<Locale>(), Locale::En);
 ///
 /// // Or nothing at all, where the type is already known, which is most places.
@@ -212,7 +221,7 @@ impl PluralCategory {
 ///
 /// # Panics
 ///
-/// If there is no request, exactly as [`scope`](crate::scope) does and for the
+/// If there is no request, exactly as [`scope`](crate::scope()) does and for the
 /// same reason.
 pub fn locale<L: LocaleSet>() -> L {
     if let Setting::Fragment(Some(index)) = crate::scope::setting() {
@@ -246,12 +255,13 @@ pub fn locale<L: LocaleSet>() -> L {
 /// ```
 /// # exos::locales! { De = "de", #[fallback] En = "en" }
 /// # fn main() {
-/// exos::with_scope(|| {
+/// exos::scope::with_scope(|| {
 ///     assert_eq!(Locale::De.within(exos::locale::<Locale>), Locale::De);
 ///     assert_eq!(exos::locale::<Locale>(), Locale::En);
 /// });
 /// # }
 /// ```
+#[doc(hidden)]
 pub fn in_locale<L: LocaleSet, R>(locale: L, render: impl FnOnce() -> R) -> R {
     let index = L::ALL
         .iter()
@@ -269,13 +279,14 @@ pub fn in_locale<L: LocaleSet, R>(locale: L, render: impl FnOnce() -> R) -> R {
 /// assert_eq!(Locale::lookup("fr"), None);
 /// # }
 /// ```
+#[doc(hidden)]
 pub fn lookup<L: LocaleSet>(tags: &str) -> Option<L> {
     negotiate::lookup(tags)
 }
 
 /// What this request asked for, and whether resolution read it.
 ///
-/// Lives in the request [scope](crate::scope), like the session, which is what
+/// Lives in the request [scope](crate::scope()), like the session, which is what
 /// keeps two requests in flight from answering in each other's language.
 #[derive(Debug)]
 struct Accepted {
@@ -491,11 +502,11 @@ impl IntoAttributes for Lang {
 /// ```
 /// # exos::locales! { #[fallback] En = "en", He = "he" }
 /// # fn main() {
-/// # exos::with_scope(|| {
+/// # exos::scope::with_scope(|| {
 /// let locale: Locale = exos::locale();
 ///
 /// let document = exos::view! {
-///     <html { exos::lang(locale) }><body></body></html>
+///     <html { exos::locale::lang(locale) }><body></body></html>
 /// };
 ///
 /// assert_eq!(document.as_str(), "<html lang=\"en\"><body></body></html>");
@@ -532,7 +543,7 @@ pub fn lang(locale: impl LocaleSet) -> Lang {
 )]
 mod tests {
     use super::*;
-    use crate::{detached, with_scope};
+    use crate::scope::{detached, with_scope};
 
     /// A locale set as `locales!` would generate one, written out here so that
     /// what these tests cover is the resolving rather than the macro, and so

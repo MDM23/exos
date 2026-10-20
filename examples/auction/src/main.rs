@@ -75,7 +75,7 @@ fn app() -> Router {
 
 #[cfg(test)]
 mod tests {
-    use exos::Id;
+    use exos::session::Id;
     use exos_test::Browser;
 
     use super::*;

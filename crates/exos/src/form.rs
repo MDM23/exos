@@ -105,7 +105,7 @@ pub struct ReviseEntry {
 }
 
 /// The revision, monomorphised for one form. Boxed for the reason
-/// [`CheckEntry`](crate::CheckEntry)'s shim is.
+/// [`CheckEntry`](crate::valid::CheckEntry)'s shim is.
 type Revise = fn(Bytes) -> Pin<Box<dyn Future<Output = Response> + Send>>;
 
 impl ReviseEntry {

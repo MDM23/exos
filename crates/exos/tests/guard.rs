@@ -118,7 +118,7 @@ async fn what_the_guard_lets_past_is_served() {
 /// it was protecting.
 #[tokio::test]
 async fn exos_serves_its_own_routes_from_outside_the_guard() {
-    let response = request(&exos::runtime(), None).await;
+    let response = request(&exos::asset::runtime(), None).await;
 
     assert_eq!(response.status(), StatusCode::OK);
 }

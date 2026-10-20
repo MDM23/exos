@@ -52,7 +52,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     // away again. Edition 2024 captures the argument lifetimes in the opaque
     // type, which is what lets a fragment take a reference.
     let mut signature = function.sig.clone();
-    signature.output = syn::parse_quote!(-> ::exos::Fragment<impl Fn() -> ::exos::Markup>);
+    signature.output = syn::parse_quote!(-> ::exos::live::Fragment<impl Fn() -> ::exos::Markup>);
 
     quote! {
         #(#attributes)*
@@ -61,12 +61,12 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
             // may be called `status` without becoming one topic, and the name
             // alone stays the readable half of the id. Borrowed, so the
             // arguments stay usable in the render below.
-            let __topic = ::exos::Topic::new(
+            let __topic = ::exos::live::Topic::new(
                 #label,
                 &(::core::module_path!(), #(&#arguments,)*),
             );
 
-            ::exos::Fragment::new(__topic, move || {
+            ::exos::live::Fragment::new(__topic, move || {
                 // Cloned per render rather than moved, so the body reads the
                 // arguments it was written against and the fragment stays
                 // renderable again, which is what a publish asks of it.
@@ -76,7 +76,7 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
                 // fragment renders again from whatever publishes it, where
                 // there is no request, and content that differed between the
                 // two would break the topic invariant.
-                let __markup: ::exos::Markup = ::exos::detached(move || #body);
+                let __markup: ::exos::Markup = ::exos::scope::detached(move || #body);
 
                 __markup
             })
@@ -100,7 +100,7 @@ mod tests {
     fn returns_a_fragment_rather_than_markup() {
         let expanded = expand_ok("fn presence(user: u32) -> Markup { todo!() }");
 
-        assert!(expanded.contains(":: exos :: Fragment"));
+        assert!(expanded.contains(":: exos :: live :: Fragment"));
         assert!(expanded.contains("Topic :: new"));
     }
 
@@ -118,7 +118,7 @@ mod tests {
     #[test]
     fn the_body_renders_detached_from_the_request_scope() {
         let expanded = expand_ok("fn presence(user: u32) -> Markup { todo!() }");
-        assert!(expanded.contains(":: exos :: detached"));
+        assert!(expanded.contains(":: exos :: scope :: detached"));
     }
 
     #[test]

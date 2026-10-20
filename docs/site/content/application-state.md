@@ -50,6 +50,6 @@ A task a request starts and does not wait for leaves the scope behind, since a
 task-local belongs to the task that set it. `scope().spawn(task)` takes it
 along, which is what `EffectStream::spawn` does for the work it runs.
 
-Tests use `exos::with_scope`, which runs a closure in a scope of its own. Being
+Tests use `exos::scope::with_scope`, which runs a closure in a scope of its own. Being
 per task rather than process-global, two tests can hold different scopes at
 once, which `provide` cannot do.

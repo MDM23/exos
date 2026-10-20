@@ -3,7 +3,7 @@
 use crate::{
     Js, Signal,
     attributes::{Attributes, IntoAttributes, source},
-    quote_js,
+    js::quote_js,
 };
 
 /// One `name="value"` pair produced by a helper.
@@ -46,7 +46,7 @@ impl IntoAttributes for Class {
 /// handler's signature. This is for a path that is not a route's:
 ///
 /// ```rust
-/// # use exos::{Link, Markup, view};
+/// # use exos::{attributes::Link, Markup, view};
 /// # fn files() -> Markup {
 /// view! { <a {Link::to(exos::url("/files"))}>"Files"</a> }
 /// # }
@@ -63,7 +63,7 @@ pub struct Link {
 
 impl Link {
     /// A link to `url`, which is one of this application's URLs and therefore
-    /// already carries the base: what [`url`](crate::url) hands back, or a
+    /// already carries the base: what [`url`](crate::url()) hands back, or a
     /// route's own `url()`.
     pub fn to(url: impl Into<String>) -> Self {
         Self {
@@ -86,7 +86,7 @@ impl Link {
     /// matches `[aria-current]` styles the two together.
     ///
     /// ```rust
-    /// # use exos::{Link, Markup, view};
+    /// # use exos::{attributes::Link, Markup, view};
     /// # fn users() -> Markup {
     /// view! { <a {Link::to(exos::url("/users")).section()}>"Users"</a> }
     /// # }
@@ -106,7 +106,7 @@ impl Link {
     /// opened beside a list:
     ///
     /// ```rust
-    /// # use exos::{Link, Markup, view};
+    /// # use exos::{attributes::Link, Markup, view};
     /// # fn orders() -> Markup {
     /// view! { <a {Link::to(exos::url("/orders/7")).keep_scroll()}>"Order 7"</a> }
     /// # }
@@ -134,7 +134,7 @@ impl Link {
     /// view of that record, and refining it leaves the kept query alone.
     ///
     /// ```rust
-    /// # use exos::{Link, Markup, view};
+    /// # use exos::{attributes::Link, Markup, view};
     /// # fn members() -> Markup {
     /// view! { <a {Link::to(exos::url("/members")).sticky_query()}>"Members"</a> }
     /// # }
@@ -147,7 +147,7 @@ impl Link {
 
 impl IntoAttributes for Link {
     fn write(self, attributes: &mut Attributes) {
-        let current = crate::base::current(&self.url, self.section);
+        let current = crate::url::current(&self.url, self.section);
         attributes.set("href", self.url);
 
         if let Some(current) = current {
@@ -256,7 +256,7 @@ impl IntoAttributes for Bind {
 ///
 /// Two implementors and one difference between them: a `#[model]` field knows
 /// its rules and the record they are written into, and a plain
-/// [`signal`](crate::signal) has neither, because nothing off the page can say
+/// [`signal`](crate::signal()) has neither, because nothing off the page can say
 /// anything about one.
 pub trait Bindable {
     /// The attributes this binding needs.
@@ -279,7 +279,7 @@ impl<T: BindKind> Bindable for Signal<T> {
     }
 }
 
-impl<T: BindKind> Bindable for crate::Bound<T> {
+impl<T: BindKind> Bindable for crate::signal::Bound<T> {
     fn binding(&self) -> Bind {
         Bind {
             name: self.name().to_owned(),

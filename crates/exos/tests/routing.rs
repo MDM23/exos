@@ -114,7 +114,7 @@ async fn the_runtime_is_served_and_cached_forever() {
     let response = exos::app()
         .oneshot(
             Request::builder()
-                .uri(exos::runtime())
+                .uri(exos::asset::runtime())
                 .body(Body::empty())
                 .expect("a valid request"),
         )
@@ -156,7 +156,7 @@ async fn one_file_referenced_twice_gives_one_url() {
 /// about the file rather than about the whole string.
 #[tokio::test]
 async fn the_runtime_url_carries_a_content_hash() {
-    let url = exos::runtime();
+    let url = exos::asset::runtime();
     let (path, _) = url.split_once('?').unwrap_or((&url, ""));
 
     assert!(path.starts_with("/_exos/exos-"), "{url}");
@@ -170,10 +170,10 @@ async fn the_runtime_url_carries_a_content_hash() {
 #[tokio::test]
 async fn only_a_dev_build_marks_the_runtime_as_one() {
     assert_eq!(
-        exos::runtime().contains("?dev"),
+        exos::asset::runtime().contains("?dev"),
         cfg!(debug_assertions),
         "{}",
-        exos::runtime()
+        exos::asset::runtime()
     );
 }
 
@@ -186,7 +186,7 @@ async fn only_a_dev_build_marks_the_runtime_as_one() {
 async fn one_application_answers_more_than_one_request() {
     let mut app = exos::app();
 
-    for uri in ["/files", "/files/7", &exos::runtime()] {
+    for uri in ["/files", "/files/7", &exos::asset::runtime()] {
         let response = app
             .call(
                 Request::builder()

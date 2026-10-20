@@ -84,14 +84,14 @@ fn app() -> Router {
 fn play() {
     tokio::spawn(async {
         let mut elapsed = Duration::ZERO;
-        let mut listeners = exos::connection_count();
+        let mut listeners = exos::live::connection_count();
 
         loop {
             tokio::time::sleep(TICK).await;
             elapsed += TICK;
 
             let over = elapsed >= TRACK_TIME;
-            let now = exos::connection_count();
+            let now = exos::live::connection_count();
 
             if over {
                 elapsed = Duration::ZERO;
@@ -118,7 +118,7 @@ mod tests {
         body::Body,
         http::{Request, StatusCode},
     };
-    use exos::Step;
+    use exos::effect::Step;
     use exos_test::Browser;
 
     use super::*;

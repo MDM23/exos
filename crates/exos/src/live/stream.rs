@@ -61,18 +61,20 @@ use tokio::sync::broadcast;
 use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 
 use crate::{
-    Id, Step, hex,
+    effect::Step,
+    hex,
     identity::{self, Audience},
     live::{
         Topic,
         bus::{self, Frame, Kind},
     },
+    session::Id,
 };
 
 /// Where the stream and the subscription endpoint are mounted.
 ///
 /// Both start with the same segment an asset URL does, which is what lets the
-/// runtime find the [base](crate::base) by looking at its own script URL rather
+/// runtime find the [base](crate::url()) by looking at its own script URL rather
 /// than being told.
 const STREAM: &str = "/_exos/live";
 const SUBSCRIBE: &str = "/_exos/subscribe";
@@ -191,7 +193,7 @@ pub fn connection_count() -> usize {
 /// treat reaching somebody as an accelerator.
 ///
 /// ```
-/// # use exos::{Audience, connected};
+/// # use exos::{identity::Audience, live::connected};
 /// # #[derive(Hash)]
 /// # struct Viewer(u32);
 /// # impl Audience for Viewer { const NAME: &'static str = "viewer"; }
@@ -221,7 +223,7 @@ pub fn connected<A: Audience>(audience: &A) -> bool {
 /// derived from the DOM cannot express.
 ///
 /// ```
-/// # use exos::{Audience, Effect};
+/// # use exos::{identity::Audience, Effect};
 /// # use serde::{Deserialize, Serialize};
 /// #[exos::model]
 /// #[derive(Debug, Default, Deserialize, Serialize)]
@@ -238,7 +240,7 @@ pub fn connected<A: Audience>(audience: &A) -> bool {
 ///
 /// # let user = 7;
 /// # let summary = String::from("Ada mentioned you in Q3 planning");
-/// exos::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
+/// exos::live::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
 /// ```
 ///
 /// Every step becomes one event, exactly as a publish sends one, so the eight
@@ -316,7 +318,7 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
 /// test, it needs no unusual load, and the symptom is a price or a status that
 /// is simply out of date on one screen.
 ///
-/// A [`Fragment`](crate::Fragment) carrying its render closes it, because the
+/// A [`Fragment`](crate::live::Fragment) carrying its render closes it, because the
 /// read and the send then happen under one lock. A publisher may still find
 /// that another has already sent what it was about to, and that is harmless:
 /// both read current state, so whichever goes last is current. Naming the
@@ -359,7 +361,7 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
     reason = "publishing is where a fragment ends, and taking it by reference \
               would put an & in front of every call site's temporary"
 )]
-pub fn publish(fragment: crate::Fragment<impl Fn() -> crate::Markup>) {
+pub fn publish(fragment: crate::live::Fragment<impl Fn() -> crate::Markup>) {
     let topic = fragment.topic().as_str();
 
     // Declared before the guard so that it is dropped after it: the topic is
@@ -393,10 +395,10 @@ pub fn publish(fragment: crate::Fragment<impl Fn() -> crate::Markup>) {
 /// No tags is an application without languages, and one render under the
 /// fragment's own topic.
 fn in_every_language(
-    fragment: &crate::Fragment<impl Fn() -> crate::Markup>,
+    fragment: &crate::live::Fragment<impl Fn() -> crate::Markup>,
     tags: &[&str],
     first: usize,
-    mut send: impl FnMut(&crate::Topic, &crate::Markup),
+    mut send: impl FnMut(&crate::live::Topic, &crate::Markup),
 ) {
     let Some(&tag) = tags.get(first) else {
         let (markup, _) = crate::scope::in_language(None, || fragment.markup());
@@ -440,7 +442,7 @@ pub(crate) fn resubscribe(key: &str, topics: &[String]) {
 ///
 /// The one walk, whether the delivery was made here or arrived from another
 /// node: a frame is keyed by what the registry is already keyed by, so
-/// [`deliver`](crate::deliver) is this function and nothing else.
+/// [`deliver`](crate::live::bus::deliver) is this function and nothing else.
 pub(crate) fn dispatch(kind: Kind, key: &str, steps: &[(String, String)]) {
     // Framed once rather than per connection, since every recipient gets the
     // same bytes and a fan-out is the shape this is for.
@@ -459,7 +461,7 @@ pub(crate) fn dispatch(kind: Kind, key: &str, steps: &[(String, String)]) {
             Kind::Audience => connection.audiences.contains(key),
             // Not deliveries. A frame naming one connection says what it is
             // watching and one naming a browser ends its streams, and
-            // [`deliver`](crate::deliver) hands those to [`resubscribe`] and
+            // [`deliver`](crate::live::bus::deliver) hands those to [`resubscribe`] and
             // [`revoke`] instead of here.
             Kind::Connection | Kind::Session => false,
         };
@@ -577,7 +579,7 @@ fn node() -> &'static str {
 /// # Panics
 ///
 /// If the operating system has no entropy to give, which is where
-/// [`Keys::random`](crate::Keys::random) already stands and has the same
+/// [`Keys::random`](crate::keys::Keys::random) already stands and has the same
 /// answer: a guessable id is worse than not starting.
 fn mint() -> String {
     let mut bytes = [0_u8; 16];
@@ -683,10 +685,10 @@ fn identify(id: &str, audiences: HashSet<String>) -> bool {
 /// how the half that does know says so.
 ///
 /// ```no_run
-/// # fn disable(_: &exos::Id) {}
-/// # fn example(name: &exos::Id) {
+/// # fn disable(_: &exos::session::Id) {}
+/// # fn example(name: &exos::session::Id) {
 /// disable(name);
-/// exos::disconnect(name);
+/// exos::live::disconnect(name);
 /// # }
 /// ```
 ///
@@ -704,7 +706,7 @@ fn identify(id: &str, audiences: HashSet<String>) -> bool {
 ///
 /// A dev build does reload, because there a reconnect means the binary was
 /// rebuilt and only a fresh document picks that up; see
-/// [`runtime`](crate::runtime). So a rotation costs a reload in development
+/// [`runtime`](crate::asset::runtime). So a rotation costs a reload in development
 /// that it does not cost in production, which is the cheaper half of the
 /// trade.
 ///
@@ -737,7 +739,7 @@ pub fn disconnect(name: &Id) -> usize {
 ///
 /// The walk, whether the rotation happened here or on another node: a
 /// connection remembers what its browser is called on a bus, so
-/// [`deliver`](crate::deliver) is this function and nothing else.
+/// [`deliver`](crate::live::bus::deliver) is this function and nothing else.
 pub(crate) fn revoke(key: &str) -> usize {
     let mut registry = connections()
         .lock()
@@ -1020,7 +1022,7 @@ mod tests {
     /// could mint for a session it is not holding is one a client could mint
     /// too.
     fn browser(topics: &[&Topic]) -> (Id, Vec<(String, String)>) {
-        crate::with_scope(|| {
+        crate::scope::with_scope(|| {
             // Named first, so that a browser which has been shown no fragment
             // at all is still a browser rather than a panic.
             let name = crate::session().start();
@@ -1448,7 +1450,7 @@ mod tests {
         let another = Topic::new("order", &(2_u32,));
         let rendered = Cell::new(false);
 
-        publish(crate::Fragment::new(mine.clone(), || {
+        publish(crate::live::Fragment::new(mine.clone(), || {
             assert!(
                 !free(&mine),
                 "the render has to happen inside the lock, or a publisher that \
@@ -1470,7 +1472,7 @@ mod tests {
     /// Every language a publish renders, as the topic it went to and the
     /// markup it carried.
     fn fanned(
-        fragment: &crate::Fragment<impl Fn() -> Markup>,
+        fragment: &crate::live::Fragment<impl Fn() -> Markup>,
         tags: &[&str],
     ) -> Vec<(String, String)> {
         let mut sent = Vec::new();
@@ -1487,7 +1489,7 @@ mod tests {
     #[tokio::test]
     async fn a_fragment_with_words_renders_once_per_language() {
         let renders = Cell::new(0_usize);
-        let fragment = crate::Fragment::new(Topic::new("worded", &()), || {
+        let fragment = crate::live::Fragment::new(Topic::new("worded", &()), || {
             renders.set(renders.get() + 1);
             Markup(format!("{:?}", crate::scope::setting()))
         });
@@ -1508,7 +1510,7 @@ mod tests {
     #[tokio::test]
     async fn a_fragment_without_words_renders_once_for_every_language() {
         let renders = Cell::new(0_usize);
-        let fragment = crate::Fragment::new(Topic::new("wordless", &()), || {
+        let fragment = crate::live::Fragment::new(Topic::new("wordless", &()), || {
             renders.set(renders.get() + 1);
             Markup(String::from("<hr>"))
         });
@@ -1528,7 +1530,7 @@ mod tests {
     #[tokio::test]
     async fn without_languages_a_publish_is_one_render_under_the_topic_itself() {
         let fragment =
-            crate::Fragment::new(Topic::new("plain", &()), || Markup(String::from("<hr>")));
+            crate::live::Fragment::new(Topic::new("plain", &()), || Markup(String::from("<hr>")));
 
         assert_eq!(
             fanned(&fragment, &[]),
@@ -1543,7 +1545,7 @@ mod tests {
     async fn a_topic_is_forgotten_once_nobody_is_publishing_it() {
         let topic = Topic::new("order", &(3_u32,));
 
-        publish(crate::Fragment::new(topic.clone(), Markup::default));
+        publish(crate::live::Fragment::new(topic.clone(), Markup::default));
 
         assert!(
             !orders()
@@ -1574,7 +1576,7 @@ mod tests {
 
         // And the control, so the silence above is the rule rather than a tab
         // that was never going to receive anything.
-        publish(crate::Fragment::new(topic, Markup::default));
+        publish(crate::live::Fragment::new(topic, Markup::default));
         assert_eq!(received(&mut receiver), 1);
     }
 
@@ -1600,7 +1602,7 @@ mod tests {
             StatusCode::NO_CONTENT
         );
 
-        crate::deliver(Frame::delivery(Kind::Topic, topic.as_str(), crossed()));
+        crate::live::bus::deliver(Frame::delivery(Kind::Topic, topic.as_str(), crossed()));
 
         assert_eq!(received(&mut watching), 1);
         assert_eq!(received(&mut elsewhere), 0, "and nothing else at all");
@@ -1624,12 +1626,12 @@ mod tests {
             StatusCode::NO_CONTENT
         );
 
-        crate::deliver(Frame::delivery(Kind::Audience, key.clone(), crossed()));
+        crate::live::bus::deliver(Frame::delivery(Kind::Audience, key.clone(), crossed()));
 
         assert_eq!(received(&mut person), 1);
         assert_eq!(received(&mut tab), 0, "watching it is not being it");
 
-        crate::deliver(Frame::delivery(Kind::Topic, key, crossed()));
+        crate::live::bus::deliver(Frame::delivery(Kind::Topic, key, crossed()));
 
         assert_eq!(received(&mut tab), 1);
         assert_eq!(received(&mut person), 0, "and being it is not watching it");
@@ -1647,18 +1649,18 @@ mod tests {
         let topic = Topic::new("presence", &(22_u32,));
         let watching = vec![topic.as_str().to_owned()];
 
-        crate::deliver(Frame::subscription(addressed(&id, None), watching));
+        crate::live::bus::deliver(Frame::subscription(addressed(&id, None), watching));
 
-        publish(crate::Fragment::new(topic.clone(), Markup::default));
+        publish(crate::live::Fragment::new(topic.clone(), Markup::default));
 
         assert_eq!(received(&mut tab), 1);
         assert_eq!(received(&mut elsewhere), 0, "and only the one it names");
 
         // Replaced wholesale rather than added to, which is the rule the
         // endpoint follows and therefore the rule a forward has to keep.
-        crate::deliver(Frame::subscription(addressed(&id, None), Vec::new()));
+        crate::live::bus::deliver(Frame::subscription(addressed(&id, None), Vec::new()));
 
-        publish(crate::Fragment::new(topic, Markup::default));
+        publish(crate::live::Fragment::new(topic, Markup::default));
         assert_eq!(received(&mut tab), 0);
     }
 
@@ -1716,7 +1718,7 @@ mod tests {
             identity::Audiences::of(&Viewer(16)).into_keys(),
         );
 
-        crate::deliver(Frame::revocation(reduction("session", &name)));
+        crate::live::bus::deliver(Frame::revocation(reduction("session", &name)));
 
         assert!(!connected(&Viewer(15)));
         assert!(connected(&Viewer(16)), "and only that browser's");

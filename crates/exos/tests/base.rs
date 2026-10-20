@@ -34,7 +34,7 @@ async fn page() -> Page {
         <!DOCTYPE html>
         <html lang="en">
             <head>
-                <script defer src={ exos::runtime() }></script>
+                <script defer src={ exos::asset::runtime() }></script>
             </head>
             <body>
                 <h1>"Behind a proxy"</h1>
@@ -137,7 +137,7 @@ async fn a_request_does_not_overwrite_what_was_said() {
     drop(behind_a_proxy());
 
     assert_eq!(status("/page").await, StatusCode::OK);
-    assert_eq!(exos::base_path(), BASE);
+    assert_eq!(exos::url::base_path(), BASE);
 }
 
 /// Two parts of a program disagreeing about where it lives, or one of them

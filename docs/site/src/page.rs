@@ -48,7 +48,7 @@ pub(crate) fn shell(slug: &str, title: &str, outline: &[Heading], body: Markup) 
                 <meta name="viewport" content="width=device-width, initial-scale=1">
                 <title>{ format!("{title} - exos") }</title>
                 <link rel="stylesheet" href={ exos::asset!("css/docs.css") }>
-                <script defer src={ exos::runtime() }></script>
+                <script defer src={ exos::asset::runtime() }></script>
             </head>
             <body {&menu} {class("menu-open", menu.get())}>
                 <header class="masthead">

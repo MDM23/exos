@@ -60,7 +60,7 @@ mod dev {
     async fn it_loads_the_runtime_so_it_replaces_itself() {
         let (_, body) = get("/").await;
 
-        assert!(body.contains(&exos::runtime()), "{body}");
+        assert!(body.contains(&exos::asset::runtime()), "{body}");
     }
 
     /// The assets are still mounted under a fallback, and a fallback that ate
@@ -68,7 +68,7 @@ mod dev {
     /// fine.
     #[tokio::test]
     async fn it_does_not_stand_in_front_of_the_assets() {
-        assert_eq!(get(&exos::runtime()).await.0, StatusCode::OK);
+        assert_eq!(get(&exos::asset::runtime()).await.0, StatusCode::OK);
         assert_eq!(get("/_exos/nothing.js").await.0, StatusCode::NOT_FOUND);
     }
 }

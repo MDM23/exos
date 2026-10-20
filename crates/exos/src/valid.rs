@@ -114,7 +114,7 @@ use regex_lite::Regex;
 use serde::{Serialize, Serializer, de::DeserializeOwned};
 use serde_json::Value;
 
-use crate::{Field, Js, ModelFields};
+use crate::{Js, ModelFields, signal::Field};
 
 /// What is wrong with one value.
 ///
@@ -231,7 +231,7 @@ pub fn all_valid(state: &str) -> Js<bool> {
 pub fn model_refusal(state: &str) -> Js<String> {
     Js::raw(format!(
         "($.{state}[{key}] ?? \"\")",
-        key = crate::quote_js(MODEL)
+        key = crate::js::quote_js(MODEL)
     ))
 }
 
@@ -242,7 +242,7 @@ pub fn model_refusal(state: &str) -> Js<String> {
 /// control. Generated onto the handle as `form.dirty()`.
 #[doc(hidden)]
 pub fn any_dirty(state: &str) -> Js<bool> {
-    Js::raw(format!("dirty({})", crate::quote_js(state)))
+    Js::raw(format!("dirty({})", crate::js::quote_js(state)))
 }
 
 /// A model that knows its own rules.
@@ -415,6 +415,7 @@ const CHECK: &str = "/_exos/check/{model}/{field}";
 /// Submitted by the `#[model]` expansion, once per `checked_by`. There is no
 /// reason to name this type yourself.
 #[derive(Clone, Copy)]
+#[doc(hidden)]
 pub struct CheckEntry {
     model: &'static str,
     field: &'static str,
@@ -542,7 +543,7 @@ pub fn chain(rules: Vec<(Js<bool>, String)>) -> Option<Js<String>> {
         chain = format!(
             "{} ? {} : {chain}",
             broken.source(),
-            crate::quote_js(&message)
+            crate::js::quote_js(&message)
         );
     }
 
@@ -793,7 +794,7 @@ impl Pattern {
 pub fn matches_js(pattern: &Pattern, value: &Js<String>) -> Js<bool> {
     Js::raw(format!(
         "new RegExp({}, \"u\").test({})",
-        crate::quote_js(pattern.js),
+        crate::js::quote_js(pattern.js),
         value.source()
     ))
 }

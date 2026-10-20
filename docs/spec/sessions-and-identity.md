@@ -334,7 +334,7 @@ and `with_scope` already does that. `session()` under `with_scope` mints and
 rotates exactly as it would in a request.
 
 ```rust
-exos::with_scope(|| {
+exos::scope::with_scope(|| {
     exos::scope().set(Viewer { id: 7, team: 3 });
     assert_eq!(badge().into_string(), "<span class=\"badge\">2</span>");
 });

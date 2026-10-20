@@ -3,7 +3,7 @@
 use crate::{
     Js,
     attributes::{Attr, recorded},
-    emit,
+    js::emit,
 };
 
 /// An event type the runtime carries.

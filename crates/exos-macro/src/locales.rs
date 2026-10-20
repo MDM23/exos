@@ -116,7 +116,7 @@ impl Declaration {
         // is what lets everything below read one out.
         let directions = self.locales.iter().map(|locale| {
             let direction = format_ident!("{}", rule::direction(locale.direction()));
-            quote! { ::exos::Direction::#direction }
+            quote! { ::exos::locale::Direction::#direction }
         });
 
         let symbols = self.locales.iter().map(Declared::symbols);
@@ -173,7 +173,7 @@ impl Declaration {
                 ///
                 /// From the script the tag names, or from the one CLDR expects
                 /// the language to be written in where it names none.
-                pub const fn direction(self) -> ::exos::Direction {
+                pub const fn direction(self) -> ::exos::locale::Direction {
                     match self {
                         #(Self::#variants => #directions,)*
                     }
@@ -197,7 +197,7 @@ impl Declaration {
                 ///
                 /// For a language stored rather than sent, a person's own.
                 pub fn lookup(tags: &str) -> ::core::option::Option<Self> {
-                    ::exos::lookup(tags)
+                    ::exos::locale::lookup(tags)
                 }
 
                 /// Runs `render` in this locale rather than in the request's.
@@ -207,7 +207,7 @@ impl Declaration {
                 /// stored. The request scope is masked as it is for a live
                 /// fragment, so `render` writes from its arguments alone.
                 pub fn within<R>(self, render: impl FnOnce() -> R) -> R {
-                    ::exos::in_locale(self, render)
+                    ::exos::locale::in_locale(self, render)
                 }
 
                 /// The symbols this language writes a whole number with.
@@ -215,7 +215,7 @@ impl Declaration {
                 /// CLDR's answer for the language, which is what the browser's
                 /// `Intl.NumberFormat` answers with too, so that a page and
                 /// its runtime write a number the same way.
-                pub const fn symbols(self) -> ::exos::Symbols {
+                pub const fn symbols(self) -> ::exos::locale::Symbols {
                     match self {
                         #(Self::#variants => #symbols,)*
                     }
@@ -227,8 +227,8 @@ impl Declaration {
                 /// What a message does with a count it puts into a sentence.
                 /// An application formatting one itself, or formatting
                 /// anything else numeric, is the same call.
-                pub fn number(self, count: impl ::exos::Count) -> ::std::string::String {
-                    ::exos::Symbols::number(&self.symbols(), count)
+                pub fn number(self, count: impl ::exos::locale::Count) -> ::std::string::String {
+                    ::exos::locale::Symbols::number(&self.symbols(), count)
                 }
 
                 /// The plural category `count` falls in, spelled the way every
@@ -238,7 +238,7 @@ impl Declaration {
                 /// categories are exactly the ones the language has. This one
                 /// crosses locales, which is what a projection into the
                 /// browser and a test need, and what a message never does.
-                pub fn category(self, count: u64) -> ::exos::PluralCategory {
+                pub fn category(self, count: u64) -> ::exos::locale::PluralCategory {
                     match self {
                         #(Self::#variants => #modules::category(count).into(),)*
                     }
@@ -249,7 +249,7 @@ impl Declaration {
             // item delegates to the inherent one above, which is where the
             // documentation is and which an application reaches with nothing
             // imported.
-            impl ::exos::LocaleSet for Locale {
+            impl ::exos::locale::LocaleSet for Locale {
                 const ALL: &'static [Self] = Self::ALL;
                 const FALLBACK: Self = Self::FALLBACK;
 
@@ -257,12 +257,12 @@ impl Declaration {
                     Locale::tag(self)
                 }
 
-                fn direction(self) -> ::exos::Direction {
+                fn direction(self) -> ::exos::locale::Direction {
                     Locale::direction(self)
                 }
             }
 
-            impl ::exos::Sealed for Locale {}
+            impl ::exos::locale::Sealed for Locale {}
 
             // What exos reaches the set through where it cannot be generic
             // over it: a live fragment's language, a publish walking every
@@ -279,7 +279,7 @@ impl Declaration {
                 }
 
                 ::exos::inventory::submit! {
-                    ::exos::Languages::new(&[#(#tags),*], #fallback_index, current, number)
+                    ::exos::locale::Languages::new(&[#(#tags),*], #fallback_index, current, number)
                 }
             };
 
@@ -392,7 +392,7 @@ impl Declared {
         let minimum = symbols.minimum_grouping_digits;
 
         quote! {
-            ::exos::Symbols {
+            ::exos::locale::Symbols {
                 digits: #digits,
                 group: #group,
                 minus: #minus,
@@ -502,7 +502,7 @@ impl Declared {
                     #(#documented,)*
                 }
 
-                impl ::core::convert::From<Plural> for ::exos::PluralCategory {
+                impl ::core::convert::From<Plural> for ::exos::locale::PluralCategory {
                     fn from(plural: Plural) -> Self {
                         match plural {
                             #(Plural::#variants => Self::#variants,)*
@@ -557,8 +557,8 @@ mod tests {
     fn the_set_answers_the_framework_as_well_as_the_application() {
         let expanded = expand_ok(r#"#[fallback] En = "en","#);
 
-        assert!(expanded.contains("impl :: exos :: LocaleSet for Locale"));
-        assert!(expanded.contains("impl :: exos :: Sealed for Locale"));
+        assert!(expanded.contains("impl :: exos :: locale :: LocaleSet for Locale"));
+        assert!(expanded.contains("impl :: exos :: locale :: Sealed for Locale"));
     }
 
     /// A live fragment's language and exos's own complaints both go through the

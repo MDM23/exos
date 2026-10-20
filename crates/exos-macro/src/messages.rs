@@ -72,7 +72,7 @@ enum Kind {
 /// projection changes about writing one.
 ///
 /// Three, because a projecting message is written twice and the half that
-/// still resolves here no longer has the count itself: `exos::Counted` has
+/// still resolves here no longer has the count itself: `exos::locale::Counted` has
 /// measured and written it by then, since only it knows which side the
 /// argument was for.
 #[derive(Clone, Copy)]
@@ -106,7 +106,7 @@ impl Crossing {
 
         match self {
             Self::Given => quote_spanned! { variant.span() =>
-                #aliases::#variant::category(::exos::Count::magnitude(#name))
+                #aliases::#variant::category(::exos::locale::Count::magnitude(#name))
             },
             Self::Measured => quote_spanned! { variant.span() =>
                 #aliases::#variant::category(__magnitude)
@@ -359,8 +359,8 @@ impl Message {
                 #(#docs)*
                 pub fn #name(#(#inputs),*) -> ::exos::Js<::std::string::String> {
                     let __locale = ::exos::locale::<#locale>();
-                    let __written = ::exos::Js::into_source(::exos::When::to_js(
-                        &::exos::When::read_as(
+                    let __written = ::exos::Js::into_source(::exos::instant::When::to_js(
+                        &::exos::instant::When::read_as(
                             ::core::convert::Into::into(#when),
                             #helper,
                         ),
@@ -445,10 +445,10 @@ impl Message {
             #(#assertions)*
 
             #(#docs)*
-            pub fn #name<__Count: ::exos::Counted>(#(#inputs),*) -> __Count::Answer {
+            pub fn #name<__Count: ::exos::locale::Counted>(#(#inputs),*) -> __Count::Answer {
                 let __locale = ::exos::locale::<#locale>();
 
-                ::exos::Counted::resolve(
+                ::exos::locale::Counted::resolve(
                     #count,
                     #locale::symbols(__locale),
                     |__magnitude, __written| #resolved,
@@ -544,8 +544,8 @@ impl Message {
 
                 emitted.push(quote! {
                     #locale::#variant => ::exos::project(
-                        ::exos::LocaleSet::tag(__locale),
-                        ::std::vec![(::exos::PluralCategory::Other, #text)],
+                        ::exos::locale::LocaleSet::tag(__locale),
+                        ::std::vec![(::exos::locale::PluralCategory::Other, #text)],
                         __source,
                     ),
                 });
@@ -558,11 +558,11 @@ impl Message {
 
             emitted.push(quote_spanned! { variant.span() =>
                 #locale::#variant => ::exos::project(
-                    ::exos::LocaleSet::tag(__locale),
+                    ::exos::locale::LocaleSet::tag(__locale),
                     <#aliased::#variant::Plural as ::exos::Enumerable>::ALL
                         .iter()
                         .map(|__category| (
-                            ::exos::PluralCategory::from(*__category),
+                            ::exos::locale::PluralCategory::from(*__category),
                             #inner,
                         ))
                         .collect(),
@@ -1136,7 +1136,7 @@ impl Parameter {
 
         match &self.kind {
             Kind::Plural if crossing => quote! { #name: __Count },
-            Kind::Plural => quote! { #name: impl ::exos::Count },
+            Kind::Plural => quote! { #name: impl ::exos::locale::Count },
             // The wrapper, which is handed the words the translation put
             // inside it and answers with them wrapped. Once, because that is
             // how often a slot is written.
@@ -1147,7 +1147,7 @@ impl Parameter {
             // about the form or the zone. Which of the three helpers reads it
             // is not one of those things: a sentence says "due on" or "posted"
             // whoever calls it, so the declaration wins below.
-            Kind::Instant(_) => quote! { #name: impl ::core::convert::Into<::exos::When> },
+            Kind::Instant(_) => quote! { #name: impl ::core::convert::Into<::exos::instant::When> },
             Kind::Value(declared) => quote! { #name: #declared },
         }
     }
@@ -1294,7 +1294,7 @@ mod tests {
         let expanded = expand_ok(r#"items(count: Plural) { Ja { _ } = "{count}件", }"#);
 
         assert!(
-            expanded.contains(":: exos :: PluralCategory :: Other"),
+            expanded.contains(":: exos :: locale :: PluralCategory :: Other"),
             "{expanded}"
         );
         assert!(!expanded.contains("Enumerable > :: ALL"), "{expanded}");
@@ -1353,11 +1353,17 @@ mod tests {
         let two =
             expand_ok(r#"items(count: Plural, of: Plural) { En { _, _ } = "{count}/{of}", }"#);
 
-        assert!(two.contains("count : impl :: exos :: Count"), "{two}");
+        assert!(
+            two.contains("count : impl :: exos :: locale :: Count"),
+            "{two}"
+        );
 
         let one = expand_ok(r#"items(count: Plural) { En { _ } = "{count}", }"#);
 
-        assert!(one.contains("< __Count : :: exos :: Counted >"), "{one}");
+        assert!(
+            one.contains("< __Count : :: exos :: locale :: Counted >"),
+            "{one}"
+        );
         assert!(one.contains("-> __Count :: Answer"), "{one}");
     }
 
@@ -1583,7 +1589,7 @@ mod tests {
 
         assert!(
             expanded.contains(
-                "pub fn due (when : impl :: core :: convert :: Into < :: exos :: When >)"
+                "pub fn due (when : impl :: core :: convert :: Into < :: exos :: instant :: When >)"
             ),
             "{expanded}"
         );
@@ -1593,7 +1599,7 @@ mod tests {
         );
         assert!(
             expanded.contains(
-                r#":: exos :: When :: read_as (:: core :: convert :: Into :: into (when) , "date""#
+                r#":: exos :: instant :: When :: read_as (:: core :: convert :: Into :: into (when) , "date""#
             ),
             "{expanded}"
         );
@@ -1630,7 +1636,7 @@ mod tests {
 
         assert!(expanded.contains("match & to"), "{expanded}");
         assert!(
-            expanded.contains(":: exos :: PluralCategory :: Other"),
+            expanded.contains(":: exos :: locale :: PluralCategory :: Other"),
             "{expanded}"
         );
         assert!(!expanded.contains("Enumerable > :: ALL"), "{expanded}");

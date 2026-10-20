@@ -16,7 +16,10 @@
 //! generates something rustc will not accept fails here in the language it
 //! belongs to, rather than in an application that happens to ship it.
 
-use exos::{Direction, PluralCategory, serde_json::Value};
+use exos::{
+    locale::{Direction, PluralCategory},
+    serde_json::Value,
+};
 
 include!("cldr/locales.rs");
 

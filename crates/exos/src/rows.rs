@@ -39,7 +39,7 @@
 //! so the clone's fields are its own without anything naming them. There is no
 //! id to invent, no list for the server to keep, and no request until submit.
 //!
-//! That is the same mechanism a row's own [`signal`](crate::signal) has always
+//! That is the same mechanism a row's own [`signal`](crate::signal()) has always
 //! used. What is new is only that the submission can find them: the payload
 //! reads the rows out of the group at the moment it is sent, in the order they
 //! are on screen.
@@ -83,7 +83,12 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, de::DeserializeOwned, ser};
 use serde_json::Value;
 
-use crate::{Attributes, IntoAttributes, Js, Markup, Presence, emit, quote_js};
+use crate::{
+    Js, Markup,
+    attributes::{Attributes, IntoAttributes},
+    js::{emit, quote_js},
+    valid::Presence,
+};
 
 /// The wire key a row's kind travels under. No field can spell it, for the
 /// reason the runtime's dirty flags give.
@@ -288,7 +293,7 @@ where
 /// The handle for a [`Rows`] field: the rows it opened with, and what a
 /// template does with them.
 ///
-/// Written out rather than derived for the reason [`Field`](crate::Field)
+/// Written out rather than derived for the reason [`Field`](crate::signal::Field)
 /// gives: a derive would put a `T: Clone` on the impl and a model is not
 /// `Clone`. Nothing here holds a `T`.
 pub struct RowsOf<T> {
@@ -339,7 +344,7 @@ impl<T> RowsOf<T> {
     ///
     /// # Panics
     ///
-    /// If called outside a handler; see [`emit`](crate::emit).
+    /// If called outside a handler; see [`emit`](crate::js::emit).
     pub fn add(&self) {
         emit(format!(
             "addRow(el, {}, {})",
@@ -356,7 +361,7 @@ impl<T> RowsOf<T> {
     ///
     /// # Panics
     ///
-    /// If called outside a handler; see [`emit`](crate::emit).
+    /// If called outside a handler; see [`emit`](crate::js::emit).
     pub fn remove(&self) {
         emit(format!(
             "dropRow(el, {}, {})",
@@ -372,7 +377,7 @@ impl<T> RowsOf<T> {
     ///
     /// # Panics
     ///
-    /// If called outside a handler; see [`emit`](crate::emit).
+    /// If called outside a handler; see [`emit`](crate::js::emit).
     pub fn trash(&self) {
         emit(format!(
             "trashRow(el, {}, {})",
@@ -387,7 +392,7 @@ impl<T> RowsOf<T> {
     ///
     /// # Panics
     ///
-    /// If called outside a handler; see [`emit`](crate::emit).
+    /// If called outside a handler; see [`emit`](crate::js::emit).
     pub fn restore(&self) {
         emit(format!(
             "restoreRow(el, {}, {})",

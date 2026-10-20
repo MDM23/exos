@@ -4,13 +4,13 @@
 //! thing to reach for and is wrong for anything whose value leaves the process.
 //! Its algorithm is explicitly unspecified across releases, so two binaries of
 //! one program built with different compilers can disagree about what a
-//! [`Topic`](crate::Topic) is called. Nothing catches that: the tab subscribes
+//! [`Topic`](crate::live::Topic) is called. Nothing catches that: the tab subscribes
 //! to the name the instance that served it produced, another instance publishes
 //! under a different name, and the fragment simply stops updating, for the life
 //! of that document, with no error anywhere.
 //!
 //! So the arithmetic is written down here instead. FNV-1a, 64-bit, which is
-//! what [`signal`](crate::signal) already used for the same reason and now
+//! what [`signal`](crate::signal()) already used for the same reason and now
 //! shares.
 //!
 //! # What stability means here

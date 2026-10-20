@@ -111,7 +111,7 @@ async fn a_value_chosen_for_the_reader_is_declared_on_first_render() {
 #[tokio::test]
 async fn a_revision_answers_with_the_markup_and_what_changed() {
     let state = <Team as exos::Validate>::STATE;
-    let (status, body) = revise(exos::app(), state, exos::to_wire(&solo())).await;
+    let (status, body) = revise(exos::app(), state, exos::model::to_wire(&solo())).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
 
@@ -127,7 +127,7 @@ async fn a_revision_answers_with_the_markup_and_what_changed() {
 #[tokio::test]
 async fn a_revision_refuses_nothing() {
     let state = <Team as exos::Validate>::STATE;
-    let (status, body) = revise(exos::app(), state, exos::to_wire(&Team::default())).await;
+    let (status, body) = revise(exos::app(), state, exos::model::to_wire(&Team::default())).await;
 
     assert_eq!(status, StatusCode::OK, "{body}");
     assert!(
@@ -153,7 +153,7 @@ async fn a_guard_refuses_a_revision() {
 
     let app = exos::app().route_layer(from_fn(guard));
     let state = <Team as exos::Validate>::STATE;
-    let (status, _) = revise(app, state, exos::to_wire(&solo())).await;
+    let (status, _) = revise(app, state, exos::model::to_wire(&solo())).await;
 
     assert_eq!(status, StatusCode::FORBIDDEN);
 }
@@ -168,7 +168,7 @@ async fn a_render_that_fails_answers_with_its_error() {
         ..Team::default()
     };
 
-    let (status, _) = revise(exos::app(), state, exos::to_wire(&down)).await;
+    let (status, _) = revise(exos::app(), state, exos::model::to_wire(&down)).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }

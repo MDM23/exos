@@ -338,7 +338,7 @@ fn writes(parts: &[Part], span: Span, formatted: Written<'_>) -> Vec<TokenStream
                 let value = rewritten(name, formatted)
                     .map_or_else(|| quote! { #name }, |written| quote! { #written });
 
-                quote! { ::exos::escape_display_into(&#value, &mut __text); }
+                quote! { ::exos::render::escape_display_into(&#value, &mut __text); }
             }
             Part::Slot(slot) => {
                 let inner = writes(&slot.parts, span, formatted);

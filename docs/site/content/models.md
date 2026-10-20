@@ -88,11 +88,11 @@ for anyone who opens the inspector. Every route still authorizes for itself.
 `Deserialize` struct behind `Json<Reorder>` and its field names are legible on
 purpose. The extractor a handler names is what says which of the two it is.
 
-Where the server already knows a body, `exos::to_wire` builds one, which is
+Where the server already knows a body, `exos::model::to_wire` builds one, which is
 also how a test posts to its own action:
 
 ```rust
-let body = exos::to_wire(&Selection { picked: vec![], fail: true });
+let body = exos::model::to_wire(&Selection { picked: vec![], fail: true });
 ```
 
 Writing `Json<Selection>` on an action still compiles, because a model is an

@@ -27,8 +27,8 @@
 //! # What it is not for
 //!
 //! Reaching a tab that did not ask. This is one request's answer, so it stops
-//! when the request does and it goes nowhere else; [`publish`](crate::publish)
-//! and [`send`](crate::send) are the two that address somebody. The reason to
+//! when the request does and it goes nowhere else; [`publish`](crate::live::publish)
+//! and [`send`](crate::live::send) are the two that address somebody. The reason to
 //! choose this over publishing progress is that progress belongs to the caller
 //! and to nobody else, so it needs no topic and no audience.
 
@@ -42,7 +42,7 @@ use axum::response::{IntoResponse, Response, sse};
 use futures_core::Stream;
 use tokio::sync::mpsc;
 
-use crate::{Effect, Step};
+use crate::{Effect, effect::Step};
 
 /// Effects sent as they are computed.
 ///
@@ -82,7 +82,7 @@ impl EffectStream {
     ///
     /// # Panics
     ///
-    /// Outside a request, as [`scope`](crate::scope) does.
+    /// Outside a request, as [`scope`](crate::scope()) does.
     pub fn spawn<F, W>(work: F) -> Self
     where
         F: FnOnce(mpsc::Sender<Effect>) -> W,
@@ -227,7 +227,7 @@ mod tests {
     /// once the work is, with everything the work sent on it.
     #[tokio::test]
     async fn a_spawned_stream_answers_with_what_its_work_sends_from_inside_the_request() {
-        let response = crate::with_scope(|| {
+        let response = crate::scope::with_scope(|| {
             crate::scope().set(String::from("inside"));
 
             EffectStream::spawn(|effects| async move {

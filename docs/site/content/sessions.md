@@ -187,7 +187,7 @@ what makes rotation mean what it says.
 **Authority taken away without the cookie changing is yours to say.** A viewer
 removed from a team or an account disabled leaves the name it was and every
 stream under it resolved as whoever it used to be, and exos holds a name and
-nothing behind it. `exos::disconnect(&name)` ends those streams the way a
+nothing behind it. `exos::live::disconnect(&name)` ends those streams the way a
 rotation does, wherever they are, and each comes back asking your resolver who
 that name is now.
 
@@ -292,7 +292,7 @@ signed-in viewer seeds its own table and the scope, and never has to start a
 server:
 
 ```rust
-exos::with_scope(|| {
+exos::scope::with_scope(|| {
     exos::scope().set(Viewer { id: 7, team: 3 });
     assert_eq!(badge().into_string(), "<span class=\"badge\">2</span>");
 });

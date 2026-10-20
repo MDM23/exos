@@ -83,8 +83,12 @@ tests` item itself.
 
 - `lib.rs` contains crate docs, module declarations and re-exports. No logic.
 - Use `foo.rs` plus `foo/` for submodules. No `mod.rs` files.
-- Modules are private by default; the crate root curates the public API with
-  explicit `pub use`. Never `pub use module::*` in the public surface.
+- The crate root re-exports, with explicit `pub use`, only what a caller
+  writes all the time. Everything else is named through a public module, so a
+  name never has to say where it comes from: `exos::live::send`, not
+  `exos::send`. A name stays flat only where it reads clearly without its
+  module. Never `pub use module::*` in the public surface.
+- Modules nobody names from outside stay private.
 - Internals are `pub(crate)`. `unreachable_pub` keeps that honest.
 - Public paths are part of the API: moving a type between private modules must
   not change how callers name it.

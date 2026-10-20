@@ -9,7 +9,7 @@
 //! Its own test binary, because what it is about is process-wide.
 
 use axum::Router;
-use exos::{Audiences, Id, Keys};
+use exos::{identity::Audiences, keys::Keys, session::Id};
 
 /// What this binary starts with, and the one place that says any of it.
 #[derive(Debug, PartialEq)]

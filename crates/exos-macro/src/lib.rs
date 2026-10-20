@@ -22,7 +22,7 @@ mod view;
 ///
 /// Write it where the asset is referenced. There is no build script and no
 /// registration step: the file is processed while this crate compiles, its
-/// bytes go into the binary, and what comes back is an `exos::Asset` naming
+/// bytes go into the binary, and what comes back is an `exos::asset::Asset` naming
 /// the hash they were embedded under. In a view it renders as the URL it is
 /// served from; `bytes()` on it is the same file again, to compute whatever
 /// its content decides.
@@ -30,7 +30,7 @@ mod view;
 /// ```ignore
 /// view! {
 ///     <link rel="stylesheet" href={ exos::asset!("css/app.css") }>
-///     <script defer src={ exos::runtime() }></script>
+///     <script defer src={ exos::asset::runtime() }></script>
 /// }
 /// ```
 ///
@@ -91,7 +91,7 @@ pub fn asset(input: TokenStream) -> TokenStream {
 /// runtime. Interpolated values go through `exos::Render` and are escaped;
 /// `Markup` is the only exception.
 ///
-/// An attribute written as a braced block contributes `exos::Attributes`,
+/// An attribute written as a braced block contributes `exos::attributes::Attributes`,
 /// which is how handlers and signal handles attach to an element.
 #[proc_macro]
 pub fn view(input: TokenStream) -> TokenStream {
@@ -225,8 +225,8 @@ pub fn pattern(input: TokenStream) -> TokenStream {
 /// ```
 ///
 /// The function keeps its signature; only its return type changes, from
-/// `Markup` to `exos::Fragment`. That one value does both jobs: put it in a
-/// template to render it, or hand it to `exos::publish` to broadcast it.
+/// `Markup` to `exos::live::Fragment`. That one value does both jobs: put it in a
+/// template to render it, or hand it to `exos::live::publish` to broadcast it.
 ///
 /// The topic is derived from the module, the function name and the argument
 /// values, so the server owns it end to end and there is no name to invent,
@@ -274,7 +274,7 @@ pub fn live(_attribute: TokenStream, item: TokenStream) -> TokenStream {
 ///   on.
 /// - Per locale, the symbols it writes a whole number with, and `number`,
 ///   which writes one: `Locale::De.number(1_234_567)` is `1.234.567`.
-/// - An implementation of `exos::LocaleSet`, which is how
+/// - An implementation of `exos::locale::LocaleSet`, which is how
 ///   `exos::locale::<Locale>()` answers with a type exos has never seen. It
 ///   delegates to the items above, so nothing has to be imported to ask a
 ///   locale for its tag.

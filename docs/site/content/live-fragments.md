@@ -84,7 +84,7 @@ and none to forget, and a subscription with a forged token receives nothing.
 The token is HMAC-SHA256 truncated to 128 bits, under one configured key:
 
 ```rust
-exos::app().keys(exos::Keys::from_secret(std::env::var("EXOS_SECRET")?))
+exos::app().keys(exos::keys::Keys::from_secret(std::env::var("EXOS_SECRET")?))
 ```
 
 Everything signed derives its own subkey from that secret by label, so the live
@@ -128,7 +128,7 @@ An audience is that other half, and it is an ordinary `Hash` type with a name:
 #[derive(Hash)]
 struct Viewer(u32);
 
-impl exos::Audience for Viewer {
+impl exos::identity::Audience for Viewer {
     const NAME: &'static str = "viewer";
 }
 ```
@@ -187,7 +187,7 @@ says so:
 
 ```rust
 disable(&name);
-exos::disconnect(&name);
+exos::live::disconnect(&name);
 ```
 
 Every tab that opened under that name ends, on every node, and comes back
@@ -200,7 +200,7 @@ tabs one reconnect.
 somebody, whatever they happen to be looking at:
 
 ```rust
-exos::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
+exos::live::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
 ```
 
 Every step becomes one event, exactly as a publish sends one, so anything an
@@ -256,7 +256,7 @@ delivery.
 Asking first is allowed, and is how a push and an email are chosen between:
 
 ```rust
-if exos::connected(&Viewer(user)) { /* push */ } else { /* email */ }
+if exos::live::connected(&Viewer(user)) { /* push */ } else { /* email */ }
 ```
 
 That answer is a hint and not a guarantee, since the last tab can close between
@@ -290,7 +290,7 @@ let app = exos::app()
 tokio::spawn(async move {
     while let Some(message) = subscription.next().await {
         if let Some(frame) = Frame::from_bytes(message.payload()) {
-            exos::deliver(frame);
+            exos::live::bus::deliver(frame);
         }
     }
 });

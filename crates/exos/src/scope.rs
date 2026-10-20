@@ -10,7 +10,7 @@
 //! # #[derive(Debug, PartialEq)]
 //! struct Principal(u32);
 //!
-//! exos::with_scope(|| {
+//! exos::scope::with_scope(|| {
 //!     exos::scope().set(Principal(7));
 //!     assert_eq!(exos::scope().get::<Principal>().as_deref(), Some(&Principal(7)));
 //! });
@@ -30,7 +30,7 @@
 //! made once, not a condition every caller should handle. `None` would quietly
 //! render the logged-out view of something and then publish it.
 //!
-//! **A live fragment never sees it.** The body of [`live`](crate::live) renders
+//! **A live fragment never sees it.** The body of [`live`](macro@crate::live) renders
 //! twice, inline during a request and again from whatever publishes it, so a
 //! fragment reading the request would produce different HTML in the two places
 //! and break the topic invariant. The macro renders through [`detached`], which
@@ -143,7 +143,7 @@ impl Scope {
     /// A plain `tokio::spawn` leaves the scope behind, because a task-local
     /// belongs to the task that set it. This is for work a request starts and
     /// does not wait for, which is what
-    /// [`EffectStream::spawn`](crate::EffectStream::spawn) is built on. The
+    /// [`EffectStream::spawn`](crate::effect::EffectStream::spawn) is built on. The
     /// response may have gone before the task ends, so the session it settled
     /// is read from here and never changed.
     ///
@@ -151,7 +151,7 @@ impl Scope {
     /// # struct Principal(u32);
     /// # #[tokio::main(flavor = "current_thread")]
     /// # async fn main() {
-    /// let task = exos::with_scope(|| {
+    /// let task = exos::scope::with_scope(|| {
     ///     exos::scope().set(Principal(7));
     ///     exos::scope().spawn(async { exos::scope().get::<Principal>().map(|it| it.0) })
     /// });
@@ -227,7 +227,7 @@ pub(crate) fn current() -> Option<Scope> {
 ///
 /// ```
 /// # struct Principal(u32);
-/// exos::with_scope(|| {
+/// exos::scope::with_scope(|| {
 ///     exos::scope().set(Principal(7));
 /// });
 /// ```
@@ -273,7 +273,7 @@ pub fn detached<R>(render: impl FnOnce() -> R) -> R {
 /// Renders masked, in `language` rather than in the caller's, and says whether
 /// the render asked which language that was.
 ///
-/// What [`publish`](crate::publish) renders each language with. Markup that
+/// What [`publish`](crate::live::publish) renders each language with. Markup that
 /// never asked is the same in every language.
 pub(crate) fn in_language<R>(language: Option<usize>, render: impl FnOnce() -> R) -> (R, bool) {
     let worded = Arc::<AtomicBool>::default();
@@ -297,12 +297,12 @@ pub(crate) async fn layer(request: Request, next: Next) -> Response {
     // needs a request but does not belong to one gets answered: where this
     // application is mounted. It settles on the first request and is read while
     // rendering, which happens later in this same one.
-    crate::base::observe(&request);
+    crate::url::observe(&request);
 
     // Seeded rather than empty: which page a request is for is the one thing a
     // view cannot go and read for itself later.
     let store = Arc::<Store>::default();
-    Scope(Arc::clone(&store)).set(crate::base::here(&request));
+    Scope(Arc::clone(&store)).set(crate::url::here(&request));
 
     STATE.scope(State::Request(store), next.run(request)).await
 }

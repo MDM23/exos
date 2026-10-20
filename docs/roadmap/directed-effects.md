@@ -109,7 +109,7 @@ identity can be established without inventing a second channel.
 #[derive(Hash)]
 struct Viewer(u32);
 
-impl exos::Audience for Viewer {
+impl exos::identity::Audience for Viewer {
     const NAME: &'static str = "viewer";
 }
 
@@ -201,7 +201,7 @@ fragment on purpose.
 `publish` because it reads the same registry.
 
 ```rust
-exos::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
+exos::live::send(&Viewer(user), &Effect::set(&Toast::signals().message, summary));
 ```
 
 Every step becomes one event, exactly as `publish` sends one. Delivery is
@@ -226,7 +226,7 @@ The sender usually wants to know whether anyone is there, since the user's own
 framing was that the server figures out who is connected:
 
 ```rust
-if exos::connected(&Viewer(user)) { /* push */ } else { /* email */ }
+if exos::live::connected(&Viewer(user)) { /* push */ } else { /* email */ }
 ```
 
 **`connected` is built** too, and came with stage 1 rather than waiting for this
@@ -416,7 +416,7 @@ fn notify(user: u32, event: &Event) {
     publish(notification_sidebar(user));
 
     // The arrival, to the person.
-    exos::send(&Viewer(user), &Effect::set(&Toast::signals().message, event.summary()));
+    exos::live::send(&Viewer(user), &Effect::set(&Toast::signals().message, event.summary()));
 }
 ```
 

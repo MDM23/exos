@@ -82,7 +82,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
     // The base it hangs under is not: that is chosen when the program runs, so
     // the call site is handed the name and renders the URL from it.
     let file = &built.file;
-    let handle = quote! { ::exos::Asset::new(#file) };
+    let handle = quote! { ::exos::asset::Asset::new(#file) };
 
     // A stylesheet brings whatever its `url()`s named, and each of those is a
     // file in its own right that some other call site may already have
@@ -98,7 +98,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
             let content_type = &asset.content_type;
             let bytes = Literal::byte_string(&asset.bytes);
 
-            quote! { ::exos::Embedded::new(#name, #file, #content_type, #bytes) }
+            quote! { ::exos::asset::Embedded::new(#name, #file, #content_type, #bytes) }
         })
         .collect();
 
@@ -124,7 +124,7 @@ pub(crate) fn expand(input: TokenStream) -> TokenStream {
             #checked
 
             ::exos::inventory::submit! {
-                ::exos::AssetSetEntry::new(::exos::AssetSet(&[#(#assets),*]))
+                ::exos::AssetSetEntry::new(::exos::asset::AssetSet(&[#(#assets),*]))
             }
 
             #handle

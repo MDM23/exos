@@ -9,7 +9,7 @@
 //!
 //! ```no_run
 //! # use exos_test::Browser;
-//! # use exos::Step;
+//! # use exos::effect::Step;
 //! # #[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
 //! # struct Selection { picked: Vec<u32> }
 //! # fn app() -> axum::Router { exos::app().into() }
@@ -71,7 +71,7 @@ use axum::{
     body::{Body, BodyDataStream, to_bytes},
     http::{HeaderMap, Method, Request, StatusCode, header},
 };
-use exos::{ModelFields, Step, Topic};
+use exos::{ModelFields, effect::Step, live::Topic};
 use serde::Serialize;
 use tokio::time::timeout;
 use tokio_stream::StreamExt as _;
@@ -169,7 +169,7 @@ impl Browser {
                 .method("POST")
                 .uri(url)
                 .header(header::CONTENT_TYPE, "application/json")
-                .body(Body::from(exos::to_wire(model)))
+                .body(Body::from(exos::model::to_wire(model)))
                 .expect("a valid request"),
         )
         .await
@@ -212,7 +212,7 @@ impl Browser {
     ///
     /// A page holding a fragment opens one by itself, which is how a tab comes
     /// by a stream. This is for what arrives on a stream *without* being
-    /// subscribed to: a [directed](exos::send) effect reaches a connection by
+    /// subscribed to: a [directed](exos::live::send) effect reaches a connection by
     /// who it belongs to rather than by what it watches, so a test about one
     /// wants a tab watching nothing, where nothing else can arrive to be
     /// mistaken for it.

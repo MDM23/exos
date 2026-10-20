@@ -9,7 +9,7 @@ use axum::{
     body::Body,
     http::{Request, Response, header},
 };
-use exos::{Markup, Page, Violation, view};
+use exos::{Markup, Page, valid::Violation, view};
 use tower::ServiceExt as _;
 
 exos::locales! {
@@ -43,7 +43,7 @@ async fn document() -> Page {
 
     Page(view! {
         <!DOCTYPE html>
-        <html { exos::lang(locale) }>
+        <html { exos::locale::lang(locale) }>
             <body>{ locale.tag() }</body>
         </html>
     })
@@ -188,15 +188,15 @@ async fn a_right_to_left_document_says_which_way_it_runs() {
 /// through the inherent items an application uses.
 #[test]
 fn a_locale_set_answers_the_framework_and_the_application_alike() {
-    fn declared<L: exos::LocaleSet>() -> Vec<&'static str> {
+    fn declared<L: exos::locale::LocaleSet>() -> Vec<&'static str> {
         L::ALL.iter().map(|locale| locale.tag()).collect()
     }
 
     assert_eq!(declared::<Locale>(), ["ar", "de", "en"]);
-    assert_eq!(<Locale as exos::LocaleSet>::FALLBACK, Locale::En);
-    assert_eq!(exos::LocaleSet::tag(Locale::De), Locale::De.tag());
+    assert_eq!(<Locale as exos::locale::LocaleSet>::FALLBACK, Locale::En);
+    assert_eq!(exos::locale::LocaleSet::tag(Locale::De), Locale::De.tag());
     assert_eq!(
-        exos::LocaleSet::direction(Locale::Ar),
+        exos::locale::LocaleSet::direction(Locale::Ar),
         Locale::Ar.direction()
     );
 }
@@ -221,7 +221,7 @@ fn greeting() -> Markup {
 /// subscribes to the German render and no publish can patch it in another.
 #[test]
 fn a_fragment_is_rendered_and_addressed_in_the_reader_s_language() {
-    let html = exos::with_scope(|| {
+    let html = exos::scope::with_scope(|| {
         exos::scope().set(Locale::De);
         greeting().to_markup().into_string()
     });
@@ -243,7 +243,7 @@ fn a_fragment_still_cannot_read_the_request() {
         Markup::default()
     }
 
-    exos::with_scope(|| drop(nosy().to_markup()));
+    exos::scope::with_scope(|| drop(nosy().to_markup()));
 }
 
 // ---- what exos says ---------------------------------------------------------
@@ -261,15 +261,15 @@ fn a_violation_is_said_in_the_reader_s_language() {
         }),
     );
 
-    exos::with_scope(|| {
+    exos::scope::with_scope(|| {
         exos::scope().set(Locale::De);
 
         assert_eq!(
-            exos::complaint("vat", Violation::Required),
+            exos::valid::complaint("vat", Violation::Required),
             "Eine Rechnung braucht eine USt-IdNr."
         );
         assert_eq!(
-            exos::complaint("name", Violation::Required),
+            exos::valid::complaint("name", Violation::Required),
             "Das ist erforderlich."
         );
 
@@ -278,7 +278,7 @@ fn a_violation_is_said_in_the_reader_s_language() {
         exos::scope().set(Locale::Ar);
 
         assert_eq!(
-            exos::complaint("name", Violation::TooShort { least: 3 }),
+            exos::valid::complaint("name", Violation::TooShort { least: 3 }),
             format!("At least {} characters.", Locale::Ar.number(3_usize))
         );
     });

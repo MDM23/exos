@@ -64,7 +64,7 @@ step 1.
 
 ```rust
 view! {
-    <html { exos::lang(locale) }>
+    <html { exos::locale::lang(locale) }>
 }
 ```
 

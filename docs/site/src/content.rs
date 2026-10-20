@@ -4,7 +4,7 @@
 //! deployed is one file with nothing beside it. A debug build reads them off
 //! disk instead, which makes editing a page and reloading the browser the
 //! whole cycle. That split is `rust-embed`'s default and is the same bargain
-//! [`asset!`](exos::asset) strikes with minification.
+//! [`asset!`](exos::asset!) strikes with minification.
 
 use rust_embed::Embed;
 

@@ -10,7 +10,7 @@ half of [stage 3](#stage-3-projecting-a-message), [stage
 categories, out of the CLDR table [exos-cldr](../../crates/exos-cldr) vendors as
 ordinary source, and a committed fixture holds `cargo test` and `npm test` to
 the same answers. `exos::locale()` resolves a request through the scope,
-`Accept-Language` and the fallback, `exos::lang` puts the answer on the
+`Accept-Language` and the fallback, `exos::locale::lang` puts the answer on the
 document, and a response that read the header says so with `Vary`.
 `exos::messages!` declares the text: a function per message, a `match` per
 language, slots for the sentences with a link in them, counts written the way
@@ -143,7 +143,7 @@ It generates more than a list, and that is the point of having it:
   **exactly the categories that language reaches** (`de::Plural` has `One` and
   `Other`, `ar::Plural` has six) and a `category` function mapping a count to
   one of them.
-- An `exos::LocaleSet` implementation, sealed so that nothing else can carry
+- An `exos::locale::LocaleSet` implementation, sealed so that nothing else can carry
   one, which is how the framework reads a set it cannot name. It delegates to
   the inherent items above, so an application never imports the trait to ask a
   locale anything.
@@ -257,7 +257,7 @@ attribute is the contract between the two halves.
 
 ```rust
 view! {
-    <html { exos::lang(locale) }>
+    <html { exos::locale::lang(locale) }>
 }
 ```
 
@@ -390,7 +390,7 @@ stage 3, what lets the server walk the domain to project it. The rule is
 carried by a trait bound rather than by a check inside the macro, so getting it
 wrong is an ordinary trait error at the call site.
 
-A count is any whole number. `exos::Count` is implemented for the integer types
+A count is any whole number. `exos::locale::Count` is implemented for the integer types
 and for nothing else, so a `len()` and a literal both go in without a cast, and
 what a rule is asked about is the magnitude: -1 is singular wherever 1 is, and
 the text still says -1.
@@ -739,7 +739,7 @@ the runtime see something true rather than something wrong. `date`, `time` and
 `Intl.RelativeTimeFormat` keyed off `document.documentElement.lang`.
 
 A template does not write that element. There is one way to write it, so
-`exos::When` is the element rather than the expression on one, and a call site
+`exos::instant::When` is the element rather than the expression on one, and a call site
 says `{ When::date(at) }`.
 
 Nothing new is needed to survive a patch. A binding owns what it writes, and
@@ -835,7 +835,7 @@ documentation rather than leaving a reader to find out from a form.
 **The element is the API, and it absorbed the free functions.** The first
 version handed back the expression and left the `<time>` element to every call
 site, which is the same five lines written everywhere and four ways to get one
-of them wrong. `exos::When` is the element, `to_js` is the way out of it for a
+of them wrong. `exos::instant::When` is the element, `to_js` is the way out of it for a
 `title` or an `aria-label`, and the five free functions it replaced are gone.
 
 **A style reads as a builder rather than as an argument.** `short` and `long`

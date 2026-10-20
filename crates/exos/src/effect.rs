@@ -35,7 +35,7 @@ use axum::{
 use serde::Serialize;
 use serde_json::{Map, Value};
 
-use crate::{Markup, Placement, Signal};
+use crate::{Markup, Signal, signal::Placement};
 
 mod streaming;
 
@@ -86,7 +86,7 @@ impl Step {
     /// payload that cannot be mistaken for a value.
     /// The same pair, owned, for a step on its way to another node.
     ///
-    /// A [`Frame`](crate::Frame) carries steps already framed, so a receiving
+    /// A [`Frame`](crate::live::bus::Frame) carries steps already framed, so a receiving
     /// node needs to know nothing about what a step is.
     pub(crate) fn framed(&self) -> (String, String) {
         let (event, data) = self.frame();
@@ -201,7 +201,7 @@ impl Effect {
     /// the same signal the template declared, and they are declared on the
     /// document, which is where the client applies this.
     ///
-    /// A [`signal`](crate::signal) handle belongs to the element that declared
+    /// A [`signal`](crate::signal()) handle belongs to the element that declared
     /// it and is not reachable from here. Nothing about the types says so, so
     /// a debug build asserts rather than writing a signal nothing reads; see
     /// [`Placement`].
@@ -278,7 +278,7 @@ impl Effect {
 
     /// The steps, owned.
     ///
-    /// What [`EffectStream`](crate::EffectStream) frames, since a step on its
+    /// What [`EffectStream`] frames, since a step on its
     /// way to the wire has no reason to be copied first.
     pub fn into_steps(self) -> Vec<Step> {
         self.steps

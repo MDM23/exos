@@ -20,7 +20,12 @@ use axum::{
     http::{Request, StatusCode, header},
     response::Response,
 };
-use exos::{Audience, Audiences, Id, connected, data};
+use exos::{
+    data,
+    identity::{Audience, Audiences},
+    live::connected,
+    session::Id,
+};
 use tokio::sync::Notify;
 use tower::ServiceExt as _;
 
@@ -311,7 +316,11 @@ async fn an_application_can_end_the_streams_a_name_opened() {
     let stream = opened(Some(id.as_str())).await;
     assert!(connected(&Viewer(5)));
 
-    assert_eq!(exos::disconnect(&id), 1, "the one stream it had opened");
+    assert_eq!(
+        exos::live::disconnect(&id),
+        1,
+        "the one stream it had opened"
+    );
     assert!(!connected(&Viewer(5)));
 
     drop(stream);

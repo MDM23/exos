@@ -6,7 +6,7 @@
 //! else's page and a state change here, and only the last of them is a rule
 //! rather than a circumstance:
 //!
-//! * **`SameSite=Lax`** on the [session](crate::session) cookie, so a
+//! * **`SameSite=Lax`** on the [session](crate::session()) cookie, so a
 //!   cross-site `POST` carries no session to begin with. It says nothing about
 //!   a sibling origin on the same site, which is same-site and gets the cookie.
 //! * **JSON bodies.** A cross-origin form can send three content types and

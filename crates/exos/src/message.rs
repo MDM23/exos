@@ -35,7 +35,7 @@
 //! }
 //!
 //! # fn main() {
-//! exos::with_scope(|| {
+//! exos::scope::with_scope(|| {
 //!     exos::scope().set(Locale::De);
 //!
 //!     assert_eq!(clear_selection(), "Auswahl aufheben");
@@ -92,7 +92,11 @@ use std::cell::RefCell;
 
 use serde_json::{Map, Value};
 
-use crate::{Js, Symbols, fnv::Fnv1a, locale::PluralCategory};
+use crate::{
+    Js,
+    fnv::Fnv1a,
+    locale::{PluralCategory, Symbols},
+};
 
 // -----------------------------------------------------------------------------
 //                                 THE DOMAINS
@@ -112,7 +116,7 @@ mod sealed {
 /// ```
 /// # exos::locales! { #[fallback] En = "en" }
 /// # exos::messages! { files(count: Plural) { En { One } = "{count} file", En { _ } = "{count} files" } }
-/// # fn main() { exos::with_scope(|| {
+/// # fn main() { exos::scope::with_scope(|| {
 /// let picked: Vec<u32> = vec![7, 9];
 ///
 /// assert_eq!(files(picked.len()), "2 files");
@@ -140,7 +144,7 @@ pub trait Count: Copy + Display + sealed::Count {
     ///
     /// The sign decides nothing about which arm a message takes, and only
     /// which character the number is written with; see
-    /// [`Symbols`](crate::Symbols), where that is not always a hyphen.
+    /// [`Symbols`](crate::locale::Symbols), where that is not always a hyphen.
     fn is_negative(self) -> bool;
 }
 
@@ -333,7 +337,7 @@ pub const HOLE: &str = "\u{0}";
 thread_local! {
     /// What has been projected and not yet written into an element.
     ///
-    /// Drained by [`Attributes::render`](crate::Attributes), so the entries a
+    /// Drained by [`Attributes::render`](crate::attributes::Attributes), so the entries a
     /// template projects ride out on the element whose expression reads them.
     /// A table entry is keyed by what is in it, so where it lands and how
     /// often it lands there change nothing.
@@ -358,7 +362,7 @@ pub fn project(lang: &'static str, say: Vec<(PluralCategory, String)>, count: &s
     table.insert(String::from("say"), Value::Object(entry));
 
     let key = named(&table);
-    let read = format!("msg({}, {count})", crate::quote_js(&key));
+    let read = format!("msg({}, {count})", crate::js::quote_js(&key));
 
     PROJECTED.with(|projected| projected.borrow_mut().insert(key, Value::Object(table)));
 

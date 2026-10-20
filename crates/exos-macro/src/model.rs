@@ -73,7 +73,7 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
 
         quote! {
             #[doc = #summary]
-            pub const #constant: ::exos::Field<#name> = ::exos::Field::new(#label);
+            pub const #constant: ::exos::signal::Field<#name> = ::exos::signal::Field::new(#label);
         }
     });
 
@@ -122,7 +122,7 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
         .zip(&rows)
         .map(|(ty, row)| match row {
             Some(row) => quote! { ::exos::RowsOf<#row> },
-            None => quote! { ::exos::Bound<#ty> },
+            None => quote! { ::exos::signal::Bound<#ty> },
         })
         .collect();
 
@@ -169,12 +169,12 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
                         // On the document, not on whichever element declares the
                         // handle: a handler answers with Effect::set, which the
                         // client applies against the document root.
-                        ::exos::Placement::Document,
+                        ::exos::signal::Placement::Document,
                     );
 
                     let __asked = #asked;
 
-                    ::exos::Bound::new(__signal, #state, __asked)
+                    ::exos::signal::Bound::new(__signal, #state, __asked)
                         .arming(#arming)
                         .checking(#checking)
                         .revising(#revise)
@@ -203,7 +203,7 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
             let row = row.as_ref()?;
 
             Some(quote! {
-                #label => ::exos::nested_rows::<#row>(__value, __outwards),
+                #label => ::exos::model::nested_rows::<#row>(__value, __outwards),
             })
         })
         .collect();
@@ -285,12 +285,12 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
                             .get(#label)
                             .cloned()
                             .unwrap_or(::exos::serde_json::Value::Null),
-                        ::exos::Placement::Element,
+                        ::exos::signal::Placement::Element,
                     );
 
                     let __asked = #asked;
 
-                    ::exos::Bound::row(__signal, __state, __asked, __group)
+                    ::exos::signal::Bound::row(__signal, __state, __asked, __group)
                         .arming(#arming)
                         .checking(#checking)
                 }},
@@ -310,7 +310,7 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
         false => quote! {
             __attributes.set(
                 "data-revise",
-                ::exos::IntoPayload::<#name>::payload(self),
+                ::exos::js::IntoPayload::<#name>::payload(self),
             );
         },
     };
@@ -387,12 +387,12 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
             /// refusal count for as much as a rule the browser answered. A
             /// form nobody has touched is valid: nothing has judged it yet.
             pub fn valid(&self) -> ::exos::Js<bool> {
-                ::exos::all_valid(#state)
+                ::exos::valid::all_valid(#state)
             }
 
             /// Whether any of its controls has been edited.
             pub fn dirty(&self) -> ::exos::Js<bool> {
-                ::exos::any_dirty(#state)
+                ::exos::valid::any_dirty(#state)
             }
 
             /// What a handler said about the submission rather than about one
@@ -401,7 +401,7 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
             /// Empty while there is nothing to say, so a template reads it the
             /// way it reads a field's own message.
             pub fn refusal(&self) -> ::exos::Js<::std::string::String> {
-                ::exos::model_refusal(#state)
+                ::exos::valid::model_refusal(#state)
             }
 
             /// Whether there is one.
@@ -429,20 +429,20 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
             }
         }
 
-        impl ::exos::IntoAttributes for &#handle {
-            fn write(self, __attributes: &mut ::exos::Attributes) {
-                #(::exos::IntoAttributes::write(&self.#declared, __attributes);)*
+        impl ::exos::attributes::IntoAttributes for &#handle {
+            fn write(self, __attributes: &mut ::exos::attributes::Attributes) {
+                #(::exos::attributes::IntoAttributes::write(&self.#declared, __attributes);)*
 
                 // The record every field's error is read out of. Declared
                 // beside them rather than as a field of its own, because it is
                 // not one: nothing sends it and nothing binds to it.
-                ::exos::IntoAttributes::write(
-                    &::exos::Signal::<::exos::Errors>::with_value(
+                ::exos::attributes::IntoAttributes::write(
+                    &::exos::Signal::<::exos::valid::Errors>::with_value(
                         #state,
                         ::exos::serde_json::Value::Object(
                             ::exos::serde_json::Map::new()
                         ),
-                        ::exos::Placement::Document,
+                        ::exos::signal::Placement::Document,
                     ),
                     __attributes,
                 );
@@ -454,7 +454,7 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
         impl ::exos::Validate for #name {
             const STATE: &'static str = #state;
 
-            fn validate_into(&self, __prefix: &str, __errors: &mut ::exos::Errors) {
+            fn validate_into(&self, __prefix: &str, __errors: &mut ::exos::valid::Errors) {
                 #checks
                 #(#walked)*
             }
@@ -462,7 +462,7 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
             fn check_into(
                 &self,
                 __prefix: &str,
-                __errors: &mut ::exos::Errors,
+                __errors: &mut ::exos::valid::Errors,
             ) -> impl ::core::future::Future<Output = ()> + ::core::marker::Send {
                 async move {
                     #awaited
@@ -473,9 +473,9 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
 
         #entries
 
-        impl ::exos::IntoAttributes for #handle {
-            fn write(self, __attributes: &mut ::exos::Attributes) {
-                ::exos::IntoAttributes::write(&self, __attributes);
+        impl ::exos::attributes::IntoAttributes for #handle {
+            fn write(self, __attributes: &mut ::exos::attributes::Attributes) {
+                ::exos::attributes::IntoAttributes::write(&self, __attributes);
             }
         }
 
@@ -495,11 +495,11 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
             }
         }
 
-        impl ::exos::IntoPayload<#name> for #handle {
+        impl ::exos::js::IntoPayload<#name> for #handle {
             fn payload(&self) -> ::std::string::String {
                 let __fields: ::std::vec::Vec<::std::string::String> = ::std::vec![
                     #(
-                        ::std::format!("{}: {}", ::exos::quote_js(#keys), #sent),
+                        ::std::format!("{}: {}", ::exos::js::quote_js(#keys), #sent),
                     )*
                 ];
 
@@ -509,12 +509,12 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
 
         /// A concrete value stands in for the handle when the server already
         /// knows what the body should be.
-        impl ::exos::IntoPayload<#name> for #name
+        impl ::exos::js::IntoPayload<#name> for #name
         where
             #name: ::exos::serde::Serialize,
         {
             fn payload(&self) -> ::std::string::String {
-                ::exos::to_wire(self)
+                ::exos::model::to_wire(self)
             }
         }
     }
@@ -652,8 +652,8 @@ mod tests {
         let expanded = expand_ok("struct Selection { picked: Vec<u32>, fail: bool }");
 
         assert!(expanded.contains("struct SelectionSignals"));
-        assert!(expanded.contains("picked : :: exos :: Bound"));
-        assert!(expanded.contains("fail : :: exos :: Bound"));
+        assert!(expanded.contains("picked : :: exos :: signal :: Bound"));
+        assert!(expanded.contains("fail : :: exos :: signal :: Bound"));
     }
 
     #[test]
@@ -681,7 +681,7 @@ mod tests {
     fn a_field_is_declared_on_the_document_rather_than_on_an_element() {
         let expanded = expand_ok("struct Draft { sku: String }");
 
-        assert!(expanded.contains(":: exos :: Placement :: Document"));
+        assert!(expanded.contains(":: exos :: signal :: Placement :: Document"));
     }
 
     /// The table the extractor renames through on the way back in. Without it

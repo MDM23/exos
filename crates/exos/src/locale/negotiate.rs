@@ -7,7 +7,7 @@
 //! does not reach one that declared only `de-AT`, because a range is only ever
 //! shortened. An application that wants to answer a bare `de` declares it.
 
-use crate::LocaleSet;
+use crate::locale::LocaleSet;
 
 /// The quality of a range nothing said anything about, in thousandths.
 ///

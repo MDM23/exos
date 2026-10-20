@@ -32,8 +32,8 @@ re-proposed by the next reader who has the same good idea.
   [route.rs](../../crates/exos-macro/src/route.rs) built `url` with a bare
   `format!`, so a `String` carrying `/`, `?`, `#` or a percent sign wrote a
   different URL than the type promised. The sharpest of the six, because the
-  typed caller exists precisely so a link cannot be wrong. `exos::segment`
-  percent-encodes one parameter; `exos::segments` keeps the separators and
+  typed caller exists precisely so a link cannot be wrong. `exos::url::segment`
+  percent-encodes one parameter; `exos::url::segments` keeps the separators and
   encodes each name between them, because `{*rest}` is a path rather than a
   segment. A route test builds a URL and asks for it, so the round trip through
   axum's own decoding is what is asserted.

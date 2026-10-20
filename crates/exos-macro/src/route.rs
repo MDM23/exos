@@ -79,8 +79,8 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
 
     let body = match &body_type {
         Some(ty) => {
-            parameters.push(quote! { body: &impl ::exos::IntoPayload<#ty> });
-            quote! { ::std::option::Option::Some(::exos::IntoPayload::payload(body)) }
+            parameters.push(quote! { body: &impl ::exos::js::IntoPayload<#ty> });
+            quote! { ::std::option::Option::Some(::exos::js::IntoPayload::payload(body)) }
         }
         None => quote! { ::std::option::Option::None },
     };
@@ -120,16 +120,16 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
             /// being rendered, so a nav bar marks where it is without every
             /// template that draws one being told which page that is.
             ///
-            /// [`section`](::exos::Link::section) marks it while a page below
+            /// [`section`](::exos::attributes::Link::section) marks it while a page below
             /// it is being read as well, which is what a nav bar's link to a
             /// section wants.
-            pub fn link(#(#path_parameters),*) -> ::exos::Link {
-                ::exos::Link::to(url(#(#arguments),*))
+            pub fn link(#(#path_parameters),*) -> ::exos::attributes::Link {
+                ::exos::attributes::Link::to(url(#(#arguments),*))
             }
 
             #[doc = #summary]
             pub fn #method(#(#parameters),*) {
-                ::exos::call(#method_name, &url(#(#arguments),*), #body);
+                ::exos::js::call(#method_name, &url(#(#arguments),*), #body);
             }
         }
     }
@@ -198,9 +198,9 @@ fn template(path: &LitStr, span: Span) -> (String, Vec<Ident>, Vec<TokenStream>)
         let argument = Ident::new(&format!("p{}", arguments.len()), span);
 
         written.push(if name.starts_with('*') {
-            quote! { ::exos::segments(&#argument) }
+            quote! { ::exos::url::segments(&#argument) }
         } else {
-            quote! { ::exos::segment(&#argument) }
+            quote! { ::exos::url::segment(&#argument) }
         });
 
         arguments.push(argument);
@@ -274,7 +274,7 @@ mod tests {
         );
 
         assert!(
-            expanded.contains("pub fn link (p0 : String) -> :: exos :: Link"),
+            expanded.contains("pub fn link (p0 : String) -> :: exos :: attributes :: Link"),
             "{expanded}"
         );
         assert!(expanded.contains("Link :: to (url (p0))"), "{expanded}");
@@ -282,7 +282,7 @@ mod tests {
 
     /// Which encoder a parameter is written with, since the two differ only in
     /// what they do with a `/` and the wrong one is invisible until a value
-    /// carries one. What each of them then writes is [`exos::segment`]'s own
+    /// carries one. What each of them then writes is [`exos::url::segment`]'s own
     /// business and is tested where it lives.
     #[test]
     fn a_wildcard_is_written_as_a_path_and_everything_else_as_a_segment() {
@@ -292,8 +292,14 @@ mod tests {
             "async fn under(Path(rest): Path<String>) {}",
         );
 
-        assert!(segment.contains("exos :: segment (& p0)"), "{segment}");
-        assert!(wildcard.contains("exos :: segments (& p0)"), "{wildcard}");
+        assert!(
+            segment.contains("exos :: url :: segment (& p0)"),
+            "{segment}"
+        );
+        assert!(
+            wildcard.contains("exos :: url :: segments (& p0)"),
+            "{wildcard}"
+        );
     }
 
     /// One place decides what a route's URL is. Prefixing in both would put the

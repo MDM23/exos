@@ -6,7 +6,7 @@
 //! not have to know which of the two it is doing.
 
 use axum::extract::Path;
-use exos::{Effect, Markup, attr_now, bind, data, on_click, show, view};
+use exos::{Effect, Markup, bind, data, js::attr_now, on_click, show, view};
 
 use crate::{
     room::{self, publish_room},

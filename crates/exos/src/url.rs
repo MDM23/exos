@@ -1,15 +1,15 @@
 //! Where this application's URLs start.
 //!
 //! exos invents two kinds of URL: the endpoints the client runtime talks to,
-//! and the URL of every [`asset!`](crate::asset). Routing them needs no help,
+//! and the URL of every [`asset!`](crate::asset!). Routing them needs no help,
 //! because `Router::nest` already puts them wherever it is told. What does need
 //! help is the string written into a page, since a URL in HTML is either
 //! absolute, and needs the prefix, or relative, and needs to know which page it
 //! is being rendered for.
 //!
 //! Relative is the tempting one and does not survive contact with this design.
-//! A fragment renders [detached](crate::detached) and
-//! [`publish`](crate::publish) renders with no request at all, so "which page
+//! A fragment renders [detached](crate::scope::detached) and
+//! [`publish`](crate::live::publish) renders with no request at all, so "which page
 //! is this for" is a question exos deliberately cannot answer, while "where is
 //! the application mounted" is one fact for the life of the process.
 //!
@@ -46,7 +46,7 @@
 //!
 //! Relative URLs need that answered wherever a fragment can render, which is
 //! why they are out. Marking the link to the page being read needs it only
-//! where there is a page, so [`current`] answers out of the request scope and
+//! where there is a page, so `current` answers out of the request scope and
 //! answers "no" from a background job or a live fragment, which is the honest
 //! answer for markup that renders again for every viewer a publish reaches.
 //!
@@ -97,7 +97,7 @@ pub(crate) fn set(path: impl Into<String>) {
 /// Where this application's URLs start, as a browser sees them.
 ///
 /// Empty at the root, and never with a trailing slash. exos puts this in front
-/// of everything it writes: an [`asset!`](crate::asset) URL, its own endpoints,
+/// of everything it writes: an [`asset!`](crate::asset!) URL, its own endpoints,
 /// and the URL a generated route caller posts to.
 ///
 /// Mostly it is [`url`] you want, which is this with the joining already
@@ -155,7 +155,7 @@ pub fn url(path: impl AsRef<str>) -> String {
 /// value written in raw is the one way left to make one that is.
 ///
 /// ```
-/// assert_eq!(exos::segment(&"one/two?three"), "one%2Ftwo%3Fthree");
+/// assert_eq!(exos::url::segment(&"one/two?three"), "one%2Ftwo%3Fthree");
 /// ```
 pub fn segment(value: &impl Display) -> String {
     encoded(value, false)
@@ -167,7 +167,7 @@ pub fn segment(value: &impl Display) -> String {
 /// what arrives as a path stays one and each name in it still names itself.
 ///
 /// ```
-/// assert_eq!(exos::segments(&"notes/a b.md"), "notes/a%20b.md");
+/// assert_eq!(exos::url::segments(&"notes/a b.md"), "notes/a%20b.md");
 /// ```
 pub fn segments(value: &impl Display) -> String {
     encoded(value, true)
@@ -217,7 +217,7 @@ impl fmt::Write for Encoding<'_> {
 
 /// How `url` stands to the page being rendered, as `aria-current` says it.
 ///
-/// What [`Link`](crate::Link) writes. `None` wherever there is no page to be on,
+/// What [`Link`](crate::attributes::Link) writes. `None` wherever there is no page to be on,
 /// which is a background job and a live fragment alike.
 ///
 /// A `section` is marked for the pages below it as well, and marked `"true"`
@@ -386,12 +386,15 @@ mod tests {
     /// promised to be on the page whoever triggered it was.
     #[test]
     fn the_page_being_served_is_the_only_current_one() {
-        crate::with_scope(|| {
+        crate::scope::with_scope(|| {
             crate::scope().set(Here(String::from("/docs/effects")));
 
             assert_eq!(current("/docs/effects", false), Some("page"));
             assert_eq!(current("/docs/routes", false), None);
-            assert_eq!(crate::detached(|| current("/docs/effects", false)), None);
+            assert_eq!(
+                crate::scope::detached(|| current("/docs/effects", false)),
+                None
+            );
         });
     }
 
@@ -404,7 +407,7 @@ mod tests {
     /// and marked as the section rather than as the page.
     #[test]
     fn a_section_takes_in_the_pages_below_it() {
-        crate::with_scope(|| {
+        crate::scope::with_scope(|| {
             crate::scope().set(Here(String::from("/users/123")));
 
             assert_eq!(current("/users", true), Some("true"));
@@ -419,7 +422,7 @@ mod tests {
 
     #[test]
     fn a_section_being_the_page_itself_is_still_the_page() {
-        crate::with_scope(|| {
+        crate::scope::with_scope(|| {
             crate::scope().set(Here(String::from("/users")));
 
             assert_eq!(current("/users", true), Some("page"));
@@ -431,7 +434,7 @@ mod tests {
     /// mount point is the same root spelled with the base on the front.
     #[test]
     fn the_root_is_nobodys_section() {
-        crate::with_scope(|| {
+        crate::scope::with_scope(|| {
             crate::scope().set(Here(String::from("/users/123")));
             assert_eq!(current("/", true), None);
 

@@ -127,6 +127,6 @@ Only the side-effect form is supported. `import { thing } from "./other.js"`
 needs a real bundler with scope hoisting, so it is refused by name at compile
 time rather than misread.
 
-The client runtime ships this way too. `exos::runtime()` is the same macro
+The client runtime ships this way too. `exos::asset::runtime()` is the same macro
 applied to the runtime and its plugins inside the `exos` crate, so nothing is
 copied into your project and there is no version to keep in step.

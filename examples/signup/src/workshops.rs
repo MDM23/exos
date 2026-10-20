@@ -6,7 +6,7 @@
 //! is that the whole programme is in the document whether or not it is on
 //! screen, which is right for nine workshops and wrong for nine thousand.
 
-use exos::{Bound, IntoJs as _, Markup, bind, data, on_click, show, signal, text, view};
+use exos::{IntoJs as _, Markup, bind, data, on_click, show, signal, signal::Bound, text, view};
 
 use crate::store::Programme;
 

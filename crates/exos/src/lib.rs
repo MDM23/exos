@@ -23,91 +23,70 @@
 extern crate self as exos;
 
 mod app;
-mod asset;
-mod attributes;
-mod base;
+pub mod asset;
+pub mod attributes;
 mod context;
 mod csrf;
 mod discover;
-mod effect;
+pub mod effect;
 mod fnv;
 mod form;
 mod hex;
-mod identity;
-mod instant;
-mod js;
+pub mod identity;
+pub mod instant;
+pub mod js;
 pub mod keys;
-mod live;
-mod locale;
+pub mod live;
+pub mod locale;
 mod message;
-mod model;
+pub mod model;
 mod number;
-mod render;
+pub mod render;
 mod response;
 mod rows;
-mod scope;
-mod session;
-mod signal;
-mod valid;
+pub mod scope;
+pub mod session;
+pub mod signal;
+pub mod url;
+pub mod valid;
 mod welcome;
 
+// What a view or a handler writes all the time. Everything else is named
+// through its module, so a name never has to say where it comes from.
 pub use crate::{
     app::{App, app},
-    asset::{Asset, AssetSet, Embedded, routes as asset_routes, runtime},
     attributes::{
-        Attr, Attributes, Bind, BindKind, Class, Event, EventType, IntoAttributes, Link, Target,
         attr, bind, class, modal, modal_now, on, on_change, on_click, on_dblclick, on_focusout,
         on_input, on_keydown, on_pointerenter, on_submit, preserve, prop, show, text,
     },
-    base::{base_path, segment, segments, url},
     context::{data, provide, try_data},
     discover::{AssetSetEntry, RouteEntry},
-    effect::{Effect, EffectStream, Spawned, Step},
+    effect::Effect,
     form::{Form, FormKey, ReviseEntry},
-    identity::{Audience, Audiences, Resolution},
-    instant::{Instant, NotAnInstant, When},
-    js::{
-        IntoJs, IntoPayload, Js, append, attr_now, call, debounce, emit, focus_now, quote_js,
-        record, refine, when,
-    },
-    keys::Keys,
-    live::{
-        Fragment, Frame, Kind, Sent, Topic, connected, connection_count, deliver, disconnect,
-        publish, send,
-    },
-    locale::{Direction, Lang, LocaleSet, PluralCategory, lang, locale},
-    message::{Count, Counted, Enumerable},
-    model::{Model, ModelFields, ModelRejection, nested_rows, to_wire},
-    number::Symbols,
-    render::{AttributeValue, Flag, Markup, Render, escape_display_into, escape_into},
+    instant::Instant,
+    js::{IntoJs, Js},
+    locale::locale,
+    message::Enumerable,
+    model::{Model, ModelFields, ModelRejection},
+    render::{Markup, Render},
     response::Page,
     rows::{Row, RowModel, Rows, RowsIntoIter, RowsIter, RowsOf},
-    scope::{Scope, detached, scope, with_scope},
-    session::{Id, Session, session},
-    signal::{Bound, Field, Placement, Signal, signal},
-    valid::{CheckEntry, Errors, Length, Pattern, Presence, Refusal, Validate, Violation},
+    scope::scope,
+    session::session,
+    signal::{Signal, signal},
+    url::url,
+    valid::Validate,
 };
 
 // Named by the `#[model]` expansion, which has to reach them from anywhere.
 #[doc(hidden)]
-pub use crate::{
-    message::{HOLE, project},
-    valid::{
-        all_valid, any_dirty, asked, chain, complaint, email_js, is_email, matches_js,
-        model_refusal,
-    },
-};
+pub use crate::message::{HOLE, project};
 
 #[doc(inline)]
 pub use exos_macro::{
     Enumerable, asset, delete, form, get, live, locales, messages, model, patch, pattern, post,
     put, view,
 };
-
-// What keeps `LocaleSet` implementable by `locales!` alone, what it
-// registers the set with, and what its `lookup` and `within` delegate to.
-#[doc(hidden)]
-pub use crate::locale::{Languages, Sealed, in_locale, lookup};
 
 // Re-exported so the macros can name them without the user taking a direct
 // dependency, and so nobody has to keep versions in step with ours.

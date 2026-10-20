@@ -281,7 +281,7 @@ pub(crate) fn checked(declared: &[Rules], field: &Ident) -> bool {
 ///
 /// A shim rather than the function itself, because what arrives off the wire is
 /// a `Value` and every checked field has a type and a future of its own. The
-/// deserializing and the presence guard belong to `exos::asked`, so the route
+/// deserializing and the presence guard belong to `exos::valid::asked`, so the route
 /// and the extractor cannot come to different conclusions about one value.
 pub(crate) fn entries(declared: &[Rules], model: &str) -> TokenStream {
     let entries = declared.iter().filter_map(|Rules { field, key, .. }| {
@@ -289,8 +289,8 @@ pub(crate) fn entries(declared: &[Rules], model: &str) -> TokenStream {
 
         Some(quote! {
             ::exos::inventory::submit! {
-                ::exos::CheckEntry::new(#model, #key, |__value| {
-                    ::std::boxed::Box::pin(::exos::asked(__value, #ask))
+                ::exos::valid::CheckEntry::new(#model, #key, |__value| {
+                    ::std::boxed::Box::pin(::exos::valid::asked(__value, #ask))
                 })
             }
         })
@@ -311,7 +311,7 @@ pub(crate) fn checks(declared: &[Rules]) -> TokenStream {
         Some(quote! {{
             let __key = ::std::format!("{}{}", __prefix, #key);
 
-            if __errors.get(&__key).is_none() && ::exos::Presence::is_present(&self.#field) {
+            if __errors.get(&__key).is_none() && ::exos::valid::Presence::is_present(&self.#field) {
                 // Cloned because the future outlives this call, which is the
                 // same reason the function takes the value owned.
                 if let ::core::result::Result::Err(__said) =
@@ -345,8 +345,8 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
     let asked = rules.iter().flat_map(|rule| match rule {
         Rule::Required => vec![quote! {
             (
-                !<#ty as ::exos::Presence>::present(__signal.get()),
-                ::exos::complaint(#label, ::exos::Violation::Required),
+                !<#ty as ::exos::valid::Presence>::present(__signal.get()),
+                ::exos::valid::complaint(#label, ::exos::valid::Violation::Required),
             )
         }],
 
@@ -364,9 +364,9 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
 
                 quote! {
                     (
-                        <#armed as ::exos::Presence>::present(::exos::Js::raw(#source))
-                            .and(!<#ty as ::exos::Presence>::present(__signal.get())),
-                        ::exos::complaint(#label, ::exos::Violation::Required),
+                        <#armed as ::exos::valid::Presence>::present(::exos::Js::raw(#source))
+                            .and(!<#ty as ::exos::valid::Presence>::present(__signal.get())),
+                        ::exos::valid::complaint(#label, ::exos::valid::Violation::Required),
                     )
                 }
             })
@@ -379,27 +379,27 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
         Rule::Length { least, most } => vec![
             quote! {
                 (
-                    <#ty as ::exos::Presence>::present(__signal.get()).and(
-                        <#ty as ::exos::Length>::length(__signal.get()).lt(#least as u32)
+                    <#ty as ::exos::valid::Presence>::present(__signal.get()).and(
+                        <#ty as ::exos::valid::Length>::length(__signal.get()).lt(#least as u32)
                     ),
-                    ::exos::complaint(#label, ::exos::Violation::TooShort { least: #least }),
+                    ::exos::valid::complaint(#label, ::exos::valid::Violation::TooShort { least: #least }),
                 )
             },
             quote! {
                 (
-                    <#ty as ::exos::Presence>::present(__signal.get()).and(
-                        <#ty as ::exos::Length>::length(__signal.get()).gt(#most as u32)
+                    <#ty as ::exos::valid::Presence>::present(__signal.get()).and(
+                        <#ty as ::exos::valid::Length>::length(__signal.get()).gt(#most as u32)
                     ),
-                    ::exos::complaint(#label, ::exos::Violation::TooLong { most: #most }),
+                    ::exos::valid::complaint(#label, ::exos::valid::Violation::TooLong { most: #most }),
                 )
             },
         ],
 
         Rule::Email => vec![quote! {
             (
-                <#ty as ::exos::Presence>::present(__signal.get())
-                    .and(!::exos::email_js(&__signal.get())),
-                ::exos::complaint(#label, ::exos::Violation::Malformed),
+                <#ty as ::exos::valid::Presence>::present(__signal.get())
+                    .and(!::exos::valid::email_js(&__signal.get())),
+                ::exos::valid::complaint(#label, ::exos::valid::Violation::Malformed),
             )
         }],
 
@@ -407,11 +407,11 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
         // and the server's are two readings of one declaration.
         Rule::Matches { pattern } => vec![quote! {
             (
-                <#ty as ::exos::Presence>::present(__signal.get())
-                    .and(!::exos::matches_js(&#pattern, &__signal.get())),
-                ::exos::complaint(
+                <#ty as ::exos::valid::Presence>::present(__signal.get())
+                    .and(!::exos::valid::matches_js(&#pattern, &__signal.get())),
+                ::exos::valid::complaint(
                     #label,
-                    ::exos::Violation::Unmatched { pattern: #pattern.name() },
+                    ::exos::valid::Violation::Unmatched { pattern: #pattern.name() },
                 ),
             )
         }],
@@ -421,7 +421,7 @@ pub(crate) fn ask(declared: &[Rules], field: &Ident) -> TokenStream {
         Rule::CheckedBy { .. } => Vec::new(),
     });
 
-    quote! { ::exos::chain(::std::vec![#(#asked),*]) }
+    quote! { ::exos::valid::chain(::std::vec![#(#asked),*]) }
 }
 
 /// The server's half: what runs inside `Validate::validate_into`.
@@ -440,49 +440,49 @@ pub(crate) fn check(declared: &[Rules]) -> TokenStream {
 
             let questions = rules.iter().map(|rule| match rule {
             Rule::Required => quote! {
-                if !::exos::Presence::is_present(&self.#field) {
-                    __errors.add(#key, #label, ::exos::Violation::Required);
+                if !::exos::valid::Presence::is_present(&self.#field) {
+                    __errors.add(#key, #label, ::exos::valid::Violation::Required);
                 }
             },
 
             Rule::RequiredWith { sibling } => quote! {
-                if ::exos::Presence::is_present(&self.#sibling)
-                    && !::exos::Presence::is_present(&self.#field)
+                if ::exos::valid::Presence::is_present(&self.#sibling)
+                    && !::exos::valid::Presence::is_present(&self.#field)
                 {
-                    __errors.add(#key, #label, ::exos::Violation::Required);
+                    __errors.add(#key, #label, ::exos::valid::Violation::Required);
                 }
             },
 
             // Shape rules skip an absent value, so an empty optional field is
             // silent and an empty required one says one thing rather than two.
             Rule::Length { least, most } => quote! {
-                if ::exos::Presence::is_present(&self.#field) {
-                    let __measured = ::exos::Length::measure(&self.#field);
+                if ::exos::valid::Presence::is_present(&self.#field) {
+                    let __measured = ::exos::valid::Length::measure(&self.#field);
 
                     if __measured < #least {
-                        __errors.add(#key, #label, ::exos::Violation::TooShort { least: #least });
+                        __errors.add(#key, #label, ::exos::valid::Violation::TooShort { least: #least });
                     } else if __measured > #most {
-                        __errors.add(#key, #label, ::exos::Violation::TooLong { most: #most });
+                        __errors.add(#key, #label, ::exos::valid::Violation::TooLong { most: #most });
                     }
                 }
             },
 
             Rule::Email => quote! {
-                if ::exos::Presence::is_present(&self.#field)
-                    && !::exos::is_email(&self.#field)
+                if ::exos::valid::Presence::is_present(&self.#field)
+                    && !::exos::valid::is_email(&self.#field)
                 {
-                    __errors.add(#key, #label, ::exos::Violation::Malformed);
+                    __errors.add(#key, #label, ::exos::valid::Violation::Malformed);
                 }
             },
 
             Rule::Matches { pattern } => quote! {
-                if ::exos::Presence::is_present(&self.#field)
+                if ::exos::valid::Presence::is_present(&self.#field)
                     && !#pattern.is_match(&self.#field)
                 {
                     __errors.add(
                         #key,
                         #label,
-                        ::exos::Violation::Unmatched { pattern: #pattern.name() },
+                        ::exos::valid::Violation::Unmatched { pattern: #pattern.name() },
                     );
                 }
             },

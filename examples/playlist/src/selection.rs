@@ -1,6 +1,6 @@
 //! Choosing several tracks, and the one action that acts on all of them.
 
-use exos::{Effect, Markup, Model, data, on_click, publish, show, text, view, when};
+use exos::{Effect, Markup, Model, data, js::when, live::publish, on_click, show, text, view};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -21,7 +21,7 @@ pub(crate) struct Selection {
     /// The tracks a click has already taken off the page, before the server
     /// has agreed to it.
     ///
-    /// **This is a model field rather than a [`signal`](exos::signal) on the
+    /// **This is a model field rather than a [`signal`](exos::signal()) on the
     /// row, and the reason is the whole of why an optimistic update needs
     /// somewhere the server can reach.** A row's own signal is declared when
     /// the element is inserted and never again, so a patch that re-renders the

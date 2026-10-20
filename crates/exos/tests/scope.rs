@@ -70,5 +70,5 @@ fn reads_the_scope() -> exos::Markup {
 #[test]
 #[should_panic(expected = "a live fragment cannot read the request scope")]
 fn a_live_fragment_cannot_read_the_request_scope() {
-    exos::with_scope(|| drop(reads_the_scope().markup()));
+    exos::scope::with_scope(|| drop(reads_the_scope().markup()));
 }

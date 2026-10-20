@@ -29,7 +29,7 @@
 //! Run it with `cargo run -p signup`.
 
 use axum::Router;
-use exos::Violation;
+use exos::valid::Violation;
 
 use crate::store::{Programme, Registrations};
 

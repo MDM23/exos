@@ -10,7 +10,13 @@
 //! typo in one is a compile error.
 
 use axum::extract::Path;
-use exos::{Audience, Audiences, Effect, Id, Markup, Resolution, on_click, view};
+use exos::{
+    Effect, Markup,
+    identity::{Audience, Audiences, Resolution},
+    on_click,
+    session::Id,
+    view,
+};
 
 use crate::{
     room,
@@ -279,7 +285,7 @@ async fn leave() -> Effect {
 )]
 mod tests {
     use axum::http::StatusCode;
-    use exos::Step;
+    use exos::effect::Step;
 
     use super::Lots;
     use crate::tests::{as_guest, claimed, visitor};

@@ -23,7 +23,7 @@
 //!   [`room`](crate::room), and it reaches whoever is watching rather than
 //!   whoever anybody is.
 
-use exos::{Effect, Markup, attr, on_click, send, show, text, view};
+use exos::{Effect, Markup, attr, live::send, on_click, show, text, view};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -135,8 +135,8 @@ pub(crate) fn tell(bidder: &Bidder, kind: Note, message: impl Into<String>) {
 /// and treats reaching somebody as the accelerator it is.
 pub(crate) fn reaches(bidder: &Bidder) -> bool {
     match bidder {
-        Bidder::Viewer(id) => exos::connected(&Viewer(*id)),
-        Bidder::Guest(name) => exos::connected(&Guest(name.clone())),
+        Bidder::Viewer(id) => exos::live::connected(&Viewer(*id)),
+        Bidder::Guest(name) => exos::live::connected(&Guest(name.clone())),
     }
 }
 

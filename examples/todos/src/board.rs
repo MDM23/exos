@@ -5,7 +5,7 @@
 //! "the list", rather than one fragment that would mean something different in
 //! every tab.
 
-use exos::{Effect, Flag, Markup, data, on_change, on_click, publish, view};
+use exos::{Effect, Markup, data, live::publish, on_change, on_click, render::Flag, view};
 
 use crate::{
     filter::Filter,
@@ -149,7 +149,7 @@ mod tests {
     /// the wrapper is bound to whoever the request is for.
     fn markup(filter: Filter) -> String {
         seed();
-        exos::with_scope(|| board(filter).to_markup().into_string())
+        exos::scope::with_scope(|| board(filter).to_markup().into_string())
     }
 
     /// Being able to subscribe is the authorization, so the wrapper carries a

@@ -1,6 +1,6 @@
 //! Attribute blocks and the typed handlers that hang on them.
 
-use exos::{Js, bind, class, on_click, show, signal, text, view, when};
+use exos::{Js, bind, class, js::when, on_click, show, signal, text, view};
 use serde::{Deserialize, Serialize};
 
 #[test]

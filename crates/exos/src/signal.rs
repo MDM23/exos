@@ -67,7 +67,7 @@ use core::{hash::Hasher as _, marker::PhantomData, panic::Location};
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::{IntoJs, Js, emit, fnv::Fnv1a};
+use crate::{IntoJs, Js, fnv::Fnv1a, js::emit};
 
 /// Where a signal's name is resolved from.
 ///
@@ -391,7 +391,7 @@ impl<T> Bound<T> {
     /// into, which is also what takes a stale verdict away, since a value
     /// nobody has judged since it changed cannot have a message about it.
     pub fn error(&self) -> Js<String> {
-        let key = crate::quote_js(self.signal.name());
+        let key = crate::js::quote_js(self.signal.name());
 
         // A row's key is only complete in the browser, which is the one place
         // that can say where the row sits.
@@ -399,7 +399,7 @@ impl<T> Bound<T> {
             Some(group) => Js::raw(format!(
                 "rowError($.{state}, {group}, {key}, el)",
                 state = self.state,
-                group = crate::quote_js(group),
+                group = crate::js::quote_js(group),
             )),
             None => Js::raw(format!("($.{state}[{key}] ?? \"\")", state = self.state)),
         }
@@ -421,9 +421,9 @@ impl<T> core::ops::Deref for Bound<T> {
 
 /// Declared exactly as the signal it wraps, so a handle in an attribute block
 /// still puts its fields on the document.
-impl<T> crate::IntoAttributes for &Bound<T> {
-    fn write(self, attributes: &mut crate::Attributes) {
-        crate::IntoAttributes::write(&self.signal, attributes);
+impl<T> crate::attributes::IntoAttributes for &Bound<T> {
+    fn write(self, attributes: &mut crate::attributes::Attributes) {
+        crate::attributes::IntoAttributes::write(&self.signal, attributes);
     }
 }
 
@@ -479,7 +479,7 @@ impl<M> Field<M> {
 /// when one element declares both, and that is the clash a hand-written name
 /// could always have.
 ///
-/// Shared with [`debounce`](crate::debounce), which needs a key with exactly
+/// Shared with [`debounce`](crate::js::debounce), which needs a key with exactly
 /// these properties and resolves it against the same scopes.
 pub(crate) fn generated(at: &Location<'_>) -> String {
     // The same hash a topic gets, for the same reason it is written down
@@ -499,7 +499,7 @@ pub(crate) fn generated(at: &Location<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::record;
+    use crate::js::record;
 
     #[test]
     fn a_handle_reads_and_writes_by_name() {

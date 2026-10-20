@@ -19,7 +19,7 @@
 //! # }
 //! ```
 
-use crate::Count;
+use crate::locale::Count;
 
 /// The symbols a language writes a whole number with.
 ///

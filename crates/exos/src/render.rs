@@ -127,7 +127,7 @@ pub fn escape_into(text: &str, out: &mut String) {
 /// structure a translation can carry is a slot that was declared in Rust.
 ///
 /// ```
-/// # use exos::escape_display_into;
+/// # use exos::render::escape_display_into;
 /// let mut out = String::new();
 /// escape_display_into(&"<script>", &mut out);
 /// assert_eq!(out, "&lt;script&gt;");
@@ -272,7 +272,7 @@ impl fmt::Write for Escaping<'_> {
 /// `[data-online]` matches `data-online="false"` too.
 ///
 /// ```
-/// # use exos::{AttributeValue, Flag};
+/// # use exos::{render::{AttributeValue, Flag}};
 /// assert!(Flag(true).attribute_value().is_some());
 /// assert!(Flag(false).attribute_value().is_none());
 /// ```

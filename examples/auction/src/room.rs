@@ -18,7 +18,13 @@
 //! words.
 
 use axum::extract::Path;
-use exos::{Effect, Flag, Markup, on_click, publish, send, view};
+use exos::{
+    Effect, Markup,
+    live::{publish, send},
+    on_click,
+    render::Flag,
+    view,
+};
 
 use crate::{
     bidder,
@@ -247,7 +253,7 @@ fn result(lot: &Lot) -> String {
     reason = "a failing assertion is the point of a test"
 )]
 mod tests {
-    use exos::Step;
+    use exos::effect::Step;
     use exos_test::Browser;
 
     use super::*;
@@ -260,7 +266,7 @@ mod tests {
     /// wrapper is bound to whoever the request is for.
     fn markup(id: u32) -> String {
         seeded();
-        exos::with_scope(|| lot(id, Role::Bidder).to_markup().into_string())
+        exos::scope::with_scope(|| lot(id, Role::Bidder).to_markup().into_string())
     }
 
     async fn bid_as(bidder: &mut Browser, id: u32) {

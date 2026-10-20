@@ -160,11 +160,11 @@ fn excerpt(text: &str, at: usize, length: usize) -> Markup {
         out.push('…');
     }
 
-    exos::escape_into(text[start..at].trim_start(), &mut out);
+    exos::render::escape_into(text[start..at].trim_start(), &mut out);
     out.push_str("<mark>");
-    exos::escape_into(&text[at..at + length], &mut out);
+    exos::render::escape_into(&text[at..at + length], &mut out);
     out.push_str("</mark>");
-    exos::escape_into(text[at + length..end].trim_end(), &mut out);
+    exos::render::escape_into(text[at + length..end].trim_end(), &mut out);
 
     if end < text.len() {
         out.push('…');

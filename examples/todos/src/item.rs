@@ -2,8 +2,11 @@
 
 use axum::extract::Path;
 use exos::{
-    Effect, Flag, Markup, Model, bind, class, data, focus_now, on_change, on_click, on_dblclick,
-    on_focusout, on_keydown, on_submit, show, signal, view, when,
+    Effect, Markup, Model, bind, class, data,
+    js::{focus_now, when},
+    on_change, on_click, on_dblclick, on_focusout, on_keydown, on_submit,
+    render::Flag,
+    show, signal, view,
 };
 use serde::{Deserialize, Serialize};
 

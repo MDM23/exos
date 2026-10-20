@@ -15,7 +15,7 @@
 //! is markup, and the morph keeps markup.
 
 use base64::Engine as _;
-use exos::Asset;
+use exos::asset::Asset;
 
 /// The longest edge of the placeholder.
 ///
