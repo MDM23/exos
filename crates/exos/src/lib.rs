@@ -36,7 +36,7 @@ mod hex;
 mod identity;
 mod instant;
 mod js;
-mod keys;
+pub mod keys;
 mod live;
 mod locale;
 mod message;
@@ -104,10 +104,10 @@ pub use exos_macro::{
     put, view,
 };
 
-// What keeps `LocaleSet` implementable by `locales!` alone, and what it
-// registers the set with, which it has to be able to name.
+// What keeps `LocaleSet` implementable by `locales!` alone, what it
+// registers the set with, and what its `lookup` and `within` delegate to.
 #[doc(hidden)]
-pub use crate::locale::{Languages, Sealed};
+pub use crate::locale::{Languages, Sealed, in_locale, lookup};
 
 // Re-exported so the macros can name them without the user taking a direct
 // dependency, and so nobody has to keep versions in step with ours.

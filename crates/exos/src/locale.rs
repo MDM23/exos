@@ -241,6 +241,38 @@ pub fn locale<L: LocaleSet>() -> L {
     resolved
 }
 
+/// What the `within` that `locales!` generates delegates to.
+///
+/// ```
+/// # exos::locales! { De = "de", #[fallback] En = "en" }
+/// # fn main() {
+/// exos::with_scope(|| {
+///     assert_eq!(Locale::De.within(exos::locale::<Locale>), Locale::De);
+///     assert_eq!(exos::locale::<Locale>(), Locale::En);
+/// });
+/// # }
+/// ```
+pub fn in_locale<L: LocaleSet, R>(locale: L, render: impl FnOnce() -> R) -> R {
+    let index = L::ALL
+        .iter()
+        .position(|declared| declared.tag() == locale.tag());
+
+    crate::scope::in_language(index, render).0
+}
+
+/// What the `lookup` that `locales!` generates delegates to.
+///
+/// ```
+/// # exos::locales! { De = "de", #[fallback] En = "en" }
+/// # fn main() {
+/// assert_eq!(Locale::lookup("de-CH"), Some(Locale::De));
+/// assert_eq!(Locale::lookup("fr"), None);
+/// # }
+/// ```
+pub fn lookup<L: LocaleSet>(tags: &str) -> Option<L> {
+    negotiate::lookup(tags)
+}
+
 /// What this request asked for, and whether resolution read it.
 ///
 /// Lives in the request [scope](crate::scope), like the session, which is what

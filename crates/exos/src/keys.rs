@@ -155,12 +155,16 @@ fn configured() -> &'static Keys {
 }
 
 /// Signs `message` under `label`, as hex.
-pub(crate) fn tag(label: &str, message: &[u8]) -> String {
+///
+/// For a value an application hands out and takes back from somebody it
+/// cannot otherwise recognise, such as a link in a mail. The label keeps each
+/// use apart, so name it after the use, never after the value.
+pub fn tag(label: &str, message: &[u8]) -> String {
     hex::encode(&configured().sign(label, message)[..TAG_BYTES])
 }
 
 /// Whether `candidate` is the tag for `message` under `label`.
-pub(crate) fn verify(label: &str, message: &[u8], candidate: &str) -> bool {
+pub fn verify(label: &str, message: &[u8], candidate: &str) -> bool {
     // Constant time over the whole tag. Comparing as strings would return on
     // the first wrong character, which hands back the position of that
     // character, and a tag can be learned one character at a time from that.

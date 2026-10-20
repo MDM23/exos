@@ -183,13 +183,31 @@ impl Declaration {
                 ///
                 /// The tag is compared whole and without regard to case, so
                 /// this answers for what an application declared and not for
-                /// what a browser asked for. Matching an `Accept-Language`
-                /// header is a wider question, and it belongs to resolution.
+                /// what a browser asked for, which is what
+                /// [`lookup`](Self::lookup) answers.
                 pub fn from_tag(tag: &str) -> ::core::option::Option<Self> {
                     Self::ALL
                         .iter()
                         .copied()
                         .find(|locale| tag.eq_ignore_ascii_case(locale.tag()))
+                }
+
+                /// The locale `tags` asks for, matched the way
+                /// `Accept-Language` is, so `de-CH` reaches `de`.
+                ///
+                /// For a language stored rather than sent, a person's own.
+                pub fn lookup(tags: &str) -> ::core::option::Option<Self> {
+                    ::exos::lookup(tags)
+                }
+
+                /// Runs `render` in this locale rather than in the request's.
+                ///
+                /// For what is written for somebody other than whoever is
+                /// reading, such as a mail to a person whose language is
+                /// stored. The request scope is masked as it is for a live
+                /// fragment, so `render` writes from its arguments alone.
+                pub fn within<R>(self, render: impl FnOnce() -> R) -> R {
+                    ::exos::in_locale(self, render)
                 }
 
                 /// The symbols this language writes a whole number with.
