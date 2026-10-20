@@ -151,6 +151,19 @@ test("a patch landing on an open modal leaves it open", async () => {
     assert.equal(dialog.textContent, "three invoices depend on it");
 });
 
+test("a patch landing on a details the reader opened leaves it open", async () => {
+    const fold = (inside) => `<form id="move"><details><summary>Move</summary>${inside}</details></form>`;
+    const window = boot(fold("<p>old club</p>"));
+    window.document.querySelector("details").open = true;
+
+    window.exos.applyPatch(fold("<p>new club</p>"));
+    await settled();
+
+    const details = window.document.querySelector("details");
+    assert.ok(details.open);
+    assert.equal(details.textContent, "Movenew club");
+});
+
 test("a modal a handler sends opens as it arrives and goes once closed", async () => {
     const window = boot(`<main></main>`);
     const sent = `<dialog id="confirm" data-modal=""><p>Sure?</p></dialog>`;

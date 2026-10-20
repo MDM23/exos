@@ -1857,6 +1857,10 @@
             // behind it inert with nothing on top.
             if (name === "open" && from.hasAttribute("data-modal")) continue;
 
+            // A `<details>` is opened by the reader, which the server never
+            // hears of, so a form revised inside one would fold it shut.
+            if (name === "open" && from.nodeName === "DETAILS") continue;
+
             if (!to.hasAttribute(name)) from.removeAttribute(name);
         }
 
