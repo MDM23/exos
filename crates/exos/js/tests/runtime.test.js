@@ -327,6 +327,22 @@ test("going back puts the reader where they were on that page", async () => {
     assert.deepEqual(scrolls.at(-1), [0, 300]);
 });
 
+// The bug: following a link to a section of the page fired `popstate`, which
+// fetched the page again and put the reader at its top, not at the section.
+test("a link to a section of the page stays on the page", async () => {
+    const window = boot(`<a href="#later">later</a><section id="later"></section>`);
+    const scrolls = [];
+    window.scrollTo = (x, y) => scrolls.push([x, y]);
+
+    window.document.querySelector("a").click();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await settled();
+
+    assert.equal(window.location.hash, "#later");
+    assert.equal(window.transport.requests.length, 0, "nothing is fetched");
+    assert.deepEqual(scrolls, [], "nothing puts the reader at the top");
+});
+
 // The bug: a page scrolling in an element rather than the window was put back
 // at the window's position, which is always the top.
 test("a page that scrolls in its own element is put back in that element", async () => {

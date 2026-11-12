@@ -2076,8 +2076,29 @@
         { capture: true, passive: true },
     );
 
+    // The document on screen, without its fragment. An entry differing from
+    // it in the fragment alone is the same document: following `#section`
+    // adds one and fires `popstate`, and fetching the page again for it
+    // would throw the reader back to the top instead of to the section.
+    let onScreen = unfragmented(location.href);
+
+    function unfragmented(href) {
+        const url = new URL(href);
+        url.hash = "";
+        return url.href;
+    }
+
     window.addEventListener("popstate", () => {
         clearTimeout(scrolling);
+
+        if (unfragmented(location.href) === onScreen) {
+            const scroll = history.state?.scroll;
+            if (scroll != null) scrollPageTo(scroll);
+            else if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView();
+            else scrollPageTo(0);
+            return;
+        }
+
         navigate(location.href, false, history.state?.scroll ?? 0);
     });
 
@@ -2164,6 +2185,7 @@
             // a reload after signing in answered from somewhere else.
             if (push) history.pushState(null, "", response.url || url);
             else history.replaceState(history.state, "", response.url || url);
+            onScreen = unfragmented(location.href);
             stickQueries();
             if (scroll !== null) scrollPageTo(scroll);
         } catch (error) {
