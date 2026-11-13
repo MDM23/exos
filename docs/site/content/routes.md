@@ -72,6 +72,16 @@ Each parameter is percent-encoded as one segment, so a title carrying a `/`, a
 `?` or a percent sign names itself instead of reshaping the URL around it. A
 wildcard (`{*rest}`) is a path rather than a segment and keeps its separators.
 
+A path with several parameters takes them as one tuple, the way axum hands
+them over, and the URL takes them in the order the path names them:
+
+```rust
+#[exos::get("/teams/{team}/players/{id}")]
+async fn player(Path((team, id)): Path<(u32, u32)>) -> Page { /* ... */ }
+
+view! { <a href={ player::url(7, 23) }>"Open"</a> }
+```
+
 **`link` writes the whole anchor.** It is that URL, plus `aria-current="page"`
 where the URL is the page being rendered:
 

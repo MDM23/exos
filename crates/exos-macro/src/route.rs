@@ -137,6 +137,12 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
 
 /// The `Path<T>` and body types in a handler's signature.
 ///
+/// A path with several parameters is one `Path` of a tuple, since axum hands
+/// the whole path to each `Path` it finds, so each element of the tuple is a
+/// parameter of its own, in the order the path names them. A struct would
+/// name them, but by fields the macro cannot see, so it is refused like any
+/// other count that does not add up.
+///
 /// Both body extractors count. `Model<T>` is the one an action uses, and
 /// `Json<T>` stays for a body something other than this crate's client wrote;
 /// which of them a handler names does not change what the caller looks like,
@@ -162,6 +168,9 @@ fn extractors(function: &ItemFn) -> (Vec<syn::GenericArgument>, Option<syn::Gene
         };
 
         match (segment.ident.to_string().as_str(), inner) {
+            ("Path", Some(syn::GenericArgument::Type(Type::Tuple(tuple)))) => {
+                path_types.extend(tuple.elems.into_iter().map(syn::GenericArgument::Type));
+            }
             ("Path", Some(inner)) => path_types.push(inner),
             ("Json" | "Model", Some(inner)) => body_type = Some(inner),
             _ => {}
@@ -262,6 +271,30 @@ mod tests {
             !expanded.contains("pub fn url (p0 : u32 , body"),
             "a link has no body to send"
         );
+    }
+
+    #[test]
+    fn a_tuple_is_a_parameter_for_each_of_its_elements() {
+        let expanded = expand_ok(
+            r#""/teams/{team}/players/{id}""#,
+            "async fn player(Path((team, id)): Path<(u32, String)>) {}",
+        );
+
+        assert!(!expanded.contains("compile_error"), "{expanded}");
+        assert!(
+            expanded.contains("pub fn url (p0 : u32 , p1 : String)"),
+            "{expanded}"
+        );
+    }
+
+    #[test]
+    fn a_tuple_too_short_for_the_path_is_refused() {
+        let expanded = expand_ok(
+            r#""/teams/{team}/players/{id}""#,
+            "async fn player(Path((team,)): Path<(u32,)>) {}",
+        );
+
+        assert!(expanded.contains("compile_error"));
     }
 
     /// The link is the URL plus what marks the page being read, so it is built
