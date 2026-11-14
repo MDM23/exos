@@ -915,13 +915,17 @@ async fn stream() -> Response {
         // silent boundary on correctness.
         .map_while(|event| event.ok().map(Ok::<Event, Infallible>));
 
-    Sse::new(Disconnect {
+    // A proxy buffering the response would hold every patch back until its
+    // buffer fills. nginx does by default, and stops when it sees this header,
+    // so the stream works behind it without a location of its own.
+    let stream = Sse::new(Disconnect {
         greeting: Some(Event::default().retry(RETRY).event(HELLO).data(&id)),
         id,
         events,
     })
-    .keep_alive(KeepAlive::default())
-    .into_response()
+    .keep_alive(KeepAlive::default());
+
+    ([("x-accel-buffering", "no")], stream).into_response()
 }
 
 /// A stream that introduces its connection and then deregisters it when the
