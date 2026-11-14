@@ -38,12 +38,10 @@ pub(crate) fn bundle(path: &Path, minify: bool) -> Result<Bundled> {
         // A minifier that cannot parse the bundle is reporting a syntax error
         // in it. Failing the build beats shipping something that breaks in the
         // browser.
-        minifier::js::minify(&combined)
-            .map(|minified| minified.to_string())
-            .map_err(|error| Error::Javascript {
-                path: path.to_path_buf(),
-                message: error.to_owned(),
-            })?
+        minified(&combined).map_err(|error| Error::Javascript {
+            path: path.to_path_buf(),
+            message: error.to_owned(),
+        })?
     } else {
         combined
     };
@@ -61,11 +59,46 @@ pub(crate) fn bundle(path: &Path, minify: bool) -> Result<Bundled> {
 ///
 /// Returns [`Error::Inline`] when the script cannot be parsed.
 pub fn minify_js(code: &str) -> Result<String> {
-    minifier::js::minify(code)
-        .map(|minified| minified.to_string())
-        .map_err(|message| Error::Inline {
-            message: message.to_owned(),
-        })
+    minified(code).map_err(|message| Error::Inline {
+        message: message.to_owned(),
+    })
+}
+
+/// Minifies like `minifier::js::minify`, but keeps the space that separates
+/// two pluses or two minuses.
+///
+/// The crate (0.4.0) drops every space, so `a + +b` came out as `a++b`, which
+/// the browser reads as `a++ b` and refuses. We turn such a space into a token
+/// the crate keeps, before letting it clean up the rest.
+fn minified(code: &str) -> core::result::Result<String, &'static str> {
+    use minifier::js::{Token, Tokens, clean_tokens, tokenize};
+
+    let mut tokens = tokenize(code)?.0;
+    let mut before: Option<usize> = None;
+    let mut gap: Option<usize> = None;
+
+    for index in 0..tokens.len() {
+        if tokens[index].is_white_character() {
+            gap.get_or_insert(index);
+            continue;
+        }
+
+        if let (Some(before), Some(gap)) = (before, gap) {
+            let (left, right) = (tokens[before].to_string(), tokens[index].to_string());
+            let fuses = ['+', '-']
+                .iter()
+                .any(|&sign| left.ends_with(sign) && right.starts_with(sign));
+
+            if fuses {
+                tokens[gap] = Token::Other(" ");
+            }
+        }
+
+        before = Some(index);
+        gap = None;
+    }
+
+    Ok(Tokens(tokens).apply(clean_tokens).to_string())
 }
 
 /// A depth-first walk of the import graph, collecting files in run order.
@@ -346,6 +379,13 @@ mod tests {
     fn refuses_trailing_code_it_would_have_to_drop() {
         let error = parse("import \"./a.js\"; run();").expect_err("unsupported");
         assert!(format!("{error}").contains("only `import"), "{error}");
+    }
+
+    #[test]
+    fn minifying_keeps_signs_apart() {
+        let minified = minified("a + +b; c - -d; e + ++f; g++ + h;").expect("valid");
+
+        assert_eq!(minified, "a+ +b;c- -d;e+ ++f;g++ +h;");
     }
 
     #[test]
