@@ -3,7 +3,6 @@
 use crate::{
     Js, Signal,
     attributes::{Attributes, IntoAttributes, source},
-    js::quote_js,
 };
 
 /// One `name="value"` pair produced by a helper.
@@ -32,6 +31,26 @@ pub struct Class(&'static str, Js<bool>);
 impl IntoAttributes for Class {
     fn write(self, attributes: &mut Attributes) {
         attributes.merge_object("data-class", self.0, self.1.source());
+    }
+}
+
+/// One reactive attribute or property, from [`attr`] or [`prop`].
+///
+/// Its own type rather than an [`Attr`], because the attribute it writes,
+/// `data-attr` or `data-prop`, holds an object every block adds an entry to.
+/// Written as a plain attribute, the second block on an element would
+/// replace the first, and an `href` would vanish behind a `disabled`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[must_use = "an attribute does nothing until it is written onto an element"]
+pub struct Reactive {
+    attribute: &'static str,
+    name: &'static str,
+    expression: String,
+}
+
+impl IntoAttributes for Reactive {
+    fn write(self, attributes: &mut Attributes) {
+        attributes.merge_object(self.attribute, self.name, &self.expression);
     }
 }
 
@@ -367,20 +386,23 @@ pub fn class(name: &'static str, condition: impl crate::IntoJs<bool>) -> Class {
     Class(name, condition.into_js())
 }
 
-/// One reactive attribute.
-pub fn attr<T>(name: &'static str, value: Js<T>) -> Attr {
-    Attr::new(
-        "data-attr",
-        format!("{{{}: {}}}", quote_js(name), value.into_source()),
-    )
+/// One reactive attribute. Repeat the block for more.
+pub fn attr<T>(name: &'static str, value: Js<T>) -> Reactive {
+    Reactive {
+        attribute: "data-attr",
+        name,
+        expression: value.into_source(),
+    }
 }
 
 /// One reactive property: `value`, `checked`, `indeterminate` and the like.
-pub fn prop<T>(name: &'static str, value: Js<T>) -> Attr {
-    Attr::new(
-        "data-prop",
-        format!("{{{}: {}}}", quote_js(name), value.into_source()),
-    )
+/// Repeat the block for more.
+pub fn prop<T>(name: &'static str, value: Js<T>) -> Reactive {
+    Reactive {
+        attribute: "data-prop",
+        name,
+        expression: value.into_source(),
+    }
 }
 
 /// Two-way binding for a form control.

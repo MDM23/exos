@@ -24,8 +24,8 @@ pub use crate::attributes::{
         on_keydown, on_pointerenter, on_submit,
     },
     helper::{
-        Attr, Bind, BindKind, Class, Link, attr, bind, class, modal, modal_now, preserve, prop,
-        show, text,
+        Attr, Bind, BindKind, Class, Link, Reactive, attr, bind, class, modal, modal_now, preserve,
+        prop, show, text,
     },
 };
 
@@ -247,6 +247,26 @@ mod tests {
         assert_eq!(rendered.matches("data-class").count(), 1);
         assert!(rendered.contains("&quot;is-open&quot;: $.open"));
         assert!(rendered.contains("&quot;busy&quot;: $.loading"));
+    }
+
+    /// A link built from a signal and greyed out by another carries both: a
+    /// second block replacing the first would leave it without its `href`.
+    #[test]
+    fn repeated_reactive_attributes_and_properties_merge() {
+        let mut attributes = Attributes::new();
+        attr("href", Js::<String>::raw("$.href")).write(&mut attributes);
+        attr("aria-disabled", Js::<bool>::raw("$.idle")).write(&mut attributes);
+        prop("checked", Js::<bool>::raw("$.on")).write(&mut attributes);
+        prop("indeterminate", Js::<bool>::raw("$.some")).write(&mut attributes);
+
+        let rendered = attributes.render();
+
+        assert_eq!(rendered.matches("data-attr").count(), 1);
+        assert!(rendered.contains("&quot;href&quot;: $.href"));
+        assert!(rendered.contains("&quot;aria-disabled&quot;: $.idle"));
+        assert_eq!(rendered.matches("data-prop").count(), 1);
+        assert!(rendered.contains("&quot;checked&quot;: $.on"));
+        assert!(rendered.contains("&quot;indeterminate&quot;: $.some"));
     }
 
     #[test]
