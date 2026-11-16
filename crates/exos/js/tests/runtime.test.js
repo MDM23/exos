@@ -1769,6 +1769,98 @@ test("a reply older than the newest request under its key is dropped", async () 
     assert.equal(window.document.getElementById("slot").textContent, "second");
 });
 
+/**
+ * Answers held until the test hands them out, each a patch of the slot it
+ * names, or a failure where it names none.
+ */
+function holdAnswers(window) {
+    const answers = [];
+
+    window.fetch = () =>
+        new Promise((resolve) => {
+            answers.push((slot, text) =>
+                resolve({
+                    ok: slot !== undefined,
+                    status: slot === undefined ? 500 : 200,
+                    statusText: "",
+                    headers: { get: () => (slot === undefined ? "text/plain" : "text/event-stream") },
+                    body: {
+                        getReader: () =>
+                            oneChunk(window, `event: patch\ndata: <p id="${slot}">${text}</p>\n\n`),
+                        cancel: () => Promise.resolve(),
+                    },
+                }),
+            );
+        });
+
+    return answers;
+}
+
+/** Two buttons sending one model to one action, the way a bar and a dialog do. */
+const twoCallers = (slots) =>
+    `<button id="open" data-on-click="post('/preview', {}, 'Renewals')">open</button>` +
+    `<button id="pick" data-on-click="post('/preview', {}, 'Renewals')">pick</button>` +
+    slots;
+
+// The bug this is here for: a dialog asked for a preview as it opened and again
+// as a day was picked, from two elements, so no debounce key joined them. The
+// opening's answer landed last and wiped the preview of the day.
+test("an answer arriving after a newer one of the same model and action is dropped", async () => {
+    const window = boot(twoCallers(`<p id="slot">before</p>`));
+    const answers = holdAnswers(window);
+
+    click(window, "#open");
+    click(window, "#pick");
+    assert.equal(answers.length, 2);
+
+    answers[1]("slot", "picked");
+    await settled();
+    answers[0]("slot", "opened");
+    await settled();
+    await settled();
+
+    assert.equal(window.document.getElementById("slot").textContent, "picked");
+});
+
+// What sets this apart from dropping whatever a newer call overtook: a save on
+// its way when a preview is asked for still lands, reload and all.
+test("answers arriving in order are all applied", async () => {
+    const window = boot(twoCallers(`<p id="a">-</p><p id="b">-</p>`));
+    const answers = holdAnswers(window);
+
+    click(window, "#open");
+    click(window, "#pick");
+
+    answers[0]("a", "first");
+    await settled();
+    await settled();
+    answers[1]("b", "second");
+    await settled();
+    await settled();
+
+    assert.equal(window.document.getElementById("a").textContent, "first");
+    assert.equal(window.document.getElementById("b").textContent, "second");
+});
+
+test("a late answer that failed is still announced", async () => {
+    const window = boot(twoCallers(`<p id="slot">before</p>`));
+    const answers = holdAnswers(window);
+    const seen = [];
+
+    window.document.addEventListener("exos:error", (ev) => seen.push(ev.detail.status));
+
+    click(window, "#open");
+    click(window, "#pick");
+
+    answers[1]("slot", "picked");
+    await settled();
+    answers[0]();
+    await settled();
+
+    assert.deepEqual(seen, [500]);
+    assert.equal(window.document.getElementById("slot").textContent, "picked");
+});
+
 /** A body handed over whole, for a test whose subject is not the chunking. */
 function oneChunk(window, text) {
     let sent = false;

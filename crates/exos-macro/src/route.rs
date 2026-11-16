@@ -80,9 +80,12 @@ fn caller(function: &ItemFn, path: &LitStr, method: &Ident) -> TokenStream {
     let body = match &body_type {
         Some(ty) => {
             parameters.push(quote! { body: &impl ::exos::js::IntoPayload<#ty> });
-            quote! { ::std::option::Option::Some(::exos::js::IntoPayload::payload(body)) }
+            quote! {
+                ::std::option::Option::Some(::exos::js::IntoPayload::payload(body)),
+                ::exos::js::IntoPayload::key(body)
+            }
         }
-        None => quote! { ::std::option::Option::None },
+        None => quote! { ::std::option::Option::None, ::std::option::Option::None },
     };
 
     let method_name = method.to_string();

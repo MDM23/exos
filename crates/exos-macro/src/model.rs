@@ -505,6 +505,10 @@ pub(crate) fn expand(item: TokenStream, form: bool) -> TokenStream {
 
                 ::std::format!("{{{}}}", __fields.join(", "))
             }
+
+            fn key(&self) -> ::std::option::Option<&'static str> {
+                ::std::option::Option::Some(#state)
+            }
         }
 
         /// A concrete value stands in for the handle when the server already

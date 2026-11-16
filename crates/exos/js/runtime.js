@@ -479,10 +479,15 @@
 
     // A handler on `input` runs per keystroke, which is right for a signal
     // write and wrong for anything that leaves the machine. `timers` holds the
-    // pending call per key; `issued` counts what has gone out under one, so a
-    // reply older than the newest can be dropped.
+    // pending call per key.
+    //
+    // A key is also what orders answers, whether a debounce or a model's
+    // payload made it; see `request`. `issued` counts what has gone out under
+    // one and `landed` is the newest turn whose answer arrived, so an answer
+    // older than that is dropped rather than painted over a newer one.
     const timers = new Map();
     const issued = new Map();
+    const landed = new Map();
     let arming = null;
 
     function debounceCall(el, key, delay, body) {
@@ -508,7 +513,7 @@
     }
 
     function evaluate(source, el, ev, statement) {
-        const action = (method) => (url, data) => request(method, url, el, data);
+        const action = (method) => (url, data, model) => request(method, url, el, data, model);
 
         return compile(source, statement)(
             // Scoped to where the expression is written, not to where the
@@ -1377,12 +1382,20 @@
     let inFlight = 0;
     let owed = null;
 
-    async function request(method, url, el, data) {
-        // Claimed synchronously, before anything awaits, so a call made under a
-        // debounce key is stamped with the turn it went out on.
-        const key = arming;
+    async function request(method, url, el, data, model) {
+        // Claimed synchronously, before anything awaits, so a call is stamped
+        // with the turn it went out on.
+        //
+        // A model's payload keys the call by the model and the action, so two
+        // calls of one action with one model answer in the order they went
+        // out, whichever element made them. For example, a dialog asking for
+        // a preview as it opens and again as a day is picked: the opening's
+        // answer must not land after the day's and wipe it. A value sent as
+        // it is has no key.
+        const key = model ? `${model} ${url}` : arming;
         const turn = key ? (issued.get(key) ?? 0) + 1 : 0;
         if (key) issued.set(key, turn);
+        const current = () => !key || landed.get(key) === turn;
 
         const init = { method, headers: { "X-Exos": "true" } };
         let target = url;
@@ -1412,15 +1425,24 @@
         try {
             const response = await fetch(target, init);
 
-            // A newer call went out under this key while this one was in
-            // flight, so its answer is the one that counts. Debouncing alone
-            // does not give this: two requests can still overlap on a slow
-            // connection, and the older landing last paints the answer for a
-            // prefix of what is in the box now.
-            if (key && issued.get(key) !== turn) {
+            // A newer call under this key has answered already, so this answer
+            // is about a state the page has left. Debouncing alone does not
+            // give this: two requests can still overlap on a slow connection,
+            // and the older landing last paints the answer for a prefix of
+            // what is in the box now.
+            //
+            // Only an answer arriving after a newer one is dropped, not every
+            // answer a newer call overtook. Answers arriving in order are all
+            // applied, so a save's reload is not lost to a preview asked for
+            // while it was on its way. A failure is still said, since it may
+            // be the only sign that something went wrong.
+            if (key && (landed.get(key) ?? 0) > turn) {
+                if (!response.ok) failed(method, url, el, init, response);
                 response.body?.cancel();
                 return response;
             }
+
+            if (key) landed.set(key, turn);
 
             const type = response.headers?.get("content-type") ?? "";
 
@@ -1439,29 +1461,21 @@
             // on a failure is a document about the failure, and morphing one
             // into the page would be a 500 eating the screen.
             if (type.includes("text/event-stream")) {
-                await consume(response);
+                await consume(response, current);
                 return response;
             }
 
             // Nothing to apply, so this is the silent failure the rule above
             // is about, and it is announced rather than swallowed.
             if (!response.ok) {
-                console.error(
-                    `[exos] ${method} ${url} answered ${response.status} ${response.statusText}`,
-                    "\nsent:", init.body ?? "(no body)",
-                    "\nfrom:", el,
-                );
-
-                document.dispatchEvent(
-                    new CustomEvent("exos:error", {
-                        detail: { method, url, status: response.status, body: init.body },
-                    }),
-                );
-
+                failed(method, url, el, init, response);
                 return response;
             }
 
-            if (type.includes("text/html")) applyPatch(await response.text());
+            if (type.includes("text/html")) {
+                const html = await response.text();
+                if (current()) applyPatch(html);
+            }
 
             return response;
         } finally {
@@ -1475,6 +1489,22 @@
                 run();
             }
         }
+    }
+
+    // A request answered with a failure and nothing to apply, said rather than
+    // swallowed.
+    function failed(method, url, el, init, response) {
+        console.error(
+            `[exos] ${method} ${url} answered ${response.status} ${response.statusText}`,
+            "\nsent:", init.body ?? "(no body)",
+            "\nfrom:", el,
+        );
+
+        document.dispatchEvent(
+            new CustomEvent("exos:error", {
+                detail: { method, url, status: response.status, body: init.body },
+            }),
+        );
     }
 
     // How long a checked field waits after the last keystroke. Fixed rather
@@ -1610,8 +1640,13 @@
     //
     // A step that fetches a page is waited for, so whatever follows it lands
     // on the page it arrived at rather than on the one about to be replaced.
+    //
+    // A slow handler streams its steps, so a newer answer under the request's
+    // key can arrive while this one is still going. From then on `current`
+    // says no, and the rest of this one is let go rather than applied over
+    // the newer one.
 
-    async function consume(response) {
+    async function consume(response, current = () => true) {
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -1624,6 +1659,7 @@
 
             let boundary = buffer.indexOf("\n\n");
             while (boundary !== -1) {
+                if (!current()) return reader.cancel?.();
                 await dispatch(buffer.slice(0, boundary));
                 buffer = buffer.slice(boundary + 2);
                 boundary = buffer.indexOf("\n\n");

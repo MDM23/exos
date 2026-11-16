@@ -26,12 +26,19 @@ through the same scopes, so a helper called once per row gives every row its own
 timer. Typing in one row cannot cancel what another row was about to save, and
 nothing has to invent a name.
 
-**A key also carries last-response-wins.** Once a newer call has gone out under
-it, an older reply is dropped rather than applied. Debouncing alone does not
-give you that: two requests can still be in flight together on a slow
-connection, and the older one landing last paints the answer for a prefix of
-what is now in the box. That is a bug nobody can reproduce, so it is not left to
-the application.
+**A key also carries last-response-wins.** A reply arriving after a newer one
+under its key is dropped rather than applied. Debouncing alone does not give you
+that: two requests can still be in flight together on a slow connection, and the
+older one landing last paints the answer for a prefix of what is now in the box.
+That is a bug nobody can reproduce, so it is not left to the application.
+Replies arriving in order are all applied, so a save is never lost to a request
+that merely went out after it.
+
+**Sending a model's handle keys the call by itself.** Two calls of one action
+with one model's handle answer in order whichever elements made them, debounced
+or not. A dialog asking for a preview as it opens and again as a day is picked
+cannot have the opening's answer wipe the day's. A value sent as it is carries
+no key.
 
 Nothing else about a search field is new. The query is a model field, the
 handler patches a fragment, and `aria-busy` on the element already says the work

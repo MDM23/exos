@@ -136,6 +136,16 @@ impl<T> IntoJs<T> for Js<T> {
 pub trait IntoPayload<T> {
     /// A JavaScript object expression.
     fn payload(&self) -> String;
+
+    /// What orders the answers of calls sending this, together with the
+    /// action: of two calls under one key, an answer arriving after the
+    /// newer one's is dropped. A handle answers its model's name, so a dialog
+    /// asking for a preview as it opens and again as a day is picked cannot
+    /// have the first answer wipe the second. A concrete value answers none,
+    /// since two of them are two different things to send.
+    fn key(&self) -> Option<&'static str> {
+        None
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -225,11 +235,14 @@ pub fn when(condition: impl IntoJs<bool>, body: impl FnOnce(())) {
 ///
 /// # Two replies cannot arrive in the wrong order
 ///
-/// A key also carries last-response-wins: once a newer call has gone out under
-/// it, an older reply is dropped rather than applied. Debouncing alone does not
-/// give that, because two requests can still be in flight together on a slow
+/// A key also carries last-response-wins: a reply arriving after a newer one
+/// under it is dropped rather than applied. Debouncing alone does not give
+/// that, because two requests can still be in flight together on a slow
 /// connection, and the older one landing last paints the results for a prefix
-/// of what is now in the box.
+/// of what is now in the box. Replies arriving in order are all applied.
+///
+/// A call sending a model's handle is keyed by the model and the action
+/// anyway, debounced or not; see [`IntoPayload::key`].
 ///
 /// # Panics
 ///
@@ -326,15 +339,16 @@ pub fn append(template: &str, into: &str) {
 /// # Panics
 ///
 /// If called outside a handler; see [`emit`].
-pub fn call(method: &str, url: &str, payload: Option<String>) {
+pub fn call(method: &str, url: &str, payload: Option<String>, key: Option<&str>) {
     // `delete` is a reserved word in some positions, so the runtime exposes it
     // as `del`.
     let function = if method == "delete" { "del" } else { method };
     let url = quote_js(url);
 
-    match payload {
-        Some(body) => emit(format!("{function}({url}, {body})")),
-        None => emit(format!("{function}({url})")),
+    match (payload, key) {
+        (Some(body), Some(key)) => emit(format!("{function}({url}, {body}, {})", quote_js(key))),
+        (Some(body), None) => emit(format!("{function}({url}, {body})")),
+        (None, _) => emit(format!("{function}({url})")),
     }
 }
 
@@ -433,14 +447,14 @@ mod tests {
 
     #[test]
     fn a_url_is_encoded_rather_than_pasted() {
-        let script = record(|| call("post", "/files/\"; evil(); \"", None));
+        let script = record(|| call("post", "/files/\"; evil(); \"", None, None));
         assert_eq!(script, r#"post("/files/\"; evil(); \"")"#);
     }
 
     #[test]
     fn delete_is_spelled_del_in_the_browser() {
         assert_eq!(
-            record(|| call("delete", "/files/1", None)),
+            record(|| call("delete", "/files/1", None, None)),
             r#"del("/files/1")"#
         );
     }

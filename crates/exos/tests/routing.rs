@@ -222,3 +222,27 @@ async fn a_wildcard_keeps_the_path_it_was_given() {
     assert_eq!(url, "/files/under/notes/a%20b/c%3Fd");
     assert_eq!(read(&url).await, "<h1>notes/a b/c?d</h1>");
 }
+
+#[exos::model]
+#[derive(Debug, Default, serde::Deserialize, serde::Serialize)]
+struct Note {
+    text: String,
+}
+
+#[exos::post("/notes")]
+async fn note(exos::Model(_): exos::Model<Note>) -> StatusCode {
+    StatusCode::OK
+}
+
+/// A handle keys its call by its model, so the runtime can drop an answer
+/// arriving after a newer one of the same action. A value sent as it is
+/// carries no key: two of them are two different things to send.
+#[test]
+fn a_handle_keys_its_call_and_a_value_does_not() {
+    let handle = exos::js::record(|| note::post(&Note::signals()));
+    let value = exos::js::record(|| note::post(&Note::default()));
+    let key = exos::js::quote_js(<Note as exos::Validate>::STATE);
+
+    assert!(handle.ends_with(&format!(", {key})")), "{handle}");
+    assert!(!value.contains(&key), "{value}");
+}
