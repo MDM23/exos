@@ -124,7 +124,7 @@ async fn toggle(Path(id): Path<u32>) -> Effect {
 
     // One line, and every tab showing this list updates, whichever view of it
     // it is showing.
-    publish_board();
+    publish_board().await;
     Effect::none()
 }
 
@@ -133,7 +133,7 @@ async fn toggle(Path(id): Path<u32>) -> Effect {
 async fn rename(Path(id): Path<u32>, Model(edit): Model<Edit>) -> Effect {
     data::<Todos>().update(|todos| store::rename(todos, id, &edit.title));
 
-    publish_board();
+    publish_board().await;
     Effect::none()
 }
 
@@ -142,7 +142,7 @@ async fn rename(Path(id): Path<u32>, Model(edit): Model<Edit>) -> Effect {
 async fn destroy(Path(id): Path<u32>) -> Effect {
     data::<Todos>().update(|todos| store::remove(todos, id));
 
-    publish_board();
+    publish_board().await;
     Effect::none()
 }
 

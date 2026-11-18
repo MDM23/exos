@@ -259,15 +259,30 @@ pub(crate) fn setting() -> Setting {
 /// request's, and one nested in another fragment is in that one's.
 #[doc(hidden)]
 pub fn detached<R>(render: impl FnOnce() -> R) -> R {
-    let frame = match STATE.try_with(Clone::clone) {
+    STATE.sync_scope(State::Masked(mask()), render)
+}
+
+/// [`detached`] for a render that awaits, which `#[exos::live]` wraps an
+/// `async fn` in.
+///
+/// The frame is read when the render first runs rather than when it is built,
+/// so a publish awaiting it inside one language's frame renders in that
+/// language.
+#[doc(hidden)]
+pub async fn detached_async<R>(render: impl Future<Output = R>) -> R {
+    STATE.scope(State::Masked(mask()), render).await
+}
+
+/// The frame a fragment renders in: the enclosing fragment's, or a new one in
+/// the language of whatever is rendering it.
+fn mask() -> Frame {
+    match STATE.try_with(Clone::clone) {
         Ok(State::Masked(frame)) => frame,
         Ok(State::Request(_)) | Err(_) => Frame {
             language: crate::locale::current().map(|language| language.index()),
             worded: Arc::default(),
         },
-    };
-
-    STATE.sync_scope(State::Masked(frame), render)
+    }
 }
 
 /// Renders masked, in `language` rather than in the caller's, and says whether
@@ -284,6 +299,24 @@ pub(crate) fn in_language<R>(language: Option<usize>, render: impl FnOnce() -> R
     };
 
     let rendered = STATE.sync_scope(State::Masked(frame), render);
+
+    (rendered, worded.load(Ordering::Relaxed))
+}
+
+/// [`in_language`] for a render that awaits, which is every render a publish
+/// makes: a synchronous fragment is awaited as a ready one.
+pub(crate) async fn in_language_async<R>(
+    language: Option<usize>,
+    render: impl Future<Output = R>,
+) -> (R, bool) {
+    let worded = Arc::<AtomicBool>::default();
+
+    let frame = Frame {
+        language,
+        worded: Arc::clone(&worded),
+    };
+
+    let rendered = STATE.scope(State::Masked(frame), render).await;
 
     (rendered, worded.load(Ordering::Relaxed))
 }

@@ -80,9 +80,10 @@ The deciding argument is about awaiting. Resolving a name to a user is a
 database call. In an application it happens in a handler, where awaiting is
 legal, and the result goes in the request scope, which every view underneath
 reads synchronously. A framework holding the contents cannot do that:
-`session()` has to answer synchronously, because a `view!` fragment is a plain
-function and cannot await, so the layer has to load before the handler runs and
-every request carrying a cookie pays for a session whether or not it uses one.
+`session()` has to answer synchronously, because a view that awaits is a database
+call in the middle of markup, repeated per view and invisible at the call site,
+so the layer has to load before the handler runs and every request carrying a
+cookie pays for a session whether or not it uses one.
 
 Four known defects of the store version went with it: a key derived from
 `type_name`, so moving a type between modules silently emptied it for everybody;

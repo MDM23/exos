@@ -101,7 +101,7 @@ fn play() {
             // Nothing to say when nothing moved, which is most seconds.
             if over || now != listeners {
                 listeners = now;
-                publish_room();
+                publish_room().await;
             }
         }
     });

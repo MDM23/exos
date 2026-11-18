@@ -11,15 +11,6 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
         Err(error) => return error.to_compile_error(),
     };
 
-    if function.sig.asyncness.is_some() {
-        return syn::Error::new_spanned(
-            function.sig.fn_token,
-            "a live fragment renders inline and again on publish, so it must be sync; \
-             read what it needs with exos::data",
-        )
-        .to_compile_error();
-    }
-
     // Every parameter, in order. These are what identify the topic.
     let arguments: Vec<syn::Ident> = function
         .sig
@@ -47,11 +38,41 @@ pub(crate) fn expand(item: TokenStream) -> TokenStream {
     let body = &function.block;
     let label = function.sig.ident.to_string();
 
+    let mut signature = function.sig.clone();
+
+    // An `async fn` names the fragment synchronously and awaits only its
+    // render, which is boxed because a closure answering a future has no type
+    // to write here. Awaited in a template, handed to a publish.
+    if signature.asyncness.take().is_some() {
+        signature.output = syn::parse_quote!(-> ::exos::live::Fragment<::exos::live::Awaiting>);
+
+        return quote! {
+            #(#attributes)*
+            #visibility #signature {
+                let __topic = ::exos::live::Topic::new(
+                    #label,
+                    &(::core::module_path!(), #(&#arguments,)*),
+                );
+
+                ::exos::live::Fragment::new(__topic, ::exos::live::Awaiting::new(move || {
+                    #(let #arguments = ::core::clone::Clone::clone(&#arguments);)*
+
+                    // Masked when it first runs rather than now, so a publish
+                    // awaiting it inside a language's frame renders in that
+                    // language, and a template in the request's.
+                    ::exos::scope::detached_async(async move {
+                        let __markup: ::exos::Markup = #body;
+                        __markup
+                    })
+                }))
+            }
+        };
+    }
+
     // The render is the closure below rather than a boxed one, so that naming a
     // fragment costs nothing: a page builds one per live element and throws them
     // away again. Edition 2024 captures the argument lifetimes in the opaque
     // type, which is what lets a fragment take a reference.
-    let mut signature = function.sig.clone();
     signature.output = syn::parse_quote!(-> ::exos::live::Fragment<impl Fn() -> ::exos::Markup>);
 
     quote! {
@@ -121,10 +142,15 @@ mod tests {
         assert!(expanded.contains(":: exos :: scope :: detached"));
     }
 
+    /// Named synchronously, awaited only in its render, and masked there as a
+    /// synchronous one is.
     #[test]
-    fn an_async_fragment_is_refused() {
-        let expanded = expand_ok("async fn presence() -> Markup { todo!() }");
-        assert!(expanded.contains("compile_error"));
+    fn an_async_fragment_awaits_its_render_masked() {
+        let expanded = expand_ok("async fn count(user: u32) -> Markup { todo!() }");
+
+        assert!(!expanded.contains("async fn"));
+        assert!(expanded.contains(":: exos :: live :: Awaiting :: new"));
+        assert!(expanded.contains(":: exos :: scope :: detached_async"));
     }
 
     #[test]

@@ -37,10 +37,11 @@ async fn index() -> Page {
 ```
 
 A framework that held the contents instead would have to load them *before* the
-handler ran, because a `view!` fragment is a plain function and cannot await.
-Every request carrying a cookie would then pay for a session whether or not it
-used one. Handing back a name costs nothing and puts the round trip where you
-decide it goes.
+handler ran, because a view that awaits a session is a database call in the
+middle of markup, repeated per view and invisible at the call site. Every
+request carrying a cookie would then pay for a session whether or not it used
+one. Handing back a name costs nothing and puts the round trip where you decide
+it goes.
 
 You also keep everything that comes with owning the table: an index, a join
 against `users`, a device column, a last-seen column, your own expiry job, and

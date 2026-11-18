@@ -42,7 +42,7 @@ use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
     pin::Pin,
-    sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError},
+    sync::{Arc, Mutex, OnceLock},
     task::{Context, Poll},
 };
 
@@ -301,7 +301,7 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
 /// what lets a handler publish unconditionally rather than asking first.
 ///
 /// ```ignore
-/// publish(presence(user.id));
+/// publish(presence(user.id)).await;
 /// ```
 ///
 /// # Why it takes a fragment that has not rendered
@@ -354,20 +354,15 @@ pub fn send<A: Audience>(audience: &A, effect: &crate::Effect) {
 ///
 /// If the registry lock was poisoned; see [`connection_count`]. A panic in the
 /// render propagates and costs its own publish and nothing else: the topic's
-/// lock guards no data, so the next publisher of that topic recovers it rather
-/// than inheriting a poisoning.
-#[expect(
-    clippy::needless_pass_by_value,
-    reason = "publishing is where a fragment ends, and taking it by reference \
-              would put an & in front of every call site's temporary"
-)]
-pub fn publish(fragment: crate::live::Fragment<impl Fn() -> crate::Markup>) {
+/// lock guards no data and has no poisoning, so the next publisher of that
+/// topic takes it as usual.
+pub async fn publish(fragment: crate::live::Fragment<impl crate::live::Renders>) {
     let topic = fragment.topic().as_str();
 
     // Declared before the guard so that it is dropped after it: the topic is
     // let go of first, and forgotten only once nobody is holding it.
     let order = Order::of(topic);
-    let _held = order.wait();
+    let _held = order.wait().await;
 
     let (tags, first) = crate::locale::languages().map_or((&[][..], 0), |languages| {
         (languages.tags(), languages.fallback())
@@ -386,7 +381,8 @@ pub fn publish(fragment: crate::live::Fragment<impl Fn() -> crate::Markup>) {
         // once for the whole cluster is the only shape available and is also
         // the cheaper one.
         bus::cross(|| Frame::delivery(Kind::Topic, topic.as_str(), steps));
-    });
+    })
+    .await;
 }
 
 /// Renders `fragment` in each of `tags`, the one at `first` first, and hands
@@ -394,25 +390,34 @@ pub fn publish(fragment: crate::live::Fragment<impl Fn() -> crate::Markup>) {
 ///
 /// No tags is an application without languages, and one render under the
 /// fragment's own topic.
-fn in_every_language(
-    fragment: &crate::live::Fragment<impl Fn() -> crate::Markup>,
+///
+/// The render is called inside the language's frame rather than before it,
+/// which is the async block's whole purpose: a synchronous fragment renders
+/// when it is called, and called outside the frame it would render in the
+/// caller's language.
+async fn in_every_language(
+    fragment: &crate::live::Fragment<impl crate::live::Renders>,
     tags: &[&str],
     first: usize,
     mut send: impl FnMut(&crate::live::Topic, &crate::Markup),
 ) {
     let Some(&tag) = tags.get(first) else {
-        let (markup, _) = crate::scope::in_language(None, || fragment.markup());
+        let (markup, _) =
+            crate::scope::in_language_async(None, async { fragment.render().await }).await;
         return send(fragment.topic(), &markup);
     };
 
-    let (markup, worded) = crate::scope::in_language(Some(first), || fragment.markup());
+    let (markup, worded) =
+        crate::scope::in_language_async(Some(first), async { fragment.render().await }).await;
     send(&fragment.topic().in_language(Some(tag)), &markup);
 
     for (index, &tag) in tags.iter().enumerate().filter(|&(index, _)| index != first) {
         let topic = fragment.topic().in_language(Some(tag));
 
         if worded {
-            let (markup, _) = crate::scope::in_language(Some(index), || fragment.markup());
+            let (markup, _) =
+                crate::scope::in_language_async(Some(index), async { fragment.render().await })
+                    .await;
             send(&topic, &markup);
         } else {
             send(&topic, &markup);
@@ -488,7 +493,7 @@ pub(crate) fn dispatch(kind: Kind, key: &str, steps: &[(String, String)]) {
 /// the same thing and charges every publish in the process for it, so an
 /// expensive fragment holds up an unrelated one.
 struct Order {
-    lock: Arc<Mutex<()>>,
+    lock: Arc<tokio::sync::Mutex<()>>,
     topic: String,
 }
 
@@ -511,11 +516,11 @@ impl Order {
 
     /// Waits for whoever is publishing this topic, and keeps the place.
     ///
-    /// Recovered rather than propagated on poisoning, because `()` has no
-    /// invariant a panicking render could have broken, and because that panic
-    /// is the caller's rather than this module's.
-    fn wait(&self) -> MutexGuard<'_, ()> {
-        self.lock.lock().unwrap_or_else(PoisonError::into_inner)
+    /// A tokio lock, because the render it is held across may await, and
+    /// one with no poisoning to recover from: a render that panics drops
+    /// the guard on the way out, and the next publisher takes it as usual.
+    async fn wait(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.lock.lock().await
     }
 }
 
@@ -538,7 +543,7 @@ impl Drop for Order {
     }
 }
 
-type Orders = Mutex<HashMap<String, Arc<Mutex<()>>>>;
+type Orders = Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>;
 
 fn orders() -> &'static Orders {
     static ORDERS: OnceLock<Orders> = OnceLock::new();
@@ -1464,7 +1469,8 @@ mod tests {
 
             rendered.set(true);
             Markup::default()
-        }));
+        }))
+        .await;
 
         assert!(
             rendered.get(),
@@ -1475,7 +1481,7 @@ mod tests {
 
     /// Every language a publish renders, as the topic it went to and the
     /// markup it carried.
-    fn fanned(
+    async fn fanned(
         fragment: &crate::live::Fragment<impl Fn() -> Markup>,
         tags: &[&str],
     ) -> Vec<(String, String)> {
@@ -1483,7 +1489,8 @@ mod tests {
 
         in_every_language(fragment, tags, 1, |topic, markup| {
             sent.push((topic.as_str().to_owned(), markup.as_str().to_owned()));
-        });
+        })
+        .await;
 
         sent
     }
@@ -1500,7 +1507,7 @@ mod tests {
         let base = fragment.topic().as_str().to_owned();
 
         assert_eq!(
-            fanned(&fragment, &["de", "en"]),
+            fanned(&fragment, &["de", "en"]).await,
             [
                 (format!("{base}-en"), String::from("Fragment(Some(1))")),
                 (format!("{base}-de"), String::from("Fragment(Some(0))")),
@@ -1521,7 +1528,7 @@ mod tests {
         let base = fragment.topic().as_str().to_owned();
 
         assert_eq!(
-            fanned(&fragment, &["de", "en"]),
+            fanned(&fragment, &["de", "en"]).await,
             [
                 (format!("{base}-en"), String::from("<hr>")),
                 (format!("{base}-de"), String::from("<hr>")),
@@ -1537,7 +1544,7 @@ mod tests {
             crate::live::Fragment::new(Topic::new("plain", &()), || Markup(String::from("<hr>")));
 
         assert_eq!(
-            fanned(&fragment, &[]),
+            fanned(&fragment, &[]).await,
             [(fragment.topic().as_str().to_owned(), String::from("<hr>"))]
         );
     }
@@ -1549,7 +1556,7 @@ mod tests {
     async fn a_topic_is_forgotten_once_nobody_is_publishing_it() {
         let topic = Topic::new("order", &(3_u32,));
 
-        publish(crate::live::Fragment::new(topic.clone(), Markup::default));
+        publish(crate::live::Fragment::new(topic.clone(), Markup::default)).await;
 
         assert!(
             !orders()
@@ -1557,6 +1564,50 @@ mod tests {
                 .expect("the order table is never held across a render")
                 .contains_key(topic.as_str())
         );
+    }
+
+    /// A render that awaits is published with what it awaited, once it has.
+    #[tokio::test]
+    async fn an_awaiting_fragment_is_published_once_rendered() {
+        let topic = Topic::new("awaiting", &(1_u32,));
+        let (name, watching) = browser(&[&topic]);
+        let (id, mut receiver) = opened(Some(&name), HashSet::new());
+
+        subscribing(&name, &id, &watching).await;
+
+        publish(crate::live::Fragment::new(
+            topic,
+            crate::live::Awaiting::new(|| async {
+                tokio::task::yield_now().await;
+                Markup(String::from("<b>2</b>"))
+            }),
+        ))
+        .await;
+
+        assert_eq!(received(&mut receiver), 1);
+    }
+
+    /// A publish dropped while its render awaits sends nothing and lets go
+    /// of the topic, because the patch is framed only once the render has
+    /// returned. True today for a reason a later change could take away.
+    #[tokio::test]
+    async fn a_cancelled_render_sends_nothing() {
+        let topic = Topic::new("awaiting", &(2_u32,));
+        let (name, watching) = browser(&[&topic]);
+        let (id, mut receiver) = opened(Some(&name), HashSet::new());
+
+        subscribing(&name, &id, &watching).await;
+
+        let never = crate::live::Fragment::new(
+            topic.clone(),
+            crate::live::Awaiting::new(core::future::pending::<Markup>),
+        );
+        let cancelled =
+            tokio::time::timeout(core::time::Duration::from_millis(10), publish(never)).await;
+
+        assert!(cancelled.is_err());
+        assert_eq!(received(&mut receiver), 0);
+        assert!(free(&topic));
     }
 
     /// The other direction of the rule that keeps the two sets apart. Watching
@@ -1580,7 +1631,7 @@ mod tests {
 
         // And the control, so the silence above is the rule rather than a tab
         // that was never going to receive anything.
-        publish(crate::live::Fragment::new(topic, Markup::default));
+        publish(crate::live::Fragment::new(topic, Markup::default)).await;
         assert_eq!(received(&mut receiver), 1);
     }
 
@@ -1655,7 +1706,7 @@ mod tests {
 
         crate::live::bus::deliver(Frame::subscription(addressed(&id, None), watching));
 
-        publish(crate::live::Fragment::new(topic.clone(), Markup::default));
+        publish(crate::live::Fragment::new(topic.clone(), Markup::default)).await;
 
         assert_eq!(received(&mut tab), 1);
         assert_eq!(received(&mut elsewhere), 0, "and only the one it names");
@@ -1664,7 +1715,7 @@ mod tests {
         // endpoint follows and therefore the rule a forward has to keep.
         crate::live::bus::deliver(Frame::subscription(addressed(&id, None), Vec::new()));
 
-        publish(crate::live::Fragment::new(topic, Markup::default));
+        publish(crate::live::Fragment::new(topic, Markup::default)).await;
         assert_eq!(received(&mut tab), 0);
     }
 

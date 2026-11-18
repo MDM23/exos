@@ -412,8 +412,8 @@ fn notify(user: u32, event: &Event) {
     data::<Notifications>().record(user, event);
 
     // State, to whichever tabs are showing it.
-    publish(notification_count(user));
-    publish(notification_sidebar(user));
+    publish(notification_count(user)).await;
+    publish(notification_sidebar(user)).await;
 
     // The arrival, to the person.
     exos::live::send(&Viewer(user), &Effect::set(&Toast::signals().message, event.summary()));

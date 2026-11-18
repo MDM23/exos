@@ -244,7 +244,7 @@ async fn claim(Path(id): Path<u32>) -> Effect {
         });
 
         for lot in touched {
-            room::publish_lot(lot);
+            room::publish_lot(lot).await;
         }
 
         accounts.forget(&previous).await;

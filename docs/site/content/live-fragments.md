@@ -15,7 +15,7 @@ One definition, two uses:
 
 ```rust
 { presence(user.id) }          // in a template: renders it
-publish(presence(user.id));    // anywhere: re-renders and pushes to watchers
+publish(presence(user.id)).await; // anywhere: re-renders and pushes to watchers
 ```
 
 Calling `presence(2)` renders nothing. What it answers with is the fragment's
@@ -48,6 +48,29 @@ visible set under that. An id a client could choose is one another client could
 guess, and naming a connection is what replaces the set of topics it watches.
 A reconnect is a new connection with a new id, which is why the client
 re-reports its topics every time the stream comes back.
+
+## When the render has to wait
+
+A fragment whose data lives in a database is an `async fn`. Naming it is still
+free and synchronous; only the render awaits, so a template awaits the fragment
+and a publish awaits its render under the topic's lock:
+
+```rust
+#[exos::live]
+async fn unread(user: u32) -> Markup {
+    let count = data::<Db>().unread(user).await;
+    view! { <span class="badge">{ count }</span> }
+}
+
+{ unread(user.id).await }          // in a template
+publish(unread(user.id)).await;    // anywhere
+```
+
+Its arguments are owned, since the render outlives the call that named it, and
+it is masked exactly as a synchronous one is. A synchronous fragment stays the
+cheaper default and needs no `.await` in a template. What an `async fn` makes
+easy is a query per fragment per publish, per language that renders words, so
+a list of awaiting fragments republished on every change is the cost to watch.
 
 ## The invariant
 
@@ -236,12 +259,12 @@ past the channel's capacity, or who was inside a reconnect gap does not get it,
 and none of the three is fixable by trying harder. Persist first, push second:
 
 ```rust
-fn notify(user: u32, event: &Event) {
+async fn notify(user: u32, event: &Event) {
     // Durable first. Everything below is an accelerator.
     data::<Notifications>().record(user, event);
 
     // State, to whichever tabs are showing it.
-    publish(notification_count(user));
+    publish(notification_count(user)).await;
 
     // The arrival, to the person.
     send(&Viewer(user), &Effect::set(&Toast::signals().message, event.summary()));

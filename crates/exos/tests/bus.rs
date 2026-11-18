@@ -128,7 +128,7 @@ fn fragment(id: u32) -> Fragment<impl Fn() -> Markup> {
 async fn a_publish_crosses_as_the_patch_it_rendered() {
     let mut sent = bus().await;
 
-    publish(fragment(1));
+    publish(fragment(1)).await;
 
     let frame = crossed(&mut sent).await;
 
@@ -179,8 +179,9 @@ async fn a_slow_frame_is_not_overtaken_by_the_next() {
     publish(Fragment::new(
         Topic::new("slow", &(1_u32,)),
         Markup::default,
-    ));
-    publish(fragment(5));
+    ))
+    .await;
+    publish(fragment(5)).await;
 
     assert!(crossed(&mut sent).await.key().starts_with("live-slow-"));
     assert_eq!(
@@ -197,7 +198,7 @@ async fn an_effect_with_no_steps_crosses_nothing() {
     let mut sent = bus().await;
 
     send(&Viewer(3), &Effect::none());
-    publish(fragment(4));
+    publish(fragment(4)).await;
 
     // The publish is what proves the silence above: had the empty send
     // crossed, it would be first.
@@ -401,7 +402,7 @@ async fn a_connection_this_node_minted_and_lost_is_still_gone() {
 
     // Nothing crossed for it, which the next frame is what proves: had the
     // refusal forwarded, it would be first.
-    publish(fragment(8));
+    publish(fragment(8)).await;
 
     assert_eq!(
         crossed(&mut sent).await.key(),

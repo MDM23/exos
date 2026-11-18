@@ -35,7 +35,7 @@ publishes. A handler's reply and the live stream are the same server-sent
 events, so there is one parser in the browser and one code path on the server.
 
 ```rust
-publish(presence(user.id));
+publish(presence(user.id)).await;
 ```
 
 Follows from: effects are executed over streams, which is the name.

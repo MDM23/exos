@@ -19,7 +19,7 @@
 //! }
 //!
 //! { presence(user.id) }           // in a template, renders it
-//! exos::live::publish(presence(id));    // anywhere, re-renders and pushes it
+//! exos::live::publish(presence(id)).await; // anywhere, re-renders and pushes it
 //! ```
 //!
 //! # The invariant
@@ -256,7 +256,7 @@ pub struct Fragment<R> {
     render: R,
 }
 
-impl<R: Fn() -> Markup> Fragment<R> {
+impl<R> Fragment<R> {
     /// Pairs a topic with the render that produces its markup.
     pub fn new(topic: Topic, render: R) -> Self {
         Self { topic, render }
@@ -267,6 +267,16 @@ impl<R: Fn() -> Markup> Fragment<R> {
         &self.topic
     }
 
+    /// What a publish awaits for one language.
+    pub(crate) fn render(&self) -> impl Future<Output = Markup> + Send
+    where
+        R: Renders,
+    {
+        self.render.render()
+    }
+}
+
+impl<R: Fn() -> Markup> Fragment<R> {
     /// Renders the markup the topic determines, without the wrapper around it.
     ///
     /// The two halves are worth telling apart: this is the same for everybody
@@ -337,6 +347,84 @@ impl<R> fmt::Debug for Fragment<R> {
 impl<R: Fn() -> Markup> Render for Fragment<R> {
     fn render_to(&self, out: &mut String) {
         out.push_str(self.to_markup().as_str());
+    }
+}
+
+/// What a [`publish`] can render: a plain render, ready at once, or an
+/// [`Awaiting`] one.
+///
+/// Sealed in all but name, since `#[live]` writes one of the two and nothing
+/// else needs a third. Both answer a future so that a publish has one shape to
+/// await, and a synchronous fragment pays for it with a ready one.
+pub trait Renders {
+    /// Renders the markup, without the wrapper around it.
+    fn render(&self) -> impl Future<Output = Markup> + Send;
+}
+
+impl<R: Fn() -> Markup> Renders for R {
+    fn render(&self) -> impl Future<Output = Markup> + Send {
+        core::future::ready(self())
+    }
+}
+
+/// The render of a fragment written as an `async fn`, which `#[live]` wraps
+/// the body in.
+///
+/// A type of its own rather than a second blanket over closures, because a
+/// closure answering a future and one answering markup are both closures, and
+/// a fragment has to be one or the other to be put in a template.
+///
+/// Boxed, because the macro has to name the type it returns and a closure
+/// answering an `impl Future` has no name to write. The allocation is
+/// nothing next to whatever the render awaits. It also means the arguments
+/// are owned: the render outlives the call that named the fragment.
+pub struct Awaiting(Box<dyn Fn() -> Rendering + Send + Sync>);
+
+/// What an [`Awaiting`] render answers.
+type Rendering = core::pin::Pin<Box<dyn Future<Output = Markup> + Send>>;
+
+impl Awaiting {
+    /// Wraps a render that awaits.
+    pub fn new<R, F>(render: R) -> Self
+    where
+        R: Fn() -> F + Send + Sync + 'static,
+        F: Future<Output = Markup> + Send + 'static,
+    {
+        Self(Box::new(move || Box::pin(render())))
+    }
+}
+
+/// A render has nothing to print, as [`Fragment`]'s own `Debug` says.
+impl fmt::Debug for Awaiting {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("Awaiting")
+    }
+}
+
+impl Renders for Awaiting {
+    fn render(&self) -> impl Future<Output = Markup> + Send {
+        (self.0)()
+    }
+}
+
+/// An `async fn` fragment is put in a template by awaiting it,
+/// `{ count(user).await }`, which renders it in the request's language with
+/// the grant for this browser, as [`Fragment::to_markup`] does for a
+/// synchronous one.
+impl IntoFuture for Fragment<Awaiting> {
+    type Output = Markup;
+    type IntoFuture = Rendering;
+
+    fn into_future(self) -> Self::IntoFuture {
+        // The topic and the grant are read here, in the request, and the
+        // render runs later in the same task, where the mask reads the
+        // request's language for it.
+        let tag = crate::locale::current().map(|language| language.tag());
+        let topic = self.topic.in_language(tag);
+        let token = topic.token();
+        let render = (self.render.0)();
+
+        Box::pin(async move { wrap(&topic, token.as_deref(), &render.await) })
     }
 }
 

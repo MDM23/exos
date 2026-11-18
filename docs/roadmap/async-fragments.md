@@ -2,9 +2,14 @@
 
 Letting a live fragment await, and the one thing that has to change first.
 
-Status: stage 1 is done, and turned out not to be a blocker. The rest is not
-built, and unlike the rest of this roadmap it changes code that exists rather
-than adding beside it.
+Status: stages 1 to 4 are built; stage 5 waits for a measurement. An
+`async fn` fragment is named synchronously and awaits only its render, boxed
+as an `Awaiting`, because the macro has to name a type and a closure answering
+an `impl Future` has none. `publish` is async for every fragment and has no
+synchronous form left: no caller turned up that had no runtime. A failing
+render still absorbs its error in the body, and no timeout is imposed. The
+guide's section is [when the render has to
+wait](../site/content/live-fragments.md#when-the-render-has-to-wait).
 
 It is here because the alternative is not that fragments stay pure. A fragment
 is a plain function today, so an application whose data lives in Postgres
@@ -58,7 +63,7 @@ the body ends, and the stack is gone because nesting the scope is the stack.
 
 ## Stage 2: the lock becomes asynchronous
 
-**Half done.** [publish](../../crates/exos/src/live/stream.rs) held one global
+**Done.** [publish](../../crates/exos/src/live/stream.rs) held one global
 `std::sync::Mutex` across the render, which is what makes the newest patch win.
 Two things forced it to change alongside the render:
 
@@ -74,7 +79,7 @@ nothing to key a lock on. Nothing was lost by narrowing it, because the
 guarantee was always per topic: the last patch a tab receives being the newest
 is a statement about one topic and never was about two.
 
-What is left is the second, and it is a `tokio::sync::Mutex` in place of the
+The second is a `tokio::sync::Mutex` in place of the
 `std` one in the same table. The table itself stays a `std` lock, because it is
 held for a lookup and never across a render, and the poisoning recovery around
 the topic lock goes away with it, since a tokio mutex has none.
@@ -206,8 +211,6 @@ write is the second one.
 
 ## Open questions
 
-- **Whether `publish` keeps a synchronous form** for a caller with no runtime
-  handle, or whether that caller is hypothetical.
 - **Whether a fallible fragment can call off its own publish**, or keeps
   absorbing errors in the body as it does today.
 - **Whether stage 5 earns its second function**, which is a measurement rather

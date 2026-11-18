@@ -265,7 +265,8 @@ async fn a_publish_and_a_send_arrive_in_the_order_they_were_called() {
 
     publish(Fragment::new(topic, || {
         Markup::from(String::from("<span>2</span>"))
-    }));
+    }))
+    .await;
     send(&Viewer(4), &Effect::remove("#after"));
 
     assert!(
@@ -287,7 +288,8 @@ async fn a_tab_nobody_is_addressing_still_gets_its_patches() {
     send(&Viewer(6), &Effect::remove("#not-for-them"));
     publish(Fragment::new(topic, || {
         Markup::from(String::from("<span>7</span>"))
-    }));
+    }))
+    .await;
 
     // The patch carries the subscription wrapper the fragment renders with,
     // and the effect addressed to somebody else is not in front of it.

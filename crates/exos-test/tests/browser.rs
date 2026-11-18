@@ -37,7 +37,7 @@ async fn show(Path(id): Path<u32>) -> Page {
 
 #[exos::post("/boards/{id}/touch")]
 async fn touch(Path(id): Path<u32>) -> Effect {
-    publish(board(id));
+    publish(board(id)).await;
     Effect::none()
 }
 

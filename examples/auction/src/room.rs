@@ -105,9 +105,9 @@ pub(crate) fn lots(role: Role) -> Markup {
 ///
 /// Every action ends here. Publishing the copy nobody is displaying is free
 /// and silent, so this needs to know nothing about who is in the room.
-pub(crate) fn publish_lot(id: u32) {
+pub(crate) async fn publish_lot(id: u32) {
     for role in [Role::Bidder, Role::Staff] {
-        publish(lot(id, role));
+        publish(lot(id, role)).await;
     }
 }
 
@@ -151,7 +151,7 @@ async fn bid(Path(id): Path<u32>) -> Effect {
         return toast::note(Note::Warn, "That lot is closed.");
     };
 
-    publish_lot(id);
+    publish_lot(id).await;
 
     if let Some(outbid) = &accepted.outbid {
         toast::tell(
@@ -185,7 +185,7 @@ async fn close(Path(id): Path<u32>) -> Effect {
         return toast::note(Note::Warn, "Only the auctioneer closes a lot.");
     }
 
-    hammer(id);
+    hammer(id).await;
 
     // Nothing to reply with. Whatever happened comes back on the stream, as
     // the result every auctioneer is told.
@@ -198,13 +198,13 @@ async fn close(Path(id): Path<u32>) -> Effect {
 /// asked, and the winner did not. That is the case directed effects exist for.
 /// A reply can only reach whoever made the request, so the one person who most
 /// wants to hear is the one person it cannot be told.
-pub(crate) fn hammer(id: u32) {
+pub(crate) async fn hammer(id: u32) {
     let Some(closed) = exos::data::<Lots>().update(|lots| store::close(lots, id)) else {
         return;
     };
 
     // State first, to whoever is watching this lot.
-    publish_lot(id);
+    publish_lot(id).await;
 
     if let Some(winner) = closed.leader() {
         let won = format!("You won {} at £{}.", closed.title, closed.price());

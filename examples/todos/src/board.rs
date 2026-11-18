@@ -100,9 +100,9 @@ pub(crate) fn board(filter: Filter) -> Markup {
 /// Every action ends here, and that one line is what keeps two tabs in step.
 /// A filtered list is one topic per filter, so publishing it is publishing all
 /// three: a tab receives the one it is subscribed to and nothing else.
-pub(crate) fn publish_board() {
+pub(crate) async fn publish_board() {
     for filter in Filter::ALL {
-        publish(board(filter));
+        publish(board(filter)).await;
     }
 }
 
@@ -127,7 +127,7 @@ async fn toggle_all() -> Effect {
         store::set_all(todos, done);
     });
 
-    publish_board();
+    publish_board().await;
     Effect::none()
 }
 
@@ -136,7 +136,7 @@ async fn toggle_all() -> Effect {
 async fn clear_completed() -> Effect {
     data::<Todos>().update(store::clear_completed);
 
-    publish_board();
+    publish_board().await;
     Effect::none()
 }
 

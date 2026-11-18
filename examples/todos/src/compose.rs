@@ -56,7 +56,7 @@ async fn add(Model(draft): Model<Draft>) -> Effect {
         return Effect::none();
     }
 
-    publish_board();
+    publish_board().await;
 
     // Cleared by the server rather than by the click, so the field empties
     // exactly when the todo was really accepted. The handle names the signal,

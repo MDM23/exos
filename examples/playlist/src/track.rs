@@ -85,7 +85,7 @@ pub(crate) fn row(track: &Track, playing: bool, selection: &SelectionSignals) ->
 async fn heart(Path(id): Path<u32>) -> Effect {
     data::<Room>().update(|queue| store::heart(queue, id));
 
-    publish_room();
+    publish_room().await;
     Effect::none()
 }
 
@@ -97,7 +97,7 @@ async fn drop_track(Path(id): Path<u32>) -> Effect {
     // Published either way. On success this confirms the row that already
     // went, and on a refusal it puts it back exactly where it was, and the
     // handler does not have to know which.
-    publish_room();
+    publish_room().await;
 
     // And the row is shown again either way, because the patch above decides
     // whether there is a row left to show. Emptying the whole list rather than

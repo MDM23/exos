@@ -142,8 +142,8 @@ fn listeners() -> Markup {
 /// Pushes the room to every tab watching it.
 ///
 /// Every action ends here, and that one line is what keeps two tabs in step.
-pub(crate) fn publish_room() {
-    publish(room());
+pub(crate) async fn publish_room() {
+    publish(room()).await;
 }
 
 /// What the room has to say about a batch, if anything.
@@ -164,7 +164,7 @@ pub(crate) fn say(refused: Option<String>) -> Effect {
 async fn reorder(Json(dragged): Json<Dragged>) -> Effect {
     data::<Room>().update(|tracks| store::reorder(tracks, &dragged.order));
 
-    publish_room();
+    publish_room().await;
     Effect::none()
 }
 

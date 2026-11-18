@@ -28,8 +28,9 @@
 //! [`scope`](crate::scope()). Every view underneath then reads it synchronously,
 //! which is the job the request scope already exists for. A framework holding
 //! the contents would have to load them before the handler runs, because a
-//! [`view!`](crate::view) fragment is a plain function and cannot await, and
-//! would therefore pay for a session on every request that carried a cookie
+//! [`view!`](crate::view) that awaits is a database call in the middle of
+//! markup, repeated per view and invisible at the call site, and would
+//! therefore pay for a session on every request that carried a cookie
 //! rather than on the ones that use it.
 //!
 //! So exos owns the part with no choices in it, and none of the parts with
