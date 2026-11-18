@@ -57,7 +57,9 @@ use crate::{Markup, Render, fnv::Fnv1a, keys, render::escape_into, session::Id};
 pub mod bus;
 mod stream;
 
-pub use crate::live::stream::{connected, connection_count, disconnect, publish, send};
+pub use crate::live::stream::{
+    audience_count, connected, connection_changes, connection_count, disconnect, publish, send,
+};
 
 pub(crate) use crate::live::{bus::set as set_bus, stream::routes};
 

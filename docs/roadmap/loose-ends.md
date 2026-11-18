@@ -297,6 +297,28 @@ decided its shape.
 An application that wants a control to look disabled still writes
 `prop("disabled", ...)` over a model field, or styles `[aria-busy="true"]`.
 
+## A restart brings every tab back at once
+
+After an outage, every open tab reconnects on the same fixed
+[`RETRY`](../../crates/exos/src/live/stream.rs), three seconds in release, and
+`EventSource` never backs off on its own. Each reconnect is expensive: one
+resolver call for `identify`, usually a query, and one page re-fetch,
+because a greeting that is not the first repairs the tab. A gauge reading
+[`connection_changes`](../../crates/exos/src/live/stream.rs) is spared, since
+its wakes collapse into one. Tens of thousands of tabs arrive in the same few
+seconds and keep retrying in step for as long as the server is down.
+
+Two halves, and they solve different things. Jitter spreads the herd: the
+greeting can carry a `retry` drawn per connection from a range rather than one
+constant, so the tabs that lost the server together do not knock together.
+Backoff thins it while the server stays down, and `EventSource` cannot do that
+alone, since its wait only changes when an event says so and none arrives from
+a server that is down. The client would have to close the stream on an error and
+reopen it itself, which is runtime code and a test in jsdom.
+
+Jitter is the smaller change and probably most of the win. Measure a restart
+with a few thousand tabs before building backoff.
+
 ## Publishing scans every connection
 
 `publish` takes a `Mutex` over the whole registry and walks it. At presence

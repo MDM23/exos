@@ -57,7 +57,7 @@ use axum::{
 };
 use futures_core::Stream;
 use serde::Deserialize;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 
 use crate::{
@@ -172,6 +172,48 @@ fn connections() -> &'static Connections {
     CONNECTIONS.get_or_init(Connections::default)
 }
 
+fn changes() -> &'static watch::Sender<()> {
+    static CHANGES: OnceLock<watch::Sender<()>> = OnceLock::new();
+    CHANGES.get_or_init(|| watch::Sender::new(()))
+}
+
+/// Answers a receiver that wakes whenever a stream on this node is identified
+/// or goes away, for a gauge of who is connected that keeps itself up to date.
+///
+/// It says that something changed and nothing about what, since a count read
+/// afterwards, [`connection_count`] or [`audience_count`], is the answer to
+/// every question it could ask. Changes that land while nobody is looking
+/// collapse into one wake, so ten thousand tabs coming back after a restart
+/// cost a reader one publish rather than ten thousand. A pause after each
+/// publish is what turns that into a rate.
+///
+/// ```no_run
+/// #[exos::live]
+/// fn streams() -> exos::Markup {
+///     exos::Markup(exos::live::connection_count().to_string())
+/// }
+///
+/// tokio::spawn(async {
+///     let mut changes = exos::live::connection_changes();
+///
+///     while changes.changed().await.is_ok() {
+///         exos::live::publish(streams()).await;
+///         tokio::time::sleep(core::time::Duration::from_secs(1)).await;
+///     }
+/// });
+/// ```
+///
+/// It is this node's streams alone, and a fragment published from here
+/// crosses a [bus](crate::App::bus) carrying this node's count to every
+/// node's tabs.
+pub fn connection_changes() -> watch::Receiver<()> {
+    changes().subscribe()
+}
+
+fn changed() {
+    changes().send_replace(());
+}
+
 /// How many streams are open. Useful in a health endpoint, and in tests.
 ///
 /// # Panics
@@ -182,6 +224,40 @@ pub fn connection_count() -> usize {
     connections()
         .lock()
         .expect("the registry lock is never held across a panic")
+        .len()
+}
+
+/// How many distinct audiences of one kind hold an open stream: users signed
+/// in, where `A` is a user, however many tabs each of them has open.
+///
+/// A key is `live-{NAME}-{hash}`, so the kind is read off the key. The hash is
+/// hex and never holds a dash, which keeps `user` from counting a kind called
+/// `user-group`.
+///
+/// ```
+/// # use exos::{identity::Audience, live::audience_count};
+/// # #[derive(Hash)]
+/// # struct Viewer(u32);
+/// # impl Audience for Viewer { const NAME: &'static str = "viewer"; }
+/// assert_eq!(audience_count::<Viewer>(), 0);
+/// ```
+///
+/// # Panics
+///
+/// If the registry lock was poisoned; see [`connection_count`].
+pub fn audience_count<A: Audience>() -> usize {
+    let prefix = format!("live-{}-", A::NAME);
+
+    connections()
+        .lock()
+        .expect("the registry lock is never held across a panic")
+        .values()
+        .flat_map(|connection| &connection.audiences)
+        .filter(|key| {
+            key.strip_prefix(&prefix)
+                .is_some_and(|hash| !hash.contains('-'))
+        })
+        .collect::<HashSet<_>>()
         .len()
 }
 
@@ -773,13 +849,24 @@ pub(crate) fn revoke(key: &str) -> usize {
         false
     });
 
-    before - registry.len()
+    let ended = before - registry.len();
+    drop(registry);
+
+    if ended > 0 {
+        changed();
+    }
+
+    ended
 }
 
 /// Forgets a connection when its stream ends.
 fn close(id: &str) {
-    if let Ok(mut registry) = connections().lock() {
-        registry.remove(id);
+    let removed = connections()
+        .lock()
+        .is_ok_and(|mut registry| registry.remove(id).is_some());
+
+    if removed {
+        changed();
     }
 }
 
@@ -904,6 +991,10 @@ async fn stream() -> Response {
         )))
         .into_response();
     }
+
+    // Counted once it belongs to somebody, so whatever watches the streams
+    // sees the audience as well as the stream.
+    changed();
 
     let events = BroadcastStream::new(receiver)
         // A tab that fell behind is repaired rather than skipped ahead. It

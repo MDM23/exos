@@ -72,6 +72,23 @@ cheaper default and needs no `.await` in a template. What an `async fn` makes
 easy is a query per fragment per publish, per language that renders words, so
 a list of awaiting fragments republished on every change is the cost to watch.
 
+A gauge of who is connected is a fragment like any other, published whenever
+the streams change.
+[`connection_changes`](../../../crates/exos/src/live/stream.rs) wakes
+whenever a stream on this node is identified or goes away, and a burst of them
+wakes it once, so a pause after each publish is all a reconnect storm needs:
+
+```rust
+tokio::spawn(async {
+    let mut changes = connection_changes();
+
+    while changes.changed().await.is_ok() {
+        publish(streams()).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+});
+```
+
 ## The invariant
 
 A topic must completely determine its content: the same topic means the same
