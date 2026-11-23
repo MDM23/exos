@@ -1706,7 +1706,7 @@
                 const page = new DOMParser().parseFromString(payload, "text/html");
                 present(granting ? page : ungranted(page));
                 reseed();
-                autofocus();
+                arrived();
                 break;
 
             case "patch":
@@ -2152,6 +2152,7 @@
     // lifecycles a morph cannot fake, and getting that right is a design
     // rather than a line here.
     function present(next) {
+        if (announcer) next.body.append(announcer.cloneNode(true));
         morph(document.body, next.body);
 
         if (next.title) document.title = next.title;
@@ -2215,7 +2216,7 @@
             reseed();
             // One that neither adds an entry nor moves the reader is the page
             // being read, updated, and the caret is wherever they are typing.
-            if (push || scroll !== null) autofocus();
+            if (push || scroll !== null) arrived();
             // Without a push the entry is the one on screen, and still has to
             // say where the page came from: a refined query, or a redirect,
             // a reload after signing in answered from somewhere else.
@@ -2251,9 +2252,54 @@
     // Not on a touch screen. There a load places no caret the reader sees,
     // while focus following the tap that navigated opens the keyboard over
     // half the page before the reader has seen the form.
-    function autofocus() {
-        if (matchMedia("(pointer: coarse)").matches) return;
-        focusLater("[autofocus]");
+    //
+    // Without a caret to place, the focus goes back to the start of the
+    // document, where a load leaves it. Otherwise it stays on the link that
+    // was clicked, which the morph kept, and the next Tab carries on in the
+    // menu rather than at the top of the new page. The body takes the focus
+    // for a moment only, so it never becomes a stop of its own.
+    //
+    // A load also has a screen reader read the new title, which a morph never
+    // does, so we say it.
+    function arrived() {
+        tell(document.title);
+        queueMicrotask(() => {
+            const field = matchMedia("(pointer: coarse)").matches ? null : document.querySelector("[autofocus]");
+            if (field) return field.focus();
+
+            document.body.tabIndex = -1;
+            document.body.focus({ preventScroll: true });
+            document.body.removeAttribute("tabindex");
+        });
+    }
+
+    // One live region for the life of the tab, made the first time there is
+    // something to say. `present` carries it into every document that arrives,
+    // so the morph keeps the node a screen reader already listens to: a region
+    // inserted together with its text is often not read at all.
+    //
+    // Emptied and filled a moment later, since a region told what it already
+    // says stays silent, which is every second visit to the same page.
+    let announcer = null;
+
+    function tell(text) {
+        if (!announcer) {
+            announcer = document.createElement("div");
+            announcer.setAttribute("aria-live", "polite");
+            announcer.setAttribute("aria-atomic", "true");
+            Object.assign(announcer.style, {
+                position: "absolute",
+                width: "1px",
+                height: "1px",
+                overflow: "hidden",
+                clipPath: "inset(50%)",
+                whiteSpace: "nowrap",
+            });
+            document.body.append(announcer);
+        }
+
+        announcer.textContent = "";
+        setTimeout(() => (announcer.textContent = text), 100);
     }
 
     // -------------------------------------------------------------------------

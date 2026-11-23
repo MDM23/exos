@@ -494,6 +494,40 @@ test("a navigation places the caret the arriving page asks for", async () => {
     assert.equal(window.document.activeElement, window.document.getElementById("field"));
 });
 
+test("a navigation without a caret starts the focus over and says the title", async () => {
+    const window = boot(`<a href="/next">next</a>`);
+    const link = window.document.querySelector("a");
+    link.focus();
+
+    // The link survives the morph, which is what used to keep the focus on
+    // it, and the second visit has a title the region already says.
+    window.fetch = async () => ({
+        text: async () =>
+            `<!DOCTYPE html><html><head><title>next</title></head>` +
+            `<body><a href="/next">next</a></body></html>`,
+        url: "http://localhost/next",
+    });
+
+    await window.exos.navigate("http://localhost/next", true);
+    await settled();
+
+    assert.equal(window.document.querySelector("a"), link);
+    assert.equal(window.document.activeElement, window.document.body);
+    assert.ok(!window.document.body.hasAttribute("tabindex"));
+
+    await after(150);
+    const region = window.document.querySelector("[aria-live]");
+    assert.equal(region.textContent, "next");
+
+    await window.exos.navigate("http://localhost/next", true);
+    await settled();
+
+    assert.equal(window.document.querySelector("[aria-live]"), region, "the morph keeps the region");
+    assert.equal(region.textContent, "");
+    await after(150);
+    assert.equal(region.textContent, "next");
+});
+
 test("a navigation on a touch screen leaves the caret to the reader", async () => {
     const window = boot(`<a href="/next">next</a>`);
     window.matchMedia = (media) => ({ matches: media === "(pointer: coarse)", media });
