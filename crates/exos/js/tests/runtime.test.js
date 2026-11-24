@@ -239,6 +239,42 @@ test("a navigation starts the page as its own markup declares it", async () => {
     assert.equal(window.exos.signals.draft, "", "the arriving page said it starts empty");
 });
 
+// The bug: a row's fields live on the row, and a navigation reseeded the
+// document's signals alone. The morph kept the row, so it was never bound
+// again, and a roster filled by a link to `?fill=true` arrived with every
+// box still unticked until the page was reloaded.
+test("a navigation starts a row the morph kept as its own markup declares it", async () => {
+    const row = (on) => `<div id="row" data-signals='{"on":${on}}' data-class='{"lit": $.on}'></div>`;
+    const window = boot(row(false));
+
+    window.fetch = async () => ({
+        text: async () => `<!DOCTYPE html><html><head><title>next</title></head><body>${row(true)}</body></html>`,
+        url: "http://localhost/next",
+    });
+    await window.exos.navigate("http://localhost/next", true);
+    await settled();
+
+    assert.ok(window.document.getElementById("row").classList.contains("lit"));
+});
+
+// The other half: a reload or a refined search is the same page, updated,
+// and a row the reader opened stays open through it.
+test("a reload keeps a row the reader opened as it was", async () => {
+    const window = boot(`<ul>${row("one")}</ul>`);
+
+    window.exos.setIn(window.document.querySelector(".hit"), "open", true);
+    await settled();
+
+    window.fetch = async () => ({
+        text: async () => `<!DOCTYPE html><html><head><title>t</title></head><body><ul>${row("one")}</ul></body></html>`,
+        url: "http://localhost/",
+    });
+    await window.exos.navigate("http://localhost/", false, null);
+    await settled();
+
+    assert.ok(window.document.getElementById("one").classList.contains("open"));
+});
+
 // An ordinary link to a download or an endpoint, which the browser knows what
 // to do with and a morph turns into an empty page.
 test("a link to something that is not a page is left to the browser", async () => {

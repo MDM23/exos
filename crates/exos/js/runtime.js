@@ -1065,12 +1065,24 @@
     // viewer comes back to opens with its rules judging an empty field nobody
     // has typed into. Cleared first, so those rules are already quiet by the
     // time the values they read are written.
-    function reseed() {
+    //
+    // When the page is a fresh one, an element's own signals are reset too.
+    // The morph keeps an element the arriving page has in the same place, so
+    // it is never bound again and its declaration is never read. For example,
+    // a form's rows landing on the same rows filled in would otherwise keep
+    // the values they had. A reload or a refined search is the page being
+    // read, though, and there a row the reader opened has to stay open.
+    function reseed(fresh) {
         for (const key of store.keys()) {
             if (key.startsWith(dirtyKey(""))) write(key, false);
         }
 
         seed(document.documentElement);
+        if (!fresh) return;
+
+        for (const el of document.querySelectorAll("[data-signals]")) {
+            declare(el, "data-signals", (name) => `${scopeOf(el)}/${name}`, true);
+        }
     }
 
     // The same for one element a patch brings where nothing on the page has
@@ -1725,7 +1737,7 @@
 
                 const page = new DOMParser().parseFromString(payload, "text/html");
                 present(granting ? page : ungranted(page));
-                reseed();
+                reseed(true);
                 arrived();
                 break;
 
@@ -2236,7 +2248,7 @@
             typedIn = typing ? document.activeElement : null;
             present(new DOMParser().parseFromString(html, "text/html"));
             typedIn = null;
-            reseed();
+            reseed(push || scroll !== null);
             // One that neither adds an entry nor moves the reader is the page
             // being read, updated, and the caret is wherever they are typing.
             if (push || scroll !== null) arrived();
