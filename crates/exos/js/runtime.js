@@ -1066,21 +1066,23 @@
     // has typed into. Cleared first, so those rules are already quiet by the
     // time the values they read are written.
     //
-    // When the page is a fresh one, an element's own signals are reset too.
-    // The morph keeps an element the arriving page has in the same place, so
-    // it is never bound again and its declaration is never read. For example,
-    // a form's rows landing on the same rows filled in would otherwise keep
-    // the values they had. A reload or a refined search is the page being
-    // read, though, and there a row the reader opened has to stay open.
-    function reseed(fresh) {
+    // A form's rows are reset too, since their signals are fields of the
+    // same model, only declared on the row. The morph keeps a row the
+    // arriving page has in the same place, so it is never bound again and
+    // its declaration is never read. For example, a roster filled by a link
+    // to `?fill=true` would otherwise arrive with every box still unticked.
+    //
+    // Any other element's signals are the browser's own and stay. A row the
+    // reader opened stays open through a reload, and a list's ticks on the
+    // element around it survive paging the list.
+    function reseed() {
         for (const key of store.keys()) {
             if (key.startsWith(dirtyKey(""))) write(key, false);
         }
 
         seed(document.documentElement);
-        if (!fresh) return;
 
-        for (const el of document.querySelectorAll("[data-signals]")) {
+        for (const el of document.querySelectorAll("[data-row][data-signals]")) {
             declare(el, "data-signals", (name) => `${scopeOf(el)}/${name}`, true);
         }
     }
@@ -1737,7 +1739,7 @@
 
                 const page = new DOMParser().parseFromString(payload, "text/html");
                 present(granting ? page : ungranted(page));
-                reseed(true);
+                reseed();
                 arrived();
                 break;
 
@@ -2248,7 +2250,7 @@
             typedIn = typing ? document.activeElement : null;
             present(new DOMParser().parseFromString(html, "text/html"));
             typedIn = null;
-            reseed(push || scroll !== null);
+            reseed();
             // One that neither adds an entry nor moves the reader is the page
             // being read, updated, and the caret is wherever they are typing.
             if (push || scroll !== null) arrived();

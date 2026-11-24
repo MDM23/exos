@@ -244,7 +244,8 @@ test("a navigation starts the page as its own markup declares it", async () => {
 // again, and a roster filled by a link to `?fill=true` arrived with every
 // box still unticked until the page was reloaded.
 test("a navigation starts a row the morph kept as its own markup declares it", async () => {
-    const row = (on) => `<div id="row" data-signals='{"on":${on}}' data-class='{"lit": $.on}'></div>`;
+    const row = (on) =>
+        `<div id="row" data-row="" data-signals='{"on":${on}}' data-class='{"lit": $.on}'></div>`;
     const window = boot(row(false));
 
     window.fetch = async () => ({
@@ -273,6 +274,26 @@ test("a reload keeps a row the reader opened as it was", async () => {
     await settled();
 
     assert.ok(window.document.getElementById("one").classList.contains("open"));
+});
+
+// The bug the first fix brought: it reset every element's signals, and a
+// list keeps its ticks on the element around it, so paging the list on to
+// its next page forgot every row ticked on the first.
+test("paging a list keeps the ticks on the element around it", async () => {
+    const list = `<div id="list" data-signals='{"on":false}' data-class='{"lit": $.on}'></div>`;
+    const window = boot(list);
+
+    window.exos.setIn(window.document.getElementById("list"), "on", true);
+    await settled();
+
+    window.fetch = async () => ({
+        text: async () => `<!DOCTYPE html><html><head><title>t</title></head><body>${list}</body></html>`,
+        url: "http://localhost/?after=50",
+    });
+    await window.exos.navigate("http://localhost/?after=50", true);
+    await settled();
+
+    assert.ok(window.document.getElementById("list").classList.contains("lit"));
 });
 
 // An ordinary link to a download or an endpoint, which the browser knows what
@@ -1720,6 +1741,27 @@ test("changing the rows is an edit", async () => {
     await settled();
 
     assert.equal(window.document.getElementById("flag").textContent, "edited");
+});
+
+// A reload starts the form over as its markup says, and that is all of it.
+// Kept, a row would go on holding what was typed while the form around it
+// says nothing has been edited.
+test("a reload starts a form's rows over with the rest of it", async () => {
+    const page = group(1) + `<p id="flag" data-text="dirty('errors') ? 'edited' : 'pristine'"></p>`;
+    const window = boot(page);
+
+    fill(window, 0, "Ann");
+    await settled();
+
+    window.fetch = async () => ({
+        text: async () => `<!DOCTYPE html><html><head><title>t</title></head><body>${page}</body></html>`,
+        url: "http://localhost/",
+    });
+    await window.exos.navigate("http://localhost/", false, null);
+    await settled();
+
+    assert.equal(window.document.querySelector("[data-row] input").value, "");
+    assert.equal(window.document.getElementById("flag").textContent, "pristine");
 });
 
 // The markup a revision sends says the row is trashed and nothing about its
