@@ -495,6 +495,22 @@ Three ways out were weighed and none is right yet.
 
 Nothing has been slow because of it yet. Wait for a page that is.
 
+## A form a morph inserts opens on old values
+
+A form a patch brings where the page has none starts as its own markup
+declares it, because `applyPatch` seeds it before attaching it. A form that
+arrives *inside* a morphed fragment does not: `morphChildren` inserts it and
+binds it, and binding declares without overwriting, so it opens on whatever
+the last form of its type left behind. A fragment that swaps a summary for an
+edit form when a handler says so is the case.
+
+Seeding there too is not the fix. Binding refuses to overwrite so that a
+second row declaring a name gets the value the first row put there, and a row
+a morph inserts is exactly that. Telling the two apart needs to know whether
+the inserted element is a form arriving fresh or one more copy of something
+already on the page, which is what [keyed forms](keyed-forms.md) gives every
+form a name for. Wait for that, or for a fragment that hits it.
+
 ## Not in here
 
 Five things are deliberately absent, because they are designs rather than
