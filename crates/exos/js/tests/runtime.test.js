@@ -180,6 +180,41 @@ test("a modal a handler sends opens as it arrives and goes once closed", async (
     assert.ok(window.document.getElementById("confirm").open, "the next one arrives fresh");
 });
 
+// The bug: a dialog sent with the form for one filter, then for another. The
+// form's fields are document signals named by its type, so the second form
+// opened on the first one's field, and the server rendered it for that one.
+test("a form a handler sends again starts as its own markup declares it", async () => {
+    const window = boot(`<main></main>`);
+    const sent = (field) =>
+        `<dialog id="filter" data-modal=""><form data-signals-root='{"field":"${field}"}'>` +
+        `<input data-bind="field" data-bind-kind="string"></form></dialog>`;
+
+    window.exos.applyPatch(sent("age"));
+    await settled();
+    window.document.getElementById("filter").close();
+
+    window.exos.applyPatch(sent("gender"));
+    await settled();
+
+    assert.equal(window.exos.signals.field, "gender");
+    assert.equal(window.document.querySelector("input").value, "gender");
+});
+
+test("a form a patch morphs keeps what the reader typed", async () => {
+    const form = `<form id="f" data-signals-root='{"draft":""}'><input data-bind="draft" data-bind-kind="string"></form>`;
+    const window = boot(`<main>${form}</main>`);
+
+    const field = window.document.querySelector("input");
+    field.value = "half typed";
+    field.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await settled();
+
+    window.exos.applyPatch(form);
+    await settled();
+
+    assert.equal(window.exos.signals.draft, "half typed");
+});
+
 test("a navigation starts the page as its own markup declares it", async () => {
     const page = (draft) =>
         `<!DOCTYPE html><html><head><title>next</title></head><body>` +

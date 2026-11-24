@@ -1070,9 +1070,29 @@
             if (key.startsWith(dirtyKey(""))) write(key, false);
         }
 
-        for (const el of document.querySelectorAll("[data-signals-root]")) {
-            declare(el, "data-signals-root", (name) => name, true);
-        }
+        seed(document.documentElement);
+    }
+
+    // The same for one element a patch brings where nothing on the page has
+    // its id: it is new here rather than this page's copy of something, so it
+    // starts as its own markup declares it. A dialog a handler sends with a
+    // form in it is the case. Sent for one record and then for another, the
+    // second opened on the first one's values, since a form's fields are
+    // document signals named by its type and the first one left them behind.
+    // Only the names it declares are touched, their edited flags with them,
+    // so the rest of the page keeps what it holds. A form of the same type
+    // the page already shows is the exception, since it shares those names;
+    // see docs/roadmap/keyed-forms.md.
+    function seed(root) {
+        const declaring = [...root.querySelectorAll("[data-signals-root]")];
+        if (root.matches("[data-signals-root]")) declaring.unshift(root);
+
+        const unedited = (name) => {
+            if (store.has(dirtyKey(name))) write(dirtyKey(name), false);
+            return name;
+        };
+
+        for (const el of declaring) declare(el, "data-signals-root", unedited, true);
     }
 
     function bind(el) {
@@ -1790,6 +1810,9 @@
             if (existing.length) {
                 for (const node of existing) morph(node, incoming.cloneNode(true));
             } else {
+                // Before it is attached, so its binding finds the values it
+                // declares already written rather than the ones left behind.
+                seed(incoming);
                 document.body.appendChild(incoming);
             }
         }
