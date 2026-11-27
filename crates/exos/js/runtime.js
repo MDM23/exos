@@ -2324,8 +2324,13 @@
             announcer = document.createElement("div");
             announcer.setAttribute("aria-live", "polite");
             announcer.setAttribute("aria-atomic", "true");
+            // Pinned to the corner, since without an offset it would sit
+            // where it falls in the flow: under a layout as high as the
+            // window, one pixel past it, which scrolls the page.
             Object.assign(announcer.style, {
                 position: "absolute",
+                top: "0",
+                left: "0",
                 width: "1px",
                 height: "1px",
                 overflow: "hidden",
